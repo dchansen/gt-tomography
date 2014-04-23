@@ -20,7 +20,8 @@
 #include "hoCuTvOperator.h"
 #include "hoCuTvPicsOperator.h"
 #include "hoCuNCGSolver.h"
-#include "hoRegistration_utils.h"
+#include "hoCuNlcgSolver.h"
+
 #include "hoCuPartialDerivativeOperator.h"
 
 #include <iostream>
@@ -61,7 +62,7 @@ int main(int argc, char** argv)
     ("PICS",po::value<float>(),"TV Weight of the prior image (Prior image compressed sensing)")
     ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     ("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
-    ("rho",po::value<float>(&rho)->default_value(0.9f),"Rho-value for line search. Must be between 0 and 1. Smaller value means faster runtime, but less stable algorithm.")
+    ("rho",po::value<float>(&rho)->default_value(0.5f),"Rho-value for line search. Must be between 0 and 1. Smaller value means faster runtime, but less stable algorithm.")
     ;
 
   po::variables_map vm;
@@ -145,6 +146,7 @@ int main(int argc, char** argv)
 
   //hoCuGPBBSolver<float> solver;
   hoCuNCGSolver<float> solver;
+  //hoCuNlcgSolver<float> solver;
 
   solver.set_encoding_operator(E);
   solver.set_domain_dimensions(&is_dims);
