@@ -884,12 +884,6 @@ namespace Gadgetron
       float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[from_projection]);
       floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[from_projection]);
 
-      // Apply offset correction 
-      // - for half fan mode, sag correction etc.
-      //
-
-      if( use_offset_correction )
-        offset_correct( projections_batch, raw_offsets, ps_dims_in_mm, SAD, SDD );
 
       if( FBP ){
         
@@ -921,6 +915,14 @@ namespace Gadgetron
         uint64d3 crop_offsets(batch_dims[0]>>1, 0, 0);
         crop<float,3>( crop_offsets, padded_projections.get(), projections_batch );      
       }
+
+      // Apply offset correction
+            // - for half fan mode, sag correction etc.
+            //
+
+            if( use_offset_correction )
+              offset_correct( projections_batch, raw_offsets, ps_dims_in_mm, SAD, SDD );
+
 
       // Build array for input texture
       //
