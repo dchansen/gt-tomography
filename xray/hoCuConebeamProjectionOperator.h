@@ -32,6 +32,8 @@ namespace Gadgetron{
     virtual void mult_M( hoCuNDArray<float> *in, hoCuNDArray<float> *out, bool accumulate = false );
     virtual void mult_MH( hoCuNDArray<float> *in, hoCuNDArray<float> *out, bool accumulate = false );
 
+    virtual void offset_correct(hoCuNDArray<float>* proj);
+
     virtual void setup( boost::shared_ptr<CBCT_acquisition> acquisition,
                         floatd3 is_dims_in_mm )
     {      

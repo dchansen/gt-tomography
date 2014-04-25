@@ -181,7 +181,14 @@ int main(int argc, char** argv)
 	E->set_domain_dimensions(&is_dims);
 	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
+
+
+  if (E->get_use_offset_correction())
+    	E->offset_correct(&projections);
+
 	mySbcCgSolver solver;
+
+	solver.set_normalization_mode(mySbcCgSolver::SB_NO_NORMALIZATION);
 
 	solver.set_encoding_operator(E);
 	solver.set_max_outer_iterations(iterations);

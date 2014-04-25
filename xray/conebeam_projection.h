@@ -5,7 +5,33 @@
 #include "vector_td.h"
 
 namespace Gadgetron {
-  
+
+
+
+/**
+ * Applies the sqrt of the FPB offset correction. Should be used on projection data with offset detector for iterative reconstruction.
+ * @param projections
+ * @param offsets
+ * @param ps_dims_in_mm
+ * @param SDD
+ * @param SAD
+ */
+void apply_offset_correct(hoCuNDArray<float>* projections,std::vector<floatd2>& offsets,		floatd2 ps_dims_in_mm, float SDD,	float SAD);
+/**
+ *
+ * @param projections
+ * @param image
+ * @param angles
+ * @param offsets
+ * @param indices
+ * @param projections_per_batch
+ * @param samples_per_pixel
+ * @param is_dims_in_mm
+ * @param ps_dims_in_mm
+ * @param SDD
+ * @param SAD
+ * @param accumulate
+ */
   // Forwards projection of a 3D volume onto a set of projections.
   // - dependening on the provided binnning indices, just a subset of the projections can be targeted.
   //
