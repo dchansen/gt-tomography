@@ -174,6 +174,11 @@ namespace Gadgetron{
 
       int num_3d_elements = is_dims_3d[0]*is_dims_3d[1]*is_dims_3d[2];
 
+      hoCuNDArray<float>* projections2 = projections;
+      if (accumulate)
+	projections2 = new hoCuNDArray<float>(projections->get_dimensions());
+	
+
       for (unsigned int b=0, bin=0; b<this->binning_->get_number_of_bins(); b++) {
         
         if( b==phase_ ) 
@@ -181,15 +186,20 @@ namespace Gadgetron{
 
         hoCuNDArray<float> image_3d(&is_dims_3d, image_4d.get_data_ptr()+bin*num_3d_elements);
 
-        conebeam_forwards_projection( projections, &image_3d,
+        conebeam_forwards_projection( projections2, &image_3d,
                                       acquisition_->get_geometry()->get_angles(), 
                                       acquisition_->get_geometry()->get_offsets(),
                                       binning_->get_bin(b),
                                       projections_per_batch_, samples_per_pixel_,
                                       is_dims_in_mm_, ps_dims_in_mm, 
-                                      SDD, SAD, accumulate );
+                                      SDD, SAD);
         
         bin++;
+      }
+
+      if (accumulate){
+	*projections += *projections2;
+	delete projections2;
       }
     }
     

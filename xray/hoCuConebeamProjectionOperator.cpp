@@ -130,6 +130,9 @@ void hoCuConebeamProjectionOperator
 		throw std::runtime_error("Error: hoCuConebeamProjectionOperator::mult_M: inconsistent sizes of input arrays/vectors");
 	}
 
+	hoCuNDArray<float> *projections2 = projections;
+	if (accumulate)
+	  projections2 = new hoCuNDArray<float>(projections->get_dimensions());
 	// Iterate over the temporal dimension.
 	// I.e. reconstruct one 3D volume at a time.
 	//
@@ -152,15 +155,23 @@ void hoCuConebeamProjectionOperator
 		//Make a 3d view into the 4d image
 		hoCuNDArray<float> image_3d(&dims_3d, image->get_data_ptr()+b*num_3d_elements);
 
-		conebeam_forwards_projection( projections, &image_3d,
+		conebeam_forwards_projection( projections2, &image_3d,
 				acquisition_->get_geometry()->get_angles(),
 				acquisition_->get_geometry()->get_offsets(),
 				binning_->get_bin(b),
 				projections_per_batch_, samples_per_pixel_,
 				is_dims_in_mm_, ps_dims_in_mm,
-				SDD, SAD,
-				accumulate );
+					      SDD, SAD);
 	}
+
+	if (use_offset_correction_ && !use_fbp_)
+	  this->offset_correct(projections2);
+	if (accumulate){
+	  *projections += *projections2;
+	  delete projections2;
+	}
+
+
 }
 
 void hoCuConebeamProjectionOperator

@@ -340,8 +340,7 @@ void apply_offset_correct(hoCuNDArray<float>* projections,std::vector<floatd2>& 
 
 	thrust::device_vector<floatd2> offsets_devVec(offsets);
 	//Calculate number of projections we can fit on device, rounded to nearest MB
-	size_t batch_size = (1024*1024)*(cudaDeviceManager::Instance()->getFreeMemory()/(1024*1024*projection_size*sizeof(float)));
-
+	size_t batch_size = (1024)*(cudaDeviceManager::Instance()->getFreeMemory()/(1024*projection_size*sizeof(float)));
 	size_t remaining = dims[2];
 
 	for (unsigned int i = 0; i < dims[2]/(batch_size+1)+1; i++){
@@ -498,8 +497,7 @@ conebeam_forwards_projection( hoCuNDArray<float> *projections,
 		floatd3 is_dims_in_mm,
 		floatd2 ps_dims_in_mm,
 		float SDD,
-		float SAD,
-		bool accumulate )
+		float SAD)
 {
 	//
 	// Validate the input
@@ -532,9 +530,6 @@ conebeam_forwards_projection( hoCuNDArray<float> *projections,
 	int matrix_size_z = image->get_size(2);
 
 	hoCuNDArray<float> *int_projections = projections;
-	if (accumulate){
-		int_projections = new hoCuNDArray<float>(projections->get_dimensions());
-	}
 
 	if( projections_per_batch > num_projections_in_bin )
 		projections_per_batch = num_projections_in_bin;
@@ -666,10 +661,6 @@ conebeam_forwards_projection( hoCuNDArray<float> *projections,
 	CUDA_CALL(cudaStreamDestroy(mainStream));
 	CHECK_FOR_CUDA_ERROR();
 
-	if (accumulate){
-		*projections += *int_projections;
-		delete int_projections;
-	}
 }
 
 template <bool FBP> __global__ void
