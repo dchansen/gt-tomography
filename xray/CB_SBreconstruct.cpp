@@ -187,9 +187,16 @@ int main(int argc, char** argv)
 	if (E->get_use_offset_correction())
 	  E->offset_correct(&projections);
 
+
+
+  if (E->get_use_offset_correction())
+    	E->offset_correct(&projections);
+
 	mySbcCgSolver solver;
 	solver.set_normalization_mode(mySbcCgSolver::SB_NO_NORMALIZATION);
 
+
+	solver.set_normalization_mode(mySbcCgSolver::SB_NO_NORMALIZATION);
 
 	solver.set_encoding_operator(E);
 	solver.set_max_outer_iterations(iterations);

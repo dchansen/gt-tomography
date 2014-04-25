@@ -167,6 +167,8 @@ int main(int argc, char** argv)
   E->set_domain_dimensions(&is_dims);
   E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
+
+
   //hoCuGPBBSolver<float> solver;
   hoCuNCGSolver<float> solver;
 
@@ -179,6 +181,9 @@ int main(int argc, char** argv)
 
   hoCuNDArray<float> projections = *ps->get_projections();
   
+  if (E->get_use_offset_correction())
+    	E->offset_correct(&projections);
+
   boost::shared_ptr<hoCuNDArray<float> > prior;
 
   if (vm.count("use_prior")) {
