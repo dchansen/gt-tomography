@@ -19,7 +19,7 @@
 #include "hoCuTvOperator.h"
 #include "hoCuTvPicsOperator.h"
 #include "hoCuSbcCgSolver.h"
-#include "hoRegistration_utils.h"
+#include "hoNDArray_utils.h"
 #include "GPUTimer.h"
 
 #include <iostream>

@@ -20,8 +20,7 @@
 #include "hoCuTvOperator.h"
 #include "hoCuTvPicsOperator.h"
 #include "hoCuNCGSolver.h"
-#include "hoCuNlcgSolver.h"
-
+#include "hoNDArray_utils.h"
 #include "hoCuPartialDerivativeOperator.h"
 
 #include <iostream>
@@ -34,6 +33,28 @@ using namespace std;
 using namespace Gadgetron;
 
 namespace po = boost::program_options;
+
+boost::shared_ptr<hoCuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binning>  binning,boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>& projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
+	boost::shared_ptr<CBCT_binning> binning_pics( new CBCT_binning(binning->get_3d_binning()) );
+	    std::vector<size_t> is_dims3d = is_dims;
+	    is_dims3d.pop_back();
+	    boost::shared_ptr< hoCuConebeamProjectionOperator >
+	      Ep( new hoCuConebeamProjectionOperator() );
+	    Ep->setup(ps,binning_pics,imageDimensions);
+	    Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+	    Ep->set_domain_dimensions(&is_dims3d);
+
+	    boost::shared_ptr<hoCuNDArray<float> > prior3d(new hoCuNDArray<float>(&is_dims3d));
+	    Ep->mult_MH(&projections,prior3d.get());
+
+	    hoCuNDArray<float> tmp_proj(*ps->get_projections());
+	    Ep->mult_M(prior3d.get(),&tmp_proj);
+	    float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
+	    *prior3d *= s;
+	    boost::shared_ptr<hoCuNDArray<float> > prior(new hoCuNDArray<float>(*expand( prior3d.get(), is_dims.back() )));
+
+	    return prior;
+}
 
 int main(int argc, char** argv) 
 {  
@@ -146,7 +167,6 @@ int main(int argc, char** argv)
 
   //hoCuGPBBSolver<float> solver;
   hoCuNCGSolver<float> solver;
-  //hoCuNlcgSolver<float> solver;
 
   solver.set_encoding_operator(E);
   solver.set_domain_dimensions(&is_dims);
@@ -157,6 +177,13 @@ int main(int argc, char** argv)
 
   hoCuNDArray<float> projections = *ps->get_projections();
   
+  boost::shared_ptr<hoCuNDArray<float> > prior;
+
+  if (vm.count("use_prior")) {
+  	prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
+  	solver.set_x0(prior);
+  }
+
   if (vm.count("TV")){
     std::cout << "Total variation regularization in use" << std::endl;
     boost::shared_ptr<hoCuTvOperator<float,4> > tv(new hoCuTvOperator<float,4>);
@@ -166,23 +193,7 @@ int main(int argc, char** argv)
 
   if (vm.count("PICS")){
     std::cout << "PICS in use" << std::endl;
-    boost::shared_ptr<CBCT_binning> binning_pics( new CBCT_binning() );
-    binning_pics->set_as_default_3d_bin(ps->get_projections()->get_size(2));
-    std::vector<size_t> is_dims3d = to_std_vector((uint64d3)imageSize);
-    boost::shared_ptr< hoCuConebeamProjectionOperator >
-      Ep( new hoCuConebeamProjectionOperator() );
-    Ep->setup(ps,binning_pics,imageDimensions);
-    Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
-    Ep->set_domain_dimensions(&is_dims3d);
-
-    boost::shared_ptr<hoCuNDArray<float> > prior3d(new hoCuNDArray<float>(&is_dims3d));
-    Ep->mult_MH(&projections,prior3d.get());
-
-    hoCuNDArray<float> tmp_proj(*ps->get_projections());
-    Ep->mult_M(prior3d.get(),&tmp_proj);
-    float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
-    *prior3d *= s;
-    boost::shared_ptr<hoCuNDArray<float> > prior(new hoCuNDArray<float>(*expand( prior3d.get(), is_dims.back() )));
+    if (!prior.get()) prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
     boost::shared_ptr<hoCuTvPicsOperator<float,3> > pics (new hoCuTvPicsOperator<float,3>);
     pics->set_prior(prior);
     pics->set_weight(vm["PICS"].as<float>());
