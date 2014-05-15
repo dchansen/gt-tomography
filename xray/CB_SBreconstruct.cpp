@@ -77,6 +77,7 @@ int main(int argc, char** argv)
 	unsigned int iterations;
 	unsigned int inner_iterations;
 	float non_negativity_weight;
+	float mu;
 
 	po::options_description desc("Allowed options");
 	desc.add_options()
@@ -92,6 +93,7 @@ int main(int argc, char** argv)
     ("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
     ("inner-iterations",po::value<unsigned int>(&inner_iterations)->default_value(5),"Number of iterations in the inner solver")
     ("TV,T",po::value<float>(),"TV Weight ")
+	  ("mu",po::value<float>(&mu)->default_value(1),"Mu weight for encoding operator")
     ("non-negativity,N",po::value<float>(&non_negativity_weight)->default_value(1.0f),"Weight for the non-negativity (soft) constraint ")
     ("prior", po::value<std::string>(),"Prior image filename")
     ("PICCS",po::value<float>(),"TV Weight of the prior image (Prior image constrained compressed sensing)")
@@ -176,12 +178,17 @@ int main(int argc, char** argv)
 	// Define encoding matrix
 	boost::shared_ptr< hoCuConebeamProjectionOperator >
     E( new hoCuConebeamProjectionOperator() );
-
+	E->set_weight(mu);
 	E->setup(ps,binning,imageDimensions);
 	E->set_domain_dimensions(&is_dims);
 	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+	//E->set_use_offset_correction(false);
+
+	if (E->get_use_offset_correction())
+	  E->offset_correct(&projections);
 
 	mySbcCgSolver solver;
+	solver.set_normalization_mode(mySbcCgSolver::SB_NO_NORMALIZATION);
 
 	solver.set_encoding_operator(E);
 	solver.set_max_outer_iterations(iterations);
@@ -216,8 +223,9 @@ int main(int argc, char** argv)
 		solver.add_regularization_group_operator(dx);
 		solver.add_regularization_group_operator(dy);
 		solver.add_regularization_group_operator(dz);
-		solver.add_regularization_group_operator(dt);
+		//solver.add_regularization_group_operator(dt);
 		solver.add_group(1);
+		solver.add_regularization_operator(dt,1);
 	}
 
 	if (vm.count("PICCS")){

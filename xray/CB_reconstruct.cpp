@@ -35,6 +35,7 @@ using namespace Gadgetron;
 namespace po = boost::program_options;
 
 boost::shared_ptr<hoCuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binning>  binning,boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>& projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
+  std::cout << "Calculating FDK prior" << std::endl;
 	boost::shared_ptr<CBCT_binning> binning_pics( new CBCT_binning(binning->get_3d_binning()) );
 	    std::vector<size_t> is_dims3d = is_dims;
 	    is_dims3d.pop_back();
@@ -43,7 +44,7 @@ boost::shared_ptr<hoCuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_bi
 	    Ep->setup(ps,binning_pics,imageDimensions);
 	    Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 	    Ep->set_domain_dimensions(&is_dims3d);
-
+	      Ep->set_use_filtered_backprojection(true);
 	    boost::shared_ptr<hoCuNDArray<float> > prior3d(new hoCuNDArray<float>(&is_dims3d));
 	    Ep->mult_MH(&projections,prior3d.get());
 
@@ -52,7 +53,7 @@ boost::shared_ptr<hoCuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_bi
 	    float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
 	    *prior3d *= s;
 	    boost::shared_ptr<hoCuNDArray<float> > prior(new hoCuNDArray<float>(*expand( prior3d.get(), is_dims.back() )));
-
+	    std::cout << "Prior complete" << std::endl;
 	    return prior;
 }
 
@@ -84,6 +85,7 @@ int main(int argc, char** argv)
     ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     ("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
     ("rho",po::value<float>(&rho)->default_value(0.5f),"Rho-value for line search. Must be between 0 and 1. Smaller value means faster runtime, but less stable algorithm.")
+    ("use_prior","Use an FDK prior")
     ;
 
   po::variables_map vm;
@@ -177,6 +179,9 @@ int main(int argc, char** argv)
 
   hoCuNDArray<float> projections = *ps->get_projections();
   
+  if (E->get_use_offset_correction())
+    	E->offset_correct(&projections);
+
   boost::shared_ptr<hoCuNDArray<float> > prior;
 
   if (vm.count("use_prior")) {
