@@ -48,7 +48,7 @@ public:
 	}
 
 	virtual boost::shared_ptr<ARRAY_TYPE> solve(ARRAY_TYPE* in)
-													{
+																							{
 		if( this->encoding_operator_.get() == 0 ){
 			throw std::runtime_error("Error: ncgSolver::compute_rhs : no encoding operator is set" );
 		}
@@ -99,7 +99,7 @@ public:
 		ARRAY_TYPE gtmp(image_dims.get());
 		ARRAY_TYPE encoding_space2(in->get_dimensions().get());
 		REAL reg_res,data_res;
-
+		ARRAY_TYPE x2(x);
 		if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 			std::cout << "Iterating..." << std::endl;
 		}
@@ -139,14 +139,14 @@ public:
 			REAL grad_norm = nrm2(g);
 			if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 
-				std::cout << "Iteration " <<i << ". Realtive gradient norm: " <<  grad_norm << std::endl;
+				std::cout << "Iteration " <<i << ". Realtive gradient norm: " <<  grad_norm/grad_norm0 << std::endl;
 			}
 
 			if (i == 0){
 				d -= *g;
 			} else {
-				ELEMENT_TYPE g_old_norm = dot(g_old,g_old);
-				ELEMENT_TYPE ggold = dot(g,g_old);
+				//ELEMENT_TYPE g_old_norm = dot(g_old,g_old);
+				//ELEMENT_TYPE ggold = dot(g,g_old);
 				*g_old -= *g;
 				REAL gg = real(dot(g,g));
 				ELEMENT_TYPE gy = -dot(&d,g_old);
@@ -166,7 +166,6 @@ public:
 				//axpy(theta,g_old,&d);
 
 			}
-
 			this->encoding_operator_->mult_M(&d,&encoding_space2);
 			//this->encoding_operator_->mult_MH(&encoding_space2,&gtmp);
 			calc_regMultM(&d,regEnc2);
@@ -182,43 +181,23 @@ public:
 			*g_old = *g;
 
 
-
-
 			{
 				FunctionEstimator f(&encoding_space,&encoding_space2,&regEnc,&regEnc2,x,&d,this);
-				if (this->operators.size() != 0)
-					alpha=gold(f,0,alpha0);
-				else {
+				alpha = backtracking(f,alpha0,gd,rho,old_norm);
+				if (alpha <= 0){
+					std::cout << "Backtracking linesearch failed, returning current iteration" << std::endl;
+					return boost::shared_ptr<ARRAY_TYPE>(x);
+				}				std::cout << "Alpha: " << alpha << std::endl;
+				/*
+				if (this->operators.size() != 0){
+					alpha = backtracking(f,alpha0,gd,rho,old_norm);
+					//alpha=gold(f,0,alpha0);
+				}	else {
 					alpha = alpha0;
 					f(alpha);
 				}
+				 */
 			}
-			/*
-			while (not wolfe){
-
-				alpha=alpha0*std::pow(rho,k);
-				axpy(alpha-alpha_old,&encoding_space2,&encoding_space);
-				reg_axpy(alpha-alpha_old,regEnc2,regEnc);
-				axpy(alpha-alpha_old,&d,&x2);
-
-				//axpy(alpha-alpha_old,&gtmp,g);
-
-				if (functionValue(&encoding_space,regEnc,&x2) <= old_norm+alpha*delta*gd) wolfe = true;//Strong Wolfe condition..
-				//if (functionValue(&encoding_space,regEnc,&x2) <= old_norm-alpha*alpha*delta*dot(&d,&d)) wolfe = true;
-				//if (non_negativity_constraint_ && (min(&x2) < 0)) wolfe = false;
-				//if (real((dot(g,&d))) >= sigma*gd) wolfe =false; //So... officially this is part of the strong Wolfe condition. For semi-linear problems our initial step size should be sufficient.
-				k++;
-				//std::cout << "Res: " << dot(&encoding_space,&encoding_space)+calc_dot(regEnc,regEnc) << " Target: " << old_norm+alpha*delta*gd << std::endl;
-				//				std::cout << "Step2: " << dot(&gdiff,&d) << " Target " << sigma*gd  << std::endl;
-				if (alpha == 0){ throw std::runtime_error("NCGSolver: line-search failed, try using a rho-value closer to 1");
-
-
-
-				}
-				alpha_old = alpha;
-			}
-			 */
-
 
 			if (non_negativity_constraint_){
 
@@ -238,8 +217,12 @@ public:
 				this->encoding_operator_->mult_M(&d,&encoding_space2);
 				calc_regMultM(&d,regEnc2);
 				FunctionEstimator f(&encoding_space,&encoding_space2,&regEnc,&regEnc2,x,&d,this);
-				//alpha=gold(f,0,alpha0*1.5);
+				//alpha=gold(f,0,alpha0*(1.0+std::sqrt(5.0))/2.0);
 				alpha = backtracking(f,alpha0,gd,rho,old_norm);
+				if (alpha <= 0){
+					std::cout << "Backtracking linesearch failed, returning current iteration" << std::endl;
+					return boost::shared_ptr<ARRAY_TYPE>(x);
+				}
 				axpy(alpha,&d,x);
 			} else {
 				axpy(alpha,&d,x);
@@ -280,7 +263,9 @@ public:
 
 			}
 			 */
-			std::cout << "Function value: " << functionValue(&encoding_space,regEnc,x) << std::endl;
+			REAL f = functionValue(&encoding_space,regEnc,x);
+			std::cout << "Function value: " << f << std::endl;
+
 
 			this->encoding_operator_->mult_MH(&encoding_space,g);
 			this->add_gradient(x,g);
@@ -291,8 +276,8 @@ public:
 			}
 
 
-
-			iteration_callback(x,i,data_res,reg_res);
+			x2 = *x;
+			iteration_callback(x,i,f);
 
 
 			if (grad_norm/grad_norm0 < tc_tolerance_)  break;
@@ -300,7 +285,7 @@ public:
 		delete g,g_old;
 
 		return boost::shared_ptr<ARRAY_TYPE>(x);
-													}
+	}
 
 
 
@@ -377,7 +362,7 @@ protected:
 	typedef typename std::vector< std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE> > > >::iterator csGroupIterator;
 
 	virtual void solver_non_negativity_filter(ARRAY_TYPE*,ARRAY_TYPE*)=0;
-	virtual void iteration_callback(ARRAY_TYPE*,int i,REAL,REAL){};
+	virtual void iteration_callback(ARRAY_TYPE*,int i,REAL){};
 
 
 
@@ -458,50 +443,7 @@ protected:
 	};
 	friend class FunctionEstimator;
 
-	/***
-	 * @brief Gold section search algorithm. Only works with unimodal functions, which we assume we're dealing with, at least locally
-	 * @param f Functor to calculate the function to minimize
-	 * @param a Start of the bracketing
-	 * @param d End of bracketing
-	 * @return Value minimizing the function f.
-	 */
-	REAL gold(FunctionEstimator& f, REAL a, REAL d){
-		const REAL gold = 1.0/(1.0+std::sqrt(5.0))/2;
 
-		REAL b = d-(d-a)*gold;
-		REAL c = (d-a)*gold-a;
-
-		REAL fa = f(a);
-		REAL fb = f(b);
-		REAL fc = f(c);
-		REAL fd = f(d);
-		REAL tol = 1e-6;
-
-		while (abs(a-d) > tol*(abs(b)+abs(c))){
-			if (fb > fc){
-				a = b;
-				fa = fb;
-				b = c;
-				fb = fc;
-				c= b*gold+(1.0-gold)*d;
-				fc = f(c);
-			} else {
-				d = c;
-				fd = fc;
-				c = b;
-				fc = fb;
-				b = c*gold+(1-gold)*a;
-				fb = f(b);
-			}
-		}
-		if (fb < fc){
-			f(b);
-			return b;
-		}else {
-			f(c);
-			return c;
-		}
-	}
 
 	REAL backtracking(FunctionEstimator& f, const REAL alpha0, const REAL gd, const REAL rho, const REAL old_norm){
 		REAL alpha;
@@ -511,9 +453,10 @@ protected:
 
 		while (not wolfe){
 			alpha=alpha0*std::pow(rho,k);
-			if (f(alpha) <= old_norm+alpha*delta*gd) wolfe = true;//Strong Wolfe condition..
+			if (f(alpha) <= old_norm-abs(alpha*delta*gd)) wolfe = true;//Strong Wolfe condition..
 			k++;
-			if (alpha == 0) throw std::runtime_error("Wolfe line search failed");
+			//if (alpha == 0) throw std::runtime_error("Wolfe line search failed");
+			if (alpha ==0) return 0;
 		}
 
 		return alpha;

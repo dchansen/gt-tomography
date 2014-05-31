@@ -10,14 +10,15 @@ include_directories(
 )
 
 cuda_add_library( proton_kernels SHARED
-  cuOperatorPathBackprojection.cu hoCuOperatorPathBackprojection.cu proton_kernels.cu histogram.cu
+  cuOperatorPathBackprojection.cu hoCuOperatorPathBackprojection.cu proton_kernels.cu histogram.cu protonPreconditioner.cu 
 )
 
-target_link_libraries(proton_kernels gpucore hostutils ${CUDA_LIBRARIES})
+target_link_libraries(proton_kernels gpucore hostutils gpufft gpunfft tomography_solvers ${CUDA_LIBRARIES})
 
 add_executable(protonReconstruct protonReconstruct.cpp )
 
 add_executable(hostProtonReconstruct hostProtonReconstruct.cpp)
+add_executable(CGhostProtonReconstruct CGhostProtonReconstruct.cpp)
 
 add_executable(hostSBProtonReconstruct hostSBProtonReconstruct.cpp)
 
@@ -28,11 +29,12 @@ add_executable(hostBufferedSubsetProtonReconstruct hostBufferedSubsetProtonRecon
 
 #add_executable(LSQRTest LSQRTest.cpp)
 
-target_link_libraries(protonReconstruct proton_kernels gpucore cpucore_math gpuoperators gpusolvers hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES} ${CULA_LIBRARIES} ${Boost_LIBRARIES})
-target_link_libraries(hostProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore hostutils  ${HDF5_LIBRARIES}  ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
-target_link_libraries(hostSBProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore hostutils  ${HDF5_LIBRARIES}  ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
-target_link_libraries(hostSubsetProtonReconstruct proton_kernels cpucore cpucore_math gpucore hostutils  gpuoperators ${HDF5_LIBRARIES}  ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
-target_link_libraries(hostBufferedSubsetProtonReconstruct proton_kernels cpucore cpucore_math gpucore hostutils gpuoperators ${HDF5_LIBRARIES}  ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(protonReconstruct proton_kernels gpucore cpucore_math gpuoperators gpusolvers gpufft gpunfft tomography_solvers tomography_operators hostutils ${HDF5_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(hostProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore hostutils tomography_operators ${HDF5_LIBRARIES} ${CULA_LIBRARIES}   ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(CGhostProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore hostutils tomography_operators ${HDF5_LIBRARIES} ${CULA_LIBRARIES}   ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(hostSBProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore hostutils tomography_operators ${HDF5_LIBRARIES} ${CULA_LIBRARIES}  ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(hostSubsetProtonReconstruct proton_kernels cpucore cpucore_math gpucore hostutils  gpuoperators tomography_operators ${HDF5_LIBRARIES}  ${CULA_LIBRARIES}  ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(hostBufferedSubsetProtonReconstruct proton_kernels cpucore cpucore_math gpucore hostutils gpuoperators tomography_operators ${HDF5_LIBRARIES} ${CULA_LIBRARIES}  ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
 #target_link_libraries(LSQRTest proton_kernels gpucore hostutils solvers operators ${CUDA_LIBRARIES})
 
 #target_link_libraries(protonForward proton_kernels gpucore hostutils solvers operators ${CUDA_LIBRARIES})

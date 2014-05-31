@@ -29,7 +29,7 @@ protected:
   }
 
   virtual void iteration_callback(hoCuNDArray<T>* x,int i,REAL data_res,REAL reg_res){
-	  /*
+
 	  if (i == 0){
 		  std::ofstream textFile("residual.txt",std::ios::trunc);
 	  	  textFile << data_res << std::endl;
@@ -37,7 +37,7 @@ protected:
 		  std::ofstream textFile("residual.txt",std::ios::app);
 		  textFile << data_res << std::endl;
 	  }
-	  std::stringstream ss;
+	  /*std::stringstream ss;
 	  ss << "iteration-" << i << ".real";
 	  write_nd_array(x,ss.str().c_str());*/
   };

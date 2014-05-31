@@ -23,7 +23,9 @@
 #include "hoOSGPBBSolver.h"
 #include "hoOSCGSolver.h"
 #include "hoOSCGPBBSolver.h"
+#include "hoCuBILBSolver.h"
 //#include "hoABIBBSolver.h"
+#include "hoCuNCGSolver.h"
 #include "hdf5_utils.h"
 
 #include "encodingOperatorContainer.h"
@@ -106,9 +108,13 @@ int main( int argc, char** argv)
 
   solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );*/
 	//osSARTSolver<hoCuNDArray<_real> > solver;
+	hoCuNCGSolver<_real> solver;
 	//hoOSCGPBBSolver<hoCuNDArray<_real> > solver;
 	//hoABIBBSolver<hoCuNDArray<_real> > solver;
-	hoOSCGSolver<hoCuNDArray<_real> > solver;
+	//hoOSCGSolver<hoCuNDArray<_real> > solver;
+	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
+
+	//solver.set_m(subsets);
   solver.set_non_negativity_constraint(true);
   solver.set_max_iterations(iterations);
   boost::shared_ptr< hoCuProtonSubsetOperator<_real> > E (new hoCuProtonSubsetOperator<_real>(subsets) );
@@ -117,7 +123,7 @@ int main( int argc, char** argv)
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
   E->set_domain_dimensions(&rhs_dims);
   E->set_codomain_dimensions(projections->get_dimensions().get());
-
+/*
   boost::shared_ptr<hoCuNDArray<_real > > prior;
   if (vm.count("prior")){
  	  std::cout << "Prior image regularization in use" << std::endl;
@@ -150,6 +156,7 @@ int main( int argc, char** argv)
 		}
 		solver.set_x0(prior);
   }
+  */
   if (vm.count("TV")){
 	  std::cout << "Total variation regularization in use" << std::endl;
 	  boost::shared_ptr<hoCuTvOperator<float,3> > tv(new hoCuTvOperator<float,3>);
@@ -171,7 +178,7 @@ int main( int argc, char** argv)
 	E->mult_M(result.get(),&tmp_proj,false);
 	tmp_proj -= *projections;
 
-	std::cout << "L2 norm of residual: " << nrm2(&tmp_proj) << std::endl;
+	std::cout << "L2 norm of residual: " << dot(&tmp_proj,&tmp_proj) << std::endl;
 	//write_nd_array<_real>(result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;
 	for (int i = 0; i < argc; i++){

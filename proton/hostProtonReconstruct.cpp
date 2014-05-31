@@ -32,6 +32,11 @@
 #include "ABOCSSolver.h"
 
 #include "hoCuNCGSolver.h"
+#include "hoCuNlcgSolver.h"
+
+//#include "hoCuLbfgsSolver.h"
+
+#include "protonPreconditioner.h"
 
 
 using namespace std;
@@ -126,6 +131,8 @@ hoCuGPBBSolver<_real>* solver;
 */
 
   hoCuNCGSolver<_real>* solver = new hoCuNCGSolver<_real>;
+  //hoCuNlcgSolver<_real>* solver = new hoCuNlcgSolver<_real>;
+  //hoCuLbfgsSolver<_real>* solver = new hoCuLbfgsSolver<_real>;
   //hoCuTTSSolver<_real>* solver= new hoCuTTSSolver<_real>;
   //hoCuCgSolver<_real>* solver = new hoCuCgSolver<_real>;
   //solver.set_eps(_real(3.09e7));
@@ -134,8 +141,9 @@ hoCuGPBBSolver<_real>* solver;
   //solver.set_eps(_real(1));
   //solver.set_eps(_real(7.65e6));
 
+  //solver->set_m(8);
   solver->set_max_iterations( iterations);
-  //solver.set_tc_tolerance( (_real) parms.get_parameter('e')->get_float_value());
+  solver->set_tc_tolerance((float)std::sqrt(1e-10));
   //solver.set_alpha(1e-7);
   solver->set_output_mode( hoCuNCGSolver< _real>::OUTPUT_VERBOSE );
   solver->set_non_negativity_constraint(true);

@@ -47,11 +47,11 @@ template<class T, unsigned int D> void cuGaussianFilterOperator<T,D>::mult_M(cuN
 	dim3 gridDim;
 	dim3 blockDim;
 	setup_grid(in->get_number_of_elements(),&blockDim,&gridDim);
-	vector_td<unsigned int,D> dims = from_std_vector<unsigned int,D>(*(in->get_dimensions()));
+	vector_td<size_t,D> dims = from_std_vector<size_t,D>(*(in->get_dimensions()));
 	cuNDArray<T> in2(*in);
 	cuNDArray<T> out2(*out);
 
-	std::vector<unsigned int> batch_dim = to_std_vector(dims);
+	std::vector<size_t> batch_dim = to_std_vector(dims);
 	size_t elements = prod(dims);
 	for (int batch =0; batch < in->get_number_of_elements()/elements; batch++){
 		cuNDArray<T> in_view2(&batch_dim,in2.get_data_ptr()+elements*batch);
@@ -61,7 +61,8 @@ template<class T, unsigned int D> void cuGaussianFilterOperator<T,D>::mult_M(cuN
 		cuNDArray<T>* inptr = &in_view2;
 		cuNDArray<T>* outptr = &out_view2;
 		for (int d = 0; d < D; d++){
-			gauss_kernel<T,D><<<gridDim,blockDim>>>(inptr->get_data_ptr(),outptr->get_data_ptr(),dims,_sigma,d);
+			if (dims[d] ==1) continue;
+			gauss_kernel<T,D><<<gridDim,blockDim>>>(inptr->get_data_ptr(),outptr->get_data_ptr(),vector_td<unsigned int,D>(dims),_sigma,d);
 			std::swap(inptr,outptr);
 		}
 		if (accumulate) out_view += *inptr;

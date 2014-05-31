@@ -20,6 +20,7 @@
 #include "hoCuTvOperator.h"
 #include "hoCuTvPicsOperator.h"
 #include "hoCuNCGSolver.h"
+#include "hoCuCgDescentSolver.h"
 #include "hoNDArray_utils.h"
 #include "hoCuPartialDerivativeOperator.h"
 
@@ -169,6 +170,7 @@ int main(int argc, char** argv)
 
   //hoCuGPBBSolver<float> solver;
   hoCuNCGSolver<float> solver;
+  //hoCuCgDescentSolver<float> solver;
 
   solver.set_encoding_operator(E);
   solver.set_domain_dimensions(&is_dims);

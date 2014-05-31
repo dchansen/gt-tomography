@@ -12,6 +12,8 @@
 #include <thrust/transform.h>
 #include <thrust/functional.h>
 
+#include <fstream>
+
 namespace Gadgetron{
   
   template <class T> class EXPORTGPUSOLVERS cuNCGSolver : public ncgSolver<cuNDArray<T> >
@@ -21,6 +23,17 @@ namespace Gadgetron{
     cuNCGSolver() : ncgSolver<cuNDArray<T> >() {}
     virtual ~cuNCGSolver() {}
     
-    virtual void solver_non_negativity_filter(cuNDArray<T> *x,cuNDArray<T> *g);    
+    virtual void solver_non_negativity_filter(cuNDArray<T> *x,cuNDArray<T> *g);
+
+    virtual void iteration_callback(cuNDArray<T>* x ,int iteration,typename realType<T>::Type value){
+     	  if (iteration == 0){
+     		  std::ofstream textFile("residual.txt",std::ios::trunc);
+     	  	  textFile << value << std::endl;
+     	  } else{
+     		  std::ofstream textFile("residual.txt",std::ios::app);
+     		  textFile << value << std::endl;
+     	  }
+
+       };
   };
 }

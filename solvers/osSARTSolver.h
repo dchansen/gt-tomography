@@ -13,7 +13,7 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 	public:
 		osSARTSolver() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 			_iterations=10;
-			_beta = REAL(0.8);
+			_beta = REAL(0);
 			non_negativity_=false;
 		}
 		virtual ~osSARTSolver(){};
@@ -37,7 +37,7 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 			// Get image space dimensions from the encoding operator
 			//
 
-			boost::shared_ptr< std::vector<unsigned int> > image_dims = this->encoding_operator_->get_domain_dimensions();
+			boost::shared_ptr< std::vector<size_t> > image_dims = this->encoding_operator_->get_domain_dimensions();
 			if( image_dims->size() == 0 ){
 			  throw std::runtime_error( "Error: cgSolver::compute_rhs : encoding operator has not set domain dimension" );
 			  return boost::shared_ptr<ARRAY_TYPE>();
@@ -80,8 +80,11 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 				std::cout << "osSART setup done, starting iterations:" << std::endl;
 			}
 
+			std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
+
 			for (int i =0; i < _iterations; i++){
-				for (int subset = 0; subset < this->encoding_operator_->get_number_of_subsets(); subset++){
+				for (int isubset = 0; isubset < this->encoding_operator_->get_number_of_subsets(); isubset++){
+					int subset = isubsets[isubset];
 					this->encoding_operator_->mult_M(x,tmp_projections[subset].get(),subset,false);
 					*tmp_projections[subset] -= *subsets[subset];
 					*tmp_projections[subset] *= ELEMENT_TYPE(-1);
@@ -92,12 +95,20 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 					*tmp_projections[subset] *= *ones_projections[subset];
 					this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 					tmp_image *= ones_images[subset];
-					*x += tmp_image;
+					axpy(REAL(1.0/(1+_beta*i)),&tmp_image,x);
 					if (non_negativity_){
 						clamp_min(x,ELEMENT_TYPE(0));
 					}
 
 				}
+				std::reverse(isubsets.begin(),isubsets.end());
+				ARRAY_TYPE tmp_proj(*in);
+							clear(&tmp_proj);
+							this->encoding_operator_->mult_M(x,&tmp_proj,false);
+							tmp_proj -= *in;
+							//calc_regMultM(x,regEnc);
+							//REAL f = functionValue(&tmp_proj,regEnc,x);
+							std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
 			}
 
 

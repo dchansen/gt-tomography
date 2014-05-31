@@ -14,7 +14,6 @@
 #include "cuLaplaceOperator.h"
 #include "hoNDArray_fileio.h"
 #include "check_CUDA.h"
-#include "cuLwSolver.h"
 #include "cuGpBbSolver.h"
 #include "identityOperator.h"
 
@@ -25,8 +24,13 @@
 #include "encodingOperatorContainer.h"
 #include "cuSARTSolver.h"
 #include "cuMLSolver.h"
-
+#include "cuNCGSolver.h"
+#include "cuNlcgSolver.h"
+#include "cuCgSolver.h"
 #include "vector_td_io.h"
+#include "protonPreconditioner.h"
+//#include "cuLbfgsSolver.h"
+
 
 
 using namespace std;
@@ -49,13 +53,13 @@ boost::shared_ptr< cuNDArray<_real> >  recursiveSolver(cuNDArray<_real> * rhs,cu
 	}
 
 }
-*/
+ */
 
 /*
 template<class T> void notify(T val){
 	std::cout << val <<std::endl;
 }
-*/
+ */
 
 template<class T> void notify(std::string val){
 	std::cout << val << std::endl;
@@ -65,11 +69,11 @@ namespace po = boost::program_options;
 int main( int argc, char** argv)
 {
 
-  //
-  // Parse command line
-  //
-  _real background =  0.00106;
-  /*
+	//
+	// Parse command line
+	//
+	_real background =  0.00106;
+	/*
   ParameterParser parms;
   parms.add_parameter( 'p', COMMAND_LINE_STRING, 1, "Input projection file name (.real)", true,"projections.real" );
   parms.add_parameter( 'w', COMMAND_LINE_STRING, 1, "Input uncertainties file name (.real)", false);
@@ -104,114 +108,144 @@ int main( int argc, char** argv)
     parms.print_usage();
     return 1;
   }
-*/
+	 */
 
-  std::string projectionsName;
-  std::string splinesName;
-  std::string outputFile;
-  vector_td<int,3> dimensions;
-  vector_td<float,3> physical_dims;
-  vector_td<float,3> origin;
-  int iterations;
-  int device;
-  po::options_description desc("Allowed options");
-  desc.add_options()
-      ("help", "produce help message")
-      ("projections,p", po::value<std::string>(&projectionsName)->default_value("projections.real"), "File containing the projection data")
-      ("splines,s", po::value<std::string>(&splinesName)->default_value("splines.real"), "File containing the spline trajectories")
-      ("dimensions,d", po::value<vector_td<int,3> >(&dimensions)->default_value(vector_td<int,3>(512,512,1)), "Pixel dimensions of the image")
-      ("size,S", po::value<vector_td<float,3> >(&physical_dims)->default_value(vector_td<float,3>(20,20,5)), "Dimensions of the image in cm")
-      ("center,c", po::value<vector_td<float,3> >(&origin)->default_value(vector_td<float,3>(0,0,0)), "Center of the reconstruction")
-      ("iterations,i", po::value<int>(&iterations)->default_value(10), "Dimensions of the image")
-      ("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
-      ("prior,P", po::value<std::string>(),"Prior image filename")
-			("prior-weight,k",po::value<float>(),"Weight of the prior image")
-      ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+	std::string projectionsName;
+	std::string splinesName;
+	std::string outputFile;
+	vector_td<int,3> dimensions;
+	vector_td<float,3> physical_dims;
+	vector_td<float,3> origin;
+	int iterations;
+	int device;
+	bool precon,use_hull;
+	po::options_description desc("Allowed options");
+	desc.add_options()
+      				("help", "produce help message")
+      				("projections,p", po::value<std::string>(&projectionsName)->default_value("projections.real"), "File containing the projection data")
+      				("splines,s", po::value<std::string>(&splinesName)->default_value("splines.real"), "File containing the spline trajectories")
+      				("dimensions,d", po::value<vector_td<int,3> >(&dimensions)->default_value(vector_td<int,3>(512,512,1)), "Pixel dimensions of the image")
+      				("size,S", po::value<vector_td<float,3> >(&physical_dims)->default_value(vector_td<float,3>(20,20,5)), "Dimensions of the image in cm")
+      				("center,c", po::value<vector_td<float,3> >(&origin)->default_value(vector_td<float,3>(0,0,0)), "Center of the reconstruction")
+      				("iterations,i", po::value<int>(&iterations)->default_value(10), "Dimensions of the image")
+      				("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
+      				("prior,P", po::value<std::string>(),"Prior image filename")
+      				("prior-weight,k",po::value<float>(),"Weight of the prior image")
+      				("variance,v",po::value<std::string>(),"File containing the variance of data")
+      				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+      				("preconditioner",po::value<bool>(&precon)->default_value(false),"Use preconditioner")
+      				("use_hull",po::value<bool>(&use_hull)->default_value(false),"Use preconditioner")
 
-  ;
+      				;
 
 
-  po::variables_map vm;
-  po::store(po::parse_command_line(argc, argv, desc), vm);
-  po::notify(vm);
+	po::variables_map vm;
+	po::store(po::parse_command_line(argc, argv, desc), vm);
+	po::notify(vm);
 
-  if (vm.count("help")) {
+	if (vm.count("help")) {
 		cout << desc << "\n";
 		return 1;
-  }
-  std::cout << "Command line options:" << std::endl;
+	}
+	std::cout << "Command line options:" << std::endl;
 	for (po::variables_map::iterator it = vm.begin(); it != vm.end(); ++it){
 		boost::any a = it->second.value();
 		std::cout << it->first << ": ";
 		if (a.type() == typeid(std::string)) std::cout << it->second.as<std::string>();
 		else if (a.type() == typeid(int)) std::cout << it->second.as<int>();
 		else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
+		else if (a.type() == typeid(bool)) std::cout << it->second.as<bool>();
 		else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
 		else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
 		else std::cout << "Unknown type" << std::endl;
 		std::cout << std::endl;
 	}
 
-  cudaSetDevice(device);
- 	cudaDeviceReset();
-  std::cout <<  std::endl;
+	cudaSetDevice(device);
+	cudaDeviceReset();
+	std::cout <<  std::endl;
 	boost::shared_ptr<hoNDArray<vector_td<_real,3> > > host_splines = read_nd_array< vector_td<_real,3> >(splinesName.c_str());
-  boost::shared_ptr<cuNDArray<vector_td<_real,3> > > splines (new cuNDArray< vector_td<_real,3> >(host_splines.get()));
-  cout << "Number of spline elements: " << splines->get_number_of_elements() << endl;
+	boost::shared_ptr<cuNDArray<vector_td<_real,3> > > splines (new cuNDArray< vector_td<_real,3> >(host_splines.get()));
+	cout << "Number of spline elements: " << splines->get_number_of_elements() << endl;
 
-  boost::shared_ptr< hoNDArray<_real> > host_projections = read_nd_array<_real >(projectionsName.c_str());
-  boost::shared_ptr<cuNDArray<_real > > projections (new cuNDArray<_real >(host_projections.get()));
-  boost::shared_ptr<cuNDArray<_real > > projections_old = projections;
+	boost::shared_ptr< hoNDArray<_real> > host_projections = read_nd_array<_real >(projectionsName.c_str());
+	boost::shared_ptr<cuNDArray<_real > > projections (new cuNDArray<_real >(host_projections.get()));
+	//boost::shared_ptr<cuNDArray<_real > > projections_old = projections;
 
-  std::cout << "Number of elements " << projections->get_number_of_elements() << std::endl;
+	std::cout << "Number of elements " << projections->get_number_of_elements() << std::endl;
 
-  cout << "Number of projection elements: " << projections->get_number_of_elements() << endl;
-  if (projections->get_number_of_elements() != splines->get_number_of_elements()/4){
-	  cout << "Critical error: Splines and projections do not match dimensions" << endl;
-	  return 0;
-  }
+	cout << "Number of projection elements: " << projections->get_number_of_elements() << endl;
+	if (projections->get_number_of_elements() != splines->get_number_of_elements()/4){
+		cout << "Critical error: Splines and projections do not match dimensions" << endl;
+		return 0;
+	}
 
-  vector<size_t> ndims;
-  ndims.push_back(3);
-
-
-
-  cuGpBbSolver<_real> solver;
-
-  solver.set_max_iterations( iterations);
-
-  solver.set_output_mode( cuCgSolver<_real>::OUTPUT_VERBOSE );
-   solver.set_non_negativity_constraint(true);
-  boost::shared_ptr< cuOperatorPathBackprojection<_real> > E (new cuOperatorPathBackprojection<_real> );
+	vector<size_t> ndims;
+	ndims.push_back(3);
 
 
-  vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]);
 
-  boost::shared_ptr<cuNDArray<_real > > weights;
-  boost::shared_ptr<cuNDArray<_real > > uncertainties;
-  E->setup(splines,physical_dims,projections,origin,background);
+	//cuGpBbSolver<_real> solver;
+	cuNCGSolver<_real> solver;
+	//cuNlcgSolver<_real> solver;
+	//cuCgSolver<_real> solver;
+	//cuLbfgsSolver<_real> solver;
 
-  E->set_domain_dimensions(&rhs_dims);
-  E->set_codomain_dimensions(projections->get_dimensions().get());
-  boost::shared_ptr<encodingOperatorContainer<cuNDArray<_real> > > enc (new encodingOperatorContainer<cuNDArray<_real> >());
-  enc->set_domain_dimensions(&rhs_dims);
-  enc->add_operator(E);
-
-  boost::shared_ptr<cuNDArray<_real > > prior;
-   if (vm.count("prior")){
-  	  std::cout << "Prior image regularization in use" << std::endl;
- 		boost::shared_ptr<hoNDArray<_real> > host_prior = read_nd_array<_real >(vm["prior"].as<std::string>().c_str());
-
- 		host_prior->reshape(&rhs_dims);
- 		prior = boost::shared_ptr<cuNDArray<_real> >(new cuNDArray<_real>(host_prior.get()));
- 		_real offset = _real(0.01);
- 		//cuNDA_add(offset,prior.get());
+	solver.set_max_iterations( iterations);
+	solver.set_tc_tolerance((float)std::sqrt(1e-10));
+	//solver.set_tc_tolerance((float)(1e-10));
+	//solver.set_m(5);
+	solver.set_output_mode( cuNCGSolver<_real>::OUTPUT_VERBOSE );
+	//if (!use_hull)
+		solver.set_non_negativity_constraint(true);
+	boost::shared_ptr< cuOperatorPathBackprojection<_real> > E (new cuOperatorPathBackprojection<_real> );
 
 
- 		if (vm.count("prior-weight")){
+
+
+	vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]);
+
+
+
+
+	E->set_domain_dimensions(&rhs_dims);
+	//E->set_codomain_dimensions(projections->get_dimensions().get());
+
+	if (vm.count("variance")){
+		boost::shared_ptr<cuNDArray<_real> > variance(new cuNDArray<_real>(read_nd_array<_real >(vm["variance"].as<std::string>().c_str()).get()));
+		if (variance->get_number_of_elements() != projections->get_number_of_elements())
+			throw std::runtime_error("Number of elements in the variance vector does not match the number of projections ");
+		reciprocal_inplace(variance.get());
+		E->setup(splines,physical_dims,projections,variance,origin,rhs_dims,use_hull,background);
+	} else E->setup(splines,physical_dims,projections,origin,rhs_dims,use_hull, background);
+
+
+	if (use_hull) write_nd_array<float>(E->get_hull()->to_host().get(),"hull.real");
+	boost::shared_ptr<encodingOperatorContainer<cuNDArray<_real> > > enc (new encodingOperatorContainer<cuNDArray<_real> >());
+
+
+	if (precon){
+		boost::shared_ptr<protonPreconditioner> P (new protonPreconditioner(rhs_dims));
+		if (use_hull) P->set_hull(E->get_hull());
+		solver.set_preconditioner(P);
+	}
+	enc->add_operator(E);
+
+	boost::shared_ptr<cuNDArray<_real > > prior;
+	if (vm.count("prior")){
+		std::cout << "Prior image regularization in use" << std::endl;
+		boost::shared_ptr<hoNDArray<_real> > host_prior = read_nd_array<_real >(vm["prior"].as<std::string>().c_str());
+
+		host_prior->reshape(&rhs_dims);
+		prior = boost::shared_ptr<cuNDArray<_real> >(new cuNDArray<_real>(host_prior.get()));
+		_real offset = _real(0.01);
+		//cuNDA_add(offset,prior.get());
+
+
+		if (vm.count("prior-weight")){
 
 			//boost::shared_ptr<cuImageOperator<_real > > I (new cuImageOperator<_real >());
- 			boost::shared_ptr<identityOperator<cuNDArray<_real > > > I (new identityOperator<cuNDArray<_real > >());
+			boost::shared_ptr<identityOperator<cuNDArray<_real > > > I (new identityOperator<cuNDArray<_real > >());
 			//I->compute(prior.get());
 
 			I->set_weight(vm["prior-weight"].as<float>());
@@ -233,28 +267,32 @@ int main( int argc, char** argv)
 		} else {
 			std::cout << "WARNING: Prior image set, but weight not specified" << std::endl;
 		}
- 		solver.set_x0(prior);
-   }
+		solver.set_x0(prior);
+	}
 
-  solver.set_encoding_operator(enc);
+	solver.set_encoding_operator(enc);
 
-  boost::shared_ptr< cuNDArray<_real> > cgresult = solver.solve(projections.get());
+	//boost::shared_ptr< cuNDArray<_real> > cgresult(new cuNDArray<_real>(&rhs_dims));
+	//clear(cgresult.get());
+  //E->mult_MH(projections.get(),cgresult.get());
+  //P->apply(cgresult.get(),cgresult.get());
+	boost::shared_ptr< cuNDArray<_real> > cgresult = solver.solve(projections.get());
 
-	cuNDArray<_real> tp = *projections_old;
+	//cuNDArray<_real> tp = *projections;
 
-	E->mult_M(cgresult.get(),&tp);
-	axpy(-1.0f,projections_old.get(),&tp);
-	std::cout << "Total residual " << nrm2(&tp) << std::endl;
+	//E->mult_M(cgresult.get(),&tp);
+	//axpy(-1.0f,projections.get(),&tp);
+	//std::cout << "Total residual " << nrm2(&tp) << std::endl;
 
 
-   boost::shared_ptr< hoNDArray<_real> > host_result = cgresult->to_host();
-   //write_nd_array<_real>(host_result.get(), (char*)parms.get_parameter('f')->get_string_value());
-   std::stringstream ss;
-   	for (int i = 0; i < argc; i++){
-   		ss << argv[i] << " ";
-   	}
+	boost::shared_ptr< hoNDArray<_real> > host_result = cgresult->to_host();
+	//write_nd_array<_real>(host_result.get(), (char*)parms.get_parameter('f')->get_string_value());
+	std::stringstream ss;
+	for (int i = 0; i < argc; i++){
+		ss << argv[i] << " ";
+	}
 
-   	saveNDArray2HDF5<3>(host_result.get(),outputFile,physical_dims,origin,ss.str(), solver.get_max_iterations());
+	saveNDArray2HDF5<3>(host_result.get(),outputFile,physical_dims,origin,ss.str(), solver.get_max_iterations());
 
 }
 

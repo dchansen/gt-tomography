@@ -9,6 +9,6 @@ MESSAGE("CUDA LIBRARIES:  ${CUDA_LIBRARIES}")
 
 #target_link_libraries(radial_sense_sbc tomography_operators gpuoperators cpucore gpucore gpuparallelmri gpunfft hostutils gpusolvers ${CUDA_LIBRARIES})
 
-target_link_libraries(radial_sense_ncg tomography_operators tomography_solvers gpuoperators cpucore gpucore gpuparallelmri gpunfft hostutils gpusolvers ${CUDA_LIBRARIES})
+target_link_libraries(radial_sense_ncg tomography_operators tomography_solvers gpuoperators cpucore gpucore gpuparallelmri gpunfft hostutils gpusolvers ${CUDA_LIBRARIES} ${CULA_LIBRARIES})
 #target_link_libraries(radial_sense_fista tomography_operators gpuoperators cpucore gpucore gpuparallelmri gpunfft hostutils gpusolvers ${CUDA_LIBRARIES})
 

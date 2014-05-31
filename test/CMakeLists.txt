@@ -23,7 +23,7 @@ target_link_libraries(test_all
   ${BOOST_LIBRARIES}	
   ${GTEST_LIBRARIES} 
   ${CUDA_LIBRARIES}
-  ${CULA_LIBRARIES} 
+  ${CULA_LIBRARIES}
   )
 
 add_test(test_all test_all)

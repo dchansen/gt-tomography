@@ -38,17 +38,17 @@ template< class T, class R, unsigned int D > __inline__ __host__ __device__ vect
   for(unsigned int i=0; i<D; i++ )  res.vec[i]=v1.vec[i]/v2.vec[i];
   return res;
 }
-*/
+ */
 template< class T, unsigned int D > __inline__ __host__ __device__ vector_td<T,D> remove_neg ( const vector_td<T,D> &v1)
-{
-  vector_td<T,D> res;
-  for(unsigned int i=0; i<D; i++ ){
-	  if (v1.vec[i]<0){ res.vec[i] =0;}
-	  else {res.vec[i]=v1.vec[i];}
-  }
+								{
+	vector_td<T,D> res;
+	for(unsigned int i=0; i<D; i++ ){
+		if (v1.vec[i]<0){ res.vec[i] =0;}
+		else {res.vec[i]=v1.vec[i];}
+	}
 
-  return res;
-}
+	return res;
+								}
 
 
 
@@ -169,74 +169,66 @@ template <class REAL> __global__ void Gadgetron::backwards_kernel(const REAL* __
 
 }
 
-/*
-template <class REAL> __global__ void backwards_kernel(REAL* projections, REAL* image,
-		vector_td<REAL,3> * splines,  const vector_td<REAL,3> dims,
-		const typename uintd<3>::Type ndims, const int proj_dim){
 
-	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
+template <class REAL> __global__ void Gadgetron::space_carver_kernel(const REAL* __restrict__ projections, REAL* __restrict__ image,
+		const vector_td<REAL,3> * __restrict__ splines,  const vector_td<REAL,3> origin, const vector_td<REAL,3> dims, REAL cutoff,
+		const typename intd<3>::Type ndims, const int proj_dim, const int offset){
 
+	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
 	if (idx < proj_dim){
-		const int sid = idx*4;
+		REAL proj = projections[idx];
+
+		//Only use projections below the cutoff
+		if (proj <= cutoff){
+			const int sid = idx*4;
 			vector_td<int,3> co;
-			int id;
+			const vector_td<REAL,3> half_dims = dims/((REAL)2.0);
+			int id,id_old;
 			REAL t;
-			//REAL length = lengths[idx];
-			//Load in points to registers and calculate spline coefficients
-			vector_td<REAL,3> a = splines[sid];
-			vector_td<REAL,3> b = splines[sid+1];
-			vector_td<REAL,3> c = splines[sid+2];
-			vector_td<REAL,3> d = splines[sid+3];
-			REAL proj = projections[idx];
 
-
+			//Load in points to registers
+			vector_td<REAL,3> p0 = splines[sid]-origin;
+			vector_td<REAL,3> p1 = splines[sid+1]-origin;
+			vector_td<REAL,3> m0 = splines[sid+2];
+			vector_td<REAL,3> m1 = splines[sid+3];
+			REAL length = norm(p1-p0);
+			m0 *= length/norm(m0);
+			m1 *= length/norm(m1);
 
 			vector_td<REAL,3> p;
-			vector_td<REAL,3> p_old=d;
-			co = to_intd(((p_old+(dims/2))*ndims)/dims);
+			vector_td<REAL,3> p_old=p0+half_dims;
+			co = vector_td<int,3>((p_old)*ndims/dims);
+			co = amax(amin(co,ndims-1),0);
+			id_old=co_to_idx(co,ndims);
 
-			vector_td<REAL,3> dir,planes,tn;
+			int steps =max(ndims)*STEPS;
+			for (int i = 1; i < steps; i++){
 
-			t=0;
-			//for (int j = 0; j < max(ndims)*2; j++){
-			while (t < 1.0){
-				dir = sgn(3*a*t*t+2*b*t+c);
-				tn.vec[0] = t;
-				tn.vec[1] = t;
-				tn.vec[2] = t;
-				planes= (co+remove_neg(dir))*(dims/ndims)-(dims/2);
-				//for (int i = 0; i < NEWTON_STEPS; i++){
-				for (int i=0; i < NEWTON_STEPS; i++){
-
-					tn -= (a*tn*tn*tn+b*tn*tn+c*tn+d-planes)/(3*a*tn*tn+2*b*tn+c);
-				}
-				for (int i=0; i < 3; i++){
-					if (abs(3*a.vec[i]*t*t+2*b.vec[i]*t+c.vec[i]) < 1e-8) tn.vec[i]=t+1;
-				}
-				//int min_index = argmin_not_nan(tn);
-				int min_index = argmin(tn);
-				//if (isnan(tn.vec[min_index]) ) return; // Things are really really really bad.
-				if (t > tn.vec[min_index])tn.vec[min_index] = 0.0/0.0;
-				t = tn.vec[min_index];
-
-
-
-				p = a*t*t*t+b*t*t+c*t+d;
-				co.vec[min_index] += dir.vec[min_index];
-
+				t = REAL(i)/(steps);
+				p=t*m0+p0+half_dims;
+				co = vector_td<int,3>(p*ndims/dims);
+				co = amax(amin(co,ndims-1),0);
 				id=co_to_idx(co,ndims);
-				if (min(co) >= 0 && co < ndims ) atomicAdd(&(image[id]),norm(p_old-p)*proj);
-				//if (min(co) >= 0 && co < ndims) image[id]=max((REAL)j,image[id]);
-				//if (min(co) >= 0 && co < ndims) image[id]+=proj*length;
-				p_old = p;
+				//REAL step_length = norm(((dt*dt*dt)+3*t*t*dt+3*t*dt*dt)*a+(dt*dt+2*t*dt)*b+c*dt);
 
 
+				if(id_old != id){
+					//Set to 0.Ignore collisions.
+					image[id_old]=0;
+					//atomicExch(&(image[id_old]),REAL());
+					//atomicCAS(&(image[id_old]),1,0);
+				}
+				id_old=id;
+				p_old=p;
+				//co = to_intd((p+dims/2)*ndims/dims);
+				//co = amax(amin(co,ndims-1),0);
 			}
+		}
 
 	}
 
 }
-*/
+
 
 template <class REAL> __global__ void Gadgetron::crop_splines_kernel(vector_td<REAL,3> * splines, REAL* projections, const  vector_td<REAL,3>  dims, const  vector_td<REAL,3>  origin, const int proj_dim,const REAL background,int offset)
 {
@@ -282,14 +274,100 @@ template <class REAL> __global__ void Gadgetron::crop_splines_kernel(vector_td<R
 
 		t = 0;
 		for (int i = 0; i < MAXSTEP; i++){
-				told = t;
-				t = ((REAL) i)/MAXSTEP;
-				//t2 = t*t;
+			told = t;
+			t = ((REAL) i)/MAXSTEP;
+			//t2 = t*t;
 
-				//p = (2*t3-3*t2+1)*p0+(t3-2*t2+t)*m0+(3*t2-2*t3)*p1+(t3-t2)*m1+half_dims;
-				p=p1-t*m1+half_dims;
-				if ( min(p) >= 0 && p < dims) break;
+			//p = (2*t3-3*t2+1)*p0+(t3-2*t2+t)*m0+(3*t2-2*t3)*p1+(t3-t2)*m1+half_dims;
+			p=p1-t*m1+half_dims;
+			if ( min(p) >= 0 && p < dims) break;
 
+		}
+		t = told;
+
+		pt1=p1-t*m1;
+		REAL deltaLength = norm(p1-pt1)+norm(p0-pt0);
+		projections[idx] -= deltaLength*background;
+		splines[sid]=pt0;
+		splines[sid+1]=pt1;
+
+
+	}
+}
+
+template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector_td<REAL,3> * splines, REAL* projections,REAL* hull_mask,const vector_td<int,3> ndims, const  vector_td<REAL,3>  dims, const  vector_td<REAL,3>  origin, const int proj_dim,const REAL background,int offset)
+{
+	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
+
+	if (idx < proj_dim){
+		const int sid = idx*4;
+
+		const vector_td<REAL,3> half_dims = dims/((REAL)2.0);
+
+
+		vector_td<int,3> co;
+		vector_td<REAL,3> pt0, pt1;
+		int id, id_old;
+		REAL t,told;
+		//Load in points to registers
+		vector_td<REAL,3> p0 = splines[sid]-origin;
+		vector_td<REAL,3> p1 = splines[sid+1]-origin;
+		vector_td<REAL,3> m0 = splines[sid+2];
+		vector_td<REAL,3> m1 = splines[sid+3];
+		REAL length = norm(p1-p0);
+		m0 *= length/norm(m0);
+		m1 *= length/norm(m1);
+
+		vector_td<REAL,3> p;
+		vector_td<REAL,3> p_old=p0+half_dims;
+		co = vector_td<int,3>((p_old)*ndims/dims);
+		co = amax(amin(co,ndims-1),0);
+		id_old=co_to_idx(co,ndims);
+
+		int steps =max(ndims)*STEPS;
+		t = 0;
+		for (int i = 1; i < steps; i++){
+			told = t;
+			t = REAL(i)/(steps);
+			p=t*m0+p0+half_dims;
+			co = vector_td<int,3>(p*ndims/dims);
+			co = amax(amin(co,ndims-1),0);
+			id=co_to_idx(co,ndims);
+			//REAL step_length = norm(((dt*dt*dt)+3*t*t*dt+3*t*dt*dt)*a+(dt*dt+2*t*dt)*b+c*dt);
+			if(id_old != id){
+
+				if (hull_mask[id] > 0) break;
+				//atomicCAS(&(image[id_old]),1,0);
+			}
+			id_old=id;
+			p_old=p;
+			//co = to_intd((p+dims/2)*ndims/dims);
+			//co = amax(amin(co,ndims-1),0);
+		}
+		t = told;
+		//t2 = t*t;
+
+		//pt0 =  (2*t3-3*t2+1)*p0+(t3-2*t2+t)*m0+(3*t2-2*t3)*p1+(t3-t2)*m1; //Calculate new starting point
+		pt0=t*m0+p0;
+
+		t = 0;
+		for (int i = 0; i < steps; i++){
+			told = t;
+			t = ((REAL) i)/MAXSTEP;
+			//t2 = t*t;
+
+			//p = (2*t3-3*t2+1)*p0+(t3-2*t2+t)*m0+(3*t2-2*t3)*p1+(t3-t2)*m1+half_dims;
+			p=p1-t*m1+half_dims;
+			co = vector_td<int,3>(p*ndims/dims);
+			co = amax(amin(co,ndims-1),0);
+			id=co_to_idx(co,ndims);
+			//REAL step_length = norm(((dt*dt*dt)+3*t*t*dt+3*t*dt*dt)*a+(dt*dt+2*t*dt)*b+c*dt);
+			if(id_old != id){
+				if (hull_mask[id] > 0) break;
+				//atomicCAS(&(image[id_old]),1,0);
+			}
+			id_old=id;
+			p_old=p;
 		}
 		t = told;
 
@@ -428,9 +506,14 @@ template __global__ void Gadgetron::backwards_kernel<float>(const float* __restr
 		const vector_td<float,3> * __restrict__ splines,  const vector_td<float,3> dims,
 		const typename intd<3>::Type ndims, const int proj_dim, const int offset);
 
+template __global__ void Gadgetron::space_carver_kernel<float>(const float* __restrict__ projections, float* __restrict__ image,
+		const vector_td<float,3> * __restrict__ splines, const vector_td<float,3> origin, const vector_td<float,3> dims, float cutoff,
+		const typename intd<3>::Type ndims, const int proj_dim, const int offset);
+
 template __global__ void Gadgetron::crop_splines_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims, const  vector_td<float,3>  origin,const int proj_dim,float background,int offset);
 template __global__ void Gadgetron::rescale_directions_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims,  const int proj_dim, const int offset);
 
+template __global__ void Gadgetron::crop_splines_hull_kernel<float>(vector_td<float,3> * splines, float* projections,float* hull_mask,const vector_td<int,3,> ndims, const  vector_td<float,3>  dims, const  vector_td<float,3>  origin, const int proj_dim,const float background,int offset);
 
 template __global__ void Gadgetron::points_to_coefficients<float>(vector_td<float,3> * splines, int dim,int offset);
 
@@ -439,7 +522,7 @@ template __global__  void Gadgetron::length_correction_kernel<float>(vector_td<f
 template<> __global__ void forward_kernel<float>(float* image, float* projections,
 		vector_td<float,3> * splines,  const vector_td<float,3> dims,
 		const typename uintd<3>::Type ndims, const int proj_dim, const int offset);
-		*/
+ */
 /*
 
 
@@ -449,4 +532,4 @@ template<> __global__ void rescale_splines_kernel<float>;
 template<> __global__ void points_to_coefficients<float>;
 
 template<> __global__ void spline_trapz_kernel<float>;
-*/
+ */

@@ -34,5 +34,9 @@ protected:
   				  else x[i]= T(1)/x[i];
   	}
   }
+
+  virtual void iteration_callback(hoCuNDArray<T>*,int i,REAL,REAL){
+  	//std::cout << "Free memory: " << cudaDeviceManager::Instance()->getFreeMemory() << std::endl;
+  };
 };
 }

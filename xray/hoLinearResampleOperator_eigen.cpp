@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <algorithm>
+
 #include <Eigen/Core>
 
 namespace Gadgetron{

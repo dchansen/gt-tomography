@@ -136,7 +136,7 @@ int main(int argc, char** argv)
   E->setup( matrix_size, matrix_size_os, kernel_width );
 
   // Notify encoding operator of dcw
-  E->set_dcw(dcw) ;
+  //E->set_dcw(dcw) ;
 
   // Define rhs buffer
   //
@@ -229,7 +229,7 @@ int main(int argc, char** argv)
 
   // Setup conjugate gradient solver
   cuNCGSolver<_complext> cg;
-  //cg.set_preconditioner ( D );  // preconditioning matrix
+  cg.set_preconditioner ( D );  // preconditioning matrix
   cg.set_max_iterations( num_iterations );
   cg.set_tc_tolerance( 1e-6 );
   cg.set_output_mode( cuCgSolver< _complext>::OUTPUT_VERBOSE );
