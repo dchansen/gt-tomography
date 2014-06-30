@@ -10,7 +10,7 @@
 #include "hoCuNDArray.h"
 
 
-#include "hoCuProtonSubsetOperator.h"
+#include "splineBackprojectionOperator.h"
 #include "hoNDArray_fileio.h"
 #include "check_CUDA.h"
 
@@ -48,12 +48,12 @@ namespace po = boost::program_options;
 int main( int argc, char** argv)
 {
 
-  //
-  // Parse command line
-  //
+	//
+	// Parse command line
+	//
 
-  _real background =  0.00106;
-  std::string dataName;
+	_real background =  0.00106;
+	std::string dataName;
 	std::string outputFile;
 	vector_td<int,3> dimensions;
 	vector_td<float,3> physical_dims;
@@ -61,16 +61,18 @@ int main( int argc, char** argv)
 	int iterations;
 	int device;
 	int subsets;
+	bool use_hull;
 	po::options_description desc("Allowed options");
 	desc.add_options()
-			("help", "produce help message")
-			("data,D", po::value<std::string>(&dataName)->default_value("data.hdf5"), "HDF5 file containing projections and splines")
-			("dimensions,d", po::value<vector_td<int,3> >(&dimensions)->default_value(vector_td<int,3>(512,512,1)), "Pixel dimensions of the image")
-			("size,S", po::value<vector_td<float,3> >(&physical_dims)->default_value(vector_td<float,3>(20,20,5)), "Dimensions of the image")
-			("center,c", po::value<vector_td<float,3> >(&origin)->default_value(vector_td<float,3>(0,0,0)), "Center of the reconstruction")
-			("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
-			("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-			;
+					("help", "produce help message")
+					("data,D", po::value<std::string>(&dataName)->default_value("data.hdf5"), "HDF5 file containing projections and splines")
+					("dimensions,d", po::value<vector_td<int,3> >(&dimensions)->default_value(vector_td<int,3>(512,512,1)), "Pixel dimensions of the image")
+					("size,S", po::value<vector_td<float,3> >(&physical_dims)->default_value(vector_td<float,3>(20,20,5)), "Dimensions of the image")
+					("center,c", po::value<vector_td<float,3> >(&origin)->default_value(vector_td<float,3>(0,0,0)), "Center of the reconstruction")
+					("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
+					("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+					("use_hull",po::value<bool>(&use_hull)->default_value(true),"Use hull estimate")
+					;
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -86,6 +88,7 @@ int main( int argc, char** argv)
 		std::cout << it->first << ": ";
 		if (a.type() == typeid(std::string)) std::cout << it->second.as<std::string>();
 		else if (a.type() == typeid(int)) std::cout << it->second.as<int>();
+		else if (a.type() == typeid(bool)) std::cout << it->second.as<bool>();
 		else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
 		else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
 		else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
@@ -95,11 +98,29 @@ int main( int argc, char** argv)
 	cudaSetDevice(device);
 	//cudaDeviceReset();
 
-  std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
+	std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
+	boost::shared_ptr< protonDataset<hoCuNDArray> > data(new protonDataset<hoCuNDArray>(dataName) );
+	if (use_hull) //If we don't estimate the hull, we should use a larger volume
+		data->preprocess(rhs_dims,physical_dims,use_hull,background);
+	else {
+		floatd3 physical_dims2 = physical_dims*sqrt(2.0f);
+		data->preprocess(rhs_dims,physical_dims2,use_hull,background);
+	}
 	hoCuFilteredProton E;
-	E.load_data(dataName);
-	boost::shared_ptr< hoCuNDArray<_real> > result = E.calculate(rhs_dims,physical_dims,origin);
+
+
+	boost::shared_ptr< hoCuNDArray<_real> > result = E.calculate(rhs_dims,physical_dims,data);
+
+	splineBackprojectionOperator<hoCuNDArray> op(data,physical_dims);
+
+	//hoCuNDArray<float> tmp(*data->get_projections());
+	//op.mult_M(result.get(),&tmp);
+
+	//Calculate correct scaling factor because someone cannot be bother to calculate it by hand...
+	//float s = dot(data->get_projections().get(),&tmp)/dot(&tmp,&tmp);
+	//*result *= s;
+
 	std::cout << "Calculation done, saving " << std::endl;
 	//write_nd_array<_real>(result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;
@@ -107,6 +128,8 @@ int main( int argc, char** argv)
 		ss << argv[i] << " ";
 	}
 	saveNDArray2HDF5<3>(result.get(),outputFile,physical_dims,origin,ss.str(), -1);
+
+	std::cout << "Mean: " << sum(result.get())/result->get_number_of_elements() << std::endl;
 }
 
 

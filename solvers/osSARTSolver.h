@@ -13,7 +13,8 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 	public:
 		osSARTSolver() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 			_iterations=10;
-			_beta = REAL(0);
+			_beta = REAL(1);
+			_gamma = 0;
 			non_negativity_=false;
 		}
 		virtual ~osSARTSolver(){};
@@ -26,6 +27,7 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 		 * @param beta
 		 */
 		void set_beta(REAL beta){_beta = beta;}
+		void set_gamma(REAL gamma){_gamma = gamma;}
 
 		boost::shared_ptr<ARRAY_TYPE> solve(ARRAY_TYPE* in){
 			//boost::shared_ptr<ARRAY_TYPE> rhs = compute_rhs(in);
@@ -55,7 +57,7 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 
 			ARRAY_TYPE ones_projection(in->get_dimensions().get());
 			ARRAY_TYPE tmp_image(image_dims.get());
-			tmp_image.fill(ELEMENT_TYPE(1));
+			fill(&tmp_image,ELEMENT_TYPE(1));
 			this->encoding_operator_->mult_M(&tmp_image,&ones_projection,false);
 			clamp_min(&ones_projection,ELEMENT_TYPE(1e-6));
 			reciprocal_inplace(&ones_projection);
@@ -63,7 +65,7 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 			std::vector<boost::shared_ptr<ARRAY_TYPE> > ones_projections = this->encoding_operator_->projection_subsets(&ones_projection);
 
 			ARRAY_TYPE tmp_projection(in->get_dimensions());
-			tmp_projection.fill(ELEMENT_TYPE(1));
+			fill(&tmp_projection,ELEMENT_TYPE(1));
 			std::vector<boost::shared_ptr<ARRAY_TYPE> > tmp_projections = this->encoding_operator_->projection_subsets(&tmp_projection);
 
 			std::vector<ARRAY_TYPE> ones_images;
@@ -95,13 +97,15 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 					*tmp_projections[subset] *= *ones_projections[subset];
 					this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 					tmp_image *= ones_images[subset];
-					axpy(REAL(1.0/(1+_beta*i)),&tmp_image,x);
+					axpy(REAL(_beta/(1+_gamma*i)),&tmp_image,x);
+					//axpy(REAL(_beta),&tmp_image,x);
 					if (non_negativity_){
 						clamp_min(x,ELEMENT_TYPE(0));
 					}
 
 				}
 				std::reverse(isubsets.begin(),isubsets.end());
+				//std::random_shuffle(isubsets.begin(),isubsets.end());
 				ARRAY_TYPE tmp_proj(*in);
 							clear(&tmp_proj);
 							this->encoding_operator_->mult_M(x,&tmp_proj,false);
@@ -120,7 +124,7 @@ template <class ARRAY_TYPE> class osSARTSolver : public solver< ARRAY_TYPE,ARRAY
 
 protected:
 	int _iterations;
-	REAL _beta;
+	REAL _beta, _gamma;
 	bool non_negativity_;
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;
 

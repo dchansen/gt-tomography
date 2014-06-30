@@ -1,7 +1,7 @@
 #pragma once
 #include "subsetOperator.h"
 #include "hoCuNDArray.h"
-#include "hoCuOperatorPathBackprojection.h"
+#include "splineBackprojectionOperator.h"
 #include "hdf5.h"
 #include "hdf5_hl.h"
 #include <numeric>
@@ -9,8 +9,18 @@
 #include <thrust/functional.h>
 #include "hoCuParallelProjection.h"
 #include "hoNDFFT.h"
+#include "cuNDFFT.h"
+
+#include "hoNDArray_fileio.h"
+
 #include <boost/math/constants/constants.hpp>
-#define DEBUG 1
+
+#include "proton_utils.h"
+
+#define MAX_THREADS_PER_BLOCK 128
+#define BLOCKS_PER_GRID 65535
+#define MAX_BLOCKS 4096*4
+
 namespace Gadgetron{
 class hoCuFilteredProton {
 
@@ -18,8 +28,10 @@ public:
 	hoCuFilteredProton() {
 
 	}
+
+
 	//Terrible terrible name. Penguin_sauce would be as good...or better, 'cos penguin
-	boost::shared_ptr<hoCuNDArray<float> >  calculate(std::vector<size_t> dims,vector_td<float,3> physical_dims,vector_td<float,3> origin){
+	boost::shared_ptr<hoCuNDArray<float> >  calculate(std::vector<size_t> dims,vector_td<float,3> physical_dims, boost::shared_ptr<protonDataset<hoCuNDArray> > data){
 
 		cuNDArray<float> image(dims);
 		clear(&image);
@@ -32,222 +44,159 @@ public:
 			if (dims[i] == 1) dims_proj.push_back(1);
 			else{
 				dims_proj.push_back(dims[i]*2);
+				//dims_proj.push_back(dims[i]);
 				physical_dims_proj[i] *= std::sqrt(2.0f);
+				//physical_dims_proj[i] *= 0.5;
 			}
 		}
 
-		hoCuNDArray<float> ramp = *calc_filter(dims_proj[0]);
-		unsigned int ngroups = spline_arrays.size();
+		unsigned int oversampling = 4;
 
+		cuNDArray<double_complext> ramp = *calc_filter(dims_proj[0]*oversampling,physical_dims[0]/(dims[0]));
+		//ramp *= 2.0f*oversampling;
+		unsigned int ngroups = data->get_number_of_groups();
+
+		cuNDArray<float>* hull = 0x0;
+		if (data->get_hull()) hull = new cuNDArray<float>(*data->get_hull());
 		for (unsigned int group = 0; group < ngroups; group++){
-			std::cout << "Penguin processing group " << group << std::endl;
-			hoCuOperatorPathBackprojection<float> E;
-			E.setup(spline_arrays[group],physical_dims_proj, projection_arrays[group],origin);
-			std::cout << "Setup done " << std::endl;
-			hoCuNDArray<float> projection(dims_proj);
+			//std::cout << "Penguin processing group " << group << std::endl;
+			boost::shared_ptr<cuNDArray<float> > cu_paths(new cuNDArray<float>(*data->get_projection_group(group)));
+			cuNDArray<floatd3>  cu_splines(*data->get_spline_group(group));
+			rotate_splines(&cu_splines, -data->get_angle(group));
+			//std::cout << "Setup done " << std::endl;
+			cuNDArray<float> projection(dims_proj);
+			clear(&projection);
 			{
-				hoCuNDArray<float> projection_nrm(dims_proj);
-				hoCuNDArray<float> ones(projection_arrays[group]->get_dimensions());
-				fill<hoNDArray<float> >(&ones,1.0f);
-				E.mult_MH(projection_arrays[group].get(),&projection);
-				E.mult_MH(&ones,&projection_nrm);
+				cuNDArray<float> projection_nrm(dims_proj);
+				clear(&projection_nrm);
+				cuNDArray<float> ones(cu_paths->get_dimensions());
+				fill(&ones,1.0f);
+
+				protonBackprojection(&projection,cu_paths.get(),&cu_splines,physical_dims_proj);
+				protonBackprojection(&projection_nrm,&ones,&cu_splines,physical_dims_proj);
 				clamp(&projection_nrm,1e-6f,1e8f,1.0f,1.0f);
 				projection /= projection_nrm;
 				CHECK_FOR_CUDA_ERROR();
 			}
-			std::cout << "Spline projection done " << std::endl;
-			boost::shared_ptr<hoNDArray<float_complext> > proj_complex = real_to_complex<float_complext>(&projection);
-			hoNDFFT<float>::instance()->fft(proj_complex.get(),0);
-			*proj_complex *= ramp;
+			std::vector<size_t> batch_dims = *projection.get_dimensions();
+			{
+				boost::shared_ptr<cuNDArray<double> > double_proj = convert_to<float,double>(&projection);
+				uint64d3 pad_dims(batch_dims[0]*oversampling, batch_dims[1], batch_dims[2]);
+				boost::shared_ptr<cuNDArray<double_complext> > proj_complex;
+				{
+					boost::shared_ptr< cuNDArray<double> > padded_projection = pad<double,3>( pad_dims, double_proj.get() );
+					//std::cout << "Spline projection done " << std::endl;
+					proj_complex = real_to_complex<double_complext>(padded_projection.get());
+				}
+				cuNDFFT<double>::instance()->fft(proj_complex.get(),0u);
+				*proj_complex *= ramp;
+				cuNDFFT<double>::instance()->ifft(proj_complex.get(),0u);
+				//*proj_complex /= (float)ramp.get_size(0);
+				//*proj_complex /= (float)ramp.get_size(0);
+				*proj_complex *= 2*boost::math::constants::pi<double>()/(physical_dims_proj[0]*oversampling);
+				//ramp *= physical_dims_proj[0];
 
-			hoNDFFT<float>::instance()->ifft(proj_complex.get(),0);
-			projection = *real(proj_complex.get());
+
+				uint64d3 crop_offsets(batch_dims[0]*(oversampling-1)/2, 0, 0);
+				crop<double,3>( crop_offsets, real(proj_complex.get()).get(), double_proj.get());
+				convert_to<double,float>(double_proj.get(),&projection);
+			}
+			//projection = *real(proj_complex.get());
 			//write_nd_array(&projection,"projection.real");
-			CHECK_FOR_CUDA_ERROR();
-			std::cout << "Filtering done " << std::endl;
-			parallel_backprojection(&projection,&image,angles[group],physical_dims,physical_dims_proj);
-			CHECK_FOR_CUDA_ERROR();
-			std::cout << "Backprojection done " << std::endl;
-		}
+			//CHECK_FOR_CUDA_ERROR();
+			//std::cout << "Filtering done " << std::endl;
+			parallel_backprojection(&projection,&image,data->get_angle(group),physical_dims,physical_dims_proj);
+			//CHECK_FOR_CUDA_ERROR();
+			//std::cout << "Backprojection done " << std::endl;
 
+		}
+		if (hull) image *= *hull;
+		//image *= float(dims_proj[0])/(float(ngroups)*2*boost::math::constants::pi<float>());
+		image *= 1.0f/float(ngroups);
+
+		if (hull) delete hull;
+		//*out *= float(dims_proj[0]);
+		//*out *= 2*4*boost::math::constants::pi<float>()*boost::math::constants::pi<float>()/float(ngroups);
 		boost::shared_ptr<hoCuNDArray<float> > out(new hoCuNDArray<float>);
 		image.to_host(out.get());
-
-		*out *= 2*4*boost::math::constants::pi<float>()*boost::math::constants::pi<float>()/float(ngroups);
+		//*out *= *data->get_hull();
 		return out;
 
 	}
 
-	void load_data(std::string filename){
-		hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-		std::vector<std::string> groupnames = group_paths("/",file_id);
-
-		size_t num_element = get_num_elements(file_id,groupnames);
-
-		std::vector<size_t> dims;
-		dims.push_back(num_element);
-
-
-
-		std::vector<size_t> spline_dims;
-		spline_dims.push_back(4);
-		spline_dims.push_back(num_element);
-
-		spline_data = boost::shared_ptr<hoCuNDArray<vector_td<float,3> > >(new hoCuNDArray<vector_td<float,3> >(spline_dims));
-		projection_data =boost::shared_ptr<hoCuNDArray<float > >(new hoCuNDArray<float>(dims));
-
-		spline_arrays = std::vector< boost::shared_ptr<hoCuNDArray<vector_td<float,3> > > >();
-		projection_arrays=std::vector< boost::shared_ptr<hoCuNDArray<float > > >();
-
-		angles = std::vector<float>();
-		load_fromtable(file_id,groupnames);
-
-	}
-
-
-
-
-
 protected:
 
-	boost::shared_ptr<hoCuNDArray<float> > calc_filter(size_t width){
+/*
+	boost::shared_ptr<cuNDArray<double_complext> > calc_filter(size_t width,float spacing){
 		std::vector<size_t > filter_size;
 		filter_size.push_back(width);
-		boost::shared_ptr< hoCuNDArray<float> >  filter(new hoCuNDArray<float>(filter_size));
+		boost::shared_ptr< hoCuNDArray<double_complext> >  filter(new hoCuNDArray<double_complext>(filter_size));
 
-		float* filter_ptr = filter->get_data_ptr();
+		double_complext* filter_ptr = filter->get_data_ptr();
 
-		for (size_t i = 0; i < width/2; i++)
-			filter_ptr[i] = (width/2-float(i))/float(width/2);
-		for (size_t i = 0; i < width/2; i++)
-			filter_ptr[i+width/2] = (float(i))/float(width/2);
+		const float A2 = width*width;
 
-
-		return filter;
-
-
-	}
-
-	struct Spline{
-		float x,y,z,x2,y2,z2;
-		float dirx,diry,dirz,dirx2,diry2,dirz2;
-	};
-
-
-
-	size_t get_num_elements(hid_t file_id, std::vector<std::string>& groupnames){
-		std::string projections_name = "projections";
-		std::string splines_name = "splines";
-		size_t total_elements = 0;
-
-		for (int i = 0; i < groupnames.size(); i++){
-			hsize_t nfields,nrecords,nrecords2;
-			herr_t err = H5TBget_table_info (file_id, (groupnames[i]+projections_name).c_str(), &nfields, &nrecords );
-			err = H5TBget_table_info (file_id, (groupnames[i]+splines_name).c_str(), &nfields, &nrecords2 );
-
-			if (nrecords != nrecords2) throw std::runtime_error("Illegal data file: number of splines and projections do not match");
-			total_elements += nrecords;
+		for( int i=0; i<width/2; i++ ) {
+			double k = double(i);
+			filter_ptr[i+width/2]=k;
+			//filter_ptr[i+width/2] = k*A2/(A2-k*k)*std::exp(-A2/(A2-k*k)); // From Guo et al, Journal of X-Ray Science and Technology 2011, doi: 10.3233/XST-2011-0294
 		}
-		return total_elements;
-	}
-
-	void load_fromtable(hid_t file_id, std::vector<std::string>& groupnames){
-
-		const size_t dst_sizes[12] = { sizeof(float) ,sizeof(float), sizeof(float),
-				sizeof(float) ,sizeof(float), sizeof(float),
-				sizeof(float) ,sizeof(float), sizeof(float),
-				sizeof(float) ,sizeof(float), sizeof(float)};
-		const size_t dst_offset[12] = { HOFFSET( Spline, x ),HOFFSET( Spline, y),HOFFSET( Spline, z ),
-				HOFFSET( Spline, x2 ),HOFFSET( Spline, y2),HOFFSET( Spline, z2 ),
-				HOFFSET( Spline, dirx ),HOFFSET( Spline, diry ),HOFFSET( Spline, dirz ),
-				HOFFSET( Spline, dirx2 ),HOFFSET( Spline, diry2 ),HOFFSET( Spline, dirz2 )};
-
-		std::string splines_name = "splines";
-
-
-
-		const size_t float_size[1] = {sizeof(float) };
-		const size_t float_offset[1] = {0};
-		std::string projections_name = "projections";
-
-		hid_t strtype;                     /* Datatype ID */
-		herr_t status;
-
-
-		size_t offset = 0;
-
-		for (int i = 0; i < groupnames.size(); i++){
-			hsize_t nfields,nrecords;
-			herr_t err = H5TBget_table_info (file_id, (groupnames[i]+splines_name).c_str(), &nfields, &nrecords );
-			if (err < 0) throw std::runtime_error("Illegal hdf5 dataset provided");
-			std::vector<size_t> spline_dims;
-			spline_dims.push_back(4);
-			spline_dims.push_back(nrecords);
-			boost::shared_ptr<hoCuNDArray<vector_td<float,3> > > splines(new hoCuNDArray<vector_td<float,3> >(spline_dims,spline_data->get_data_ptr()+offset*4));
-			err = H5TBread_table (file_id, (groupnames[i]+splines_name).c_str(), sizeof(Spline),  dst_offset, dst_sizes,  splines->get_data_ptr());
-			if (err < 0) throw std::runtime_error("Unable to read splines from hdf5 file");
-			spline_arrays.push_back(splines);
-
-
-			std::vector<size_t> proj_dims;
-			proj_dims.push_back(nrecords);
-
-			boost::shared_ptr<hoCuNDArray<float > > projections(new hoCuNDArray<float >(proj_dims,projection_data->get_data_ptr()+offset));
-			err = H5TBread_table (file_id, (groupnames[i]+projections_name).c_str(), sizeof(float),  float_offset, float_size,  projections->get_data_ptr());
-			if (err < 0) throw std::runtime_error("Unable to read projections from hdf5 file");
-			projection_arrays.push_back(projections);
-			offset += nrecords;
-
-			float angle;
-			err = H5LTget_attribute_float(file_id,groupnames[i].c_str(),"angle",&angle);
-			if (err < 0 ) throw std::runtime_error("No angle provided in the group. Aborting");
-			angles.push_back(angle*boost::math::constants::pi<float>()/180);
-
+		for( int i=1; i<=width/2; i++ ) {
+			double k = double(i);
+			filter_ptr[width/2-i] = k;
+			//filter_ptr[width/2-i] = k*A2/(A2-k*k)*std::exp(-A2/(A2-k*k)); // From Guo et al, Journal of X-Ray Science and Technology 2011, doi: 10.3233/XST-2011-0294
 		}
-		for (int i = 0; i < angles.size(); i++)
-			std::cout << angles[i] << std::endl;
-	}
+		//float sum = asum(filter.get());
+		//*filter *= (width/sum/4);
+		//*filter /= float(width);
+		//float norm = width/asum(filter.get());
+		//*filter /= norm;
+		//std::cout << "Filter scaling" << norm <<std::endl;
+		boost::shared_ptr< cuNDArray<double_complext> >  cufilter(new cuNDArray<double_complext>(*filter));
+		return cufilter;
 
-	/***
-	 * Returns a vector of strings for the paths.
-	 * @param path
-	 * @param file_id
-	 * @return
-	 */
-	std::vector<std::string> group_paths(std::string path,hid_t file_id){
 
-		char node[2048];
-		hsize_t nobj,len;
-		herr_t err;
-		hid_t group_id = H5Gopen1(file_id,path.c_str());
+	}*/
 
-		err = H5Gget_num_objs(group_id, &nobj);
+	boost::shared_ptr<cuNDArray<double_complext> > calc_filter(size_t width,float spacing){
+		std::vector<size_t > filter_size;
+		filter_size.push_back(width);
+		boost::shared_ptr< hoCuNDArray<double_complext> >  filter(new hoCuNDArray<double_complext>(filter_size));
 
-		std::vector<std::string> result;
-		for(hsize_t i =0; i < nobj; i++){
-			len = H5Gget_objname_by_idx(group_id, i,
-					node, sizeof(node) );
-			std::string nodestr = std::string(path).append(node).append("/");
-			int otype =  H5Gget_objtype_by_idx(group_id, i );
-			switch(otype){
-			case H5G_GROUP:
-				//cout << nodestr << " is a GROUP" << endl;
-				result.push_back(nodestr);
-				break;
-			}
+		clear(filter.get());
+		double_complext* filter_ptr = filter->get_data_ptr();
 
+		double pi2  = boost::math::constants::pi<double>()*boost::math::constants::pi<double>();
+		size_t i,j;
+		for ( i = 1, j = width-1; i < width/2; i+=2, j-=2){
+				filter_ptr[i+width/2] = double_complext(-1.0f/(float(i*i)*pi2));
+				filter_ptr[width/2-i] = double_complext(-1.0f/(float(i*i)*pi2));
 		}
-		H5Gclose(group_id);
-		return result;
+
+
+		//*filter *= 0.25f/asum(filter.get());
+		filter_ptr[width/2] = 0.25;
+		//filter_ptr[width/2] = 1000.0f;
+		//filter_ptr[0] = 0.0f;
+		std::cout << sum(filter.get()) << std::endl;
+
+		//float norm = width/asum(filter.get());
+	  //*filter /= spacing*spacing;
+		//*filter /= spacing;
+
+	 *filter *= double(width);
+
+		//std::cout << "Filter scaling" << norm <<std::endl;
+		boost::shared_ptr< cuNDArray<double_complext> >  cufilter(new cuNDArray<double_complext>(*filter));
+		cuNDFFT<double>::instance()->fft(cufilter.get(),0u);
+
+		//float norm = asum(cufilter.get());
+		//*cufilter *= norm;
+
+		return cufilter;
+
 
 	}
 
-	boost::shared_ptr<hoCuNDArray<vector_td<float,3> > > spline_data;
-	boost::shared_ptr<hoCuNDArray<float > > projection_data;
-	std::vector<float> angles;
-
-	//These two vectors contain views of the original data. This way we can pass around individual projections and the complete dataset. Just for fun.
-	std::vector< boost::shared_ptr<hoCuNDArray<float > > > projection_arrays;
-	std::vector< boost::shared_ptr<hoCuNDArray<vector_td<float,3> > > > spline_arrays;
 };
 }

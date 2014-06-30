@@ -9,6 +9,8 @@
 #include "cuNDArray.h"
 #include "hoCuNDArray.h"
 
+#include "cuNDArray.h"
+#include "cuNDArray_math.h"
 
 #include "protonSubsetOperator.h"
 #include "hoNDArray_fileio.h"
@@ -18,17 +20,17 @@
 #include "hoCuPartialDerivativeOperator.h"
 #include "hoCuNDArray_blas.h"
 #include "hoCuNDArray_operators.h"
-#include "hoCuNDArray_elemwise.h"
 
-#include "cuNDArray_math.h"
 
 #include "osSARTSolver.h"
+#include "osSPSSolver.h"
 #include "hoOSGPBBSolver.h"
 #include "hoOSCGSolver.h"
 #include "hoOSCGPBBSolver.h"
 #include "hoCuBILBSolver.h"
 //#include "hoABIBBSolver.h"
 #include "hoCuNCGSolver.h"
+#include "cuNCGSolver.h"
 #include "hdf5_utils.h"
 
 #include "encodingOperatorContainer.h"
@@ -61,9 +63,11 @@ int main( int argc, char** argv)
 	vector_td<int,3> dimensions;
 	vector_td<float,3> physical_dims;
 	vector_td<float,3> origin;
+	float beta;
 	int iterations;
 	int device;
 	int subsets;
+	bool use_hull;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 			("help", "produce help message")
@@ -78,6 +82,8 @@ int main( int argc, char** argv)
 			("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
 			("TV,T",po::value<float>(),"TV Weight ")
 			("subsets,n", po::value<int>(&subsets)->default_value(10), "Number of subsets to use")
+			("beta",po::value<float>(&beta)->default_value(1),"Step size for SART")
+			("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
 	;
 
 	po::variables_map vm;
@@ -95,6 +101,7 @@ int main( int argc, char** argv)
 		if (a.type() == typeid(std::string)) std::cout << it->second.as<std::string>();
 		else if (a.type() == typeid(int)) std::cout << it->second.as<int>();
 		else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
+		else if (a.type() == typeid(bool)) std::cout << it->second.as<bool>();
 		else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
 		else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
 		else std::cout << "Unknown type" << std::endl;
@@ -110,8 +117,9 @@ int main( int argc, char** argv)
   solver.set_max_iterations( iterations);
 
   solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );*/
-	osSARTSolver<hoCuNDArray<_real> > solver;
-	//hoCuNCGSolver<_real> solver;
+	osSARTSolver<cuNDArray<_real> > solver;
+	//osSPSSolver<cuNDArray<_real> > solver;
+	//cuNCGSolver<_real> solver;
 	//hoOSCGPBBSolver<hoCuNDArray<_real> > solver;
 	//hoABIBBSolver<hoCuNDArray<_real> > solver;
 	//hoOSCGSolver<hoCuNDArray<_real> > solver;
@@ -119,20 +127,21 @@ int main( int argc, char** argv)
 
 	//solver.set_m(subsets);
 	solver.set_beta(1.9f);
-	solver.set_gamma(1.0f/15);
+	//solver.set_beta(beta);
+	//solver.set_gamma(1.0f/5);
   solver.set_non_negativity_constraint(true);
   solver.set_max_iterations(iterations);
 
-
+  //solver.set_tc_tolerance(1e-10f);
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
-  boost::shared_ptr<protonDataset<hoCuNDArray> >  data(new protonDataset<hoCuNDArray>(dataName));
+  boost::shared_ptr<protonDataset<cuNDArray> >  data(new protonDataset<cuNDArray>(dataName));
 
-  data = protonDataset<hoCuNDArray>::shuffle_dataset(data,subsets);
+  data = protonDataset<cuNDArray>::shuffle_dataset(data,subsets);
 
-  data->preprocess(rhs_dims,physical_dims,true);
+  data->preprocess(rhs_dims,physical_dims,use_hull);
 
-  boost::shared_ptr< protonSubsetOperator<hoCuNDArray> > E (new protonSubsetOperator<hoCuNDArray>(data->get_subsets(), physical_dims) );
+  boost::shared_ptr< protonSubsetOperator<cuNDArray> > E (new protonSubsetOperator<cuNDArray>(data->get_subsets(), physical_dims) );
 
   E->set_domain_dimensions(&rhs_dims);
   E->set_codomain_dimensions(data->get_projections()->get_dimensions().get());
@@ -188,19 +197,20 @@ int main( int argc, char** argv)
 	//float res = dot(projections.get(),projections.get());
 
 
-	boost::shared_ptr< hoCuNDArray<_real> > result = solver.solve(data->get_projections().get());
+	boost::shared_ptr< cuNDArray<_real> > result = solver.solve(data->get_projections().get());
 
-	hoCuNDArray<_real> tmp_proj(data->get_projections()->get_dimensions());
+	cuNDArray<_real> tmp_proj(data->get_projections()->get_dimensions());
 	E->mult_M(result.get(),&tmp_proj,false);
 	tmp_proj -= *data->get_projections();
 
 	std::cout << "L2 norm of residual: " << dot(&tmp_proj,&tmp_proj) << std::endl;
+	boost::shared_ptr< hoNDArray<float> > host_result = result->to_host();
 	//write_nd_array<_real>(result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;
 	for (int i = 0; i < argc; i++){
 		ss << argv[i] << " ";
 	}
-	saveNDArray2HDF5<3>(result.get(),outputFile,physical_dims,origin,ss.str(), solver.get_max_iterations());
+	saveNDArray2HDF5<3>(host_result.get(),outputFile,physical_dims,origin,ss.str(), solver.get_max_iterations());
 }
 
 

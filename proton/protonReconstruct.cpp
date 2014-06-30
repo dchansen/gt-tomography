@@ -9,7 +9,7 @@
 #include "cuNDArray.h"
 #include "cuCgSolver.h"
 #include "cuImageOperator.h"
-#include "cuOperatorPathBackprojection.h"
+#include "splineBackprojectionOperator.h"
 #include "cuPartialDerivativeOperator.h"
 #include "cuLaplaceOperator.h"
 #include "hoNDArray_fileio.h"
@@ -17,6 +17,7 @@
 #include "cuGpBbSolver.h"
 #include "identityOperator.h"
 
+#include "hoNDArray_math.h"
 
 #include <sstream>
 #include "hdf5_utils.h"
@@ -35,18 +36,18 @@
 
 using namespace std;
 using namespace Gadgetron;
-typedef float _real;
+
 /*
-boost::shared_ptr< cuNDArray<_real> >  recursiveSolver(cuNDArray<_real> * rhs,cuCGSolver<_real, _real> * cg,int depth){
+boost::shared_ptr< cuNDArray<float> >  recursiveSolver(cuNDArray<float> * rhs,cuCGSolver<float, float> * cg,int depth){
 	std::cout << "Recursion depth " << depth << " reached" << std::endl;
 	if (depth == 0){
 		std::cout << "Running solver for depth " << depth  << std::endl;
 		return cg->solve(rhs);
 	} else {
-		boost::shared_ptr< cuNDArray<_real> > rhs_temp = cuNDA_downsample<_real,2>(rhs);
+		boost::shared_ptr< cuNDArray<float> > rhs_temp = cuNDA_downsample<float,2>(rhs);
 
-		boost::shared_ptr< cuNDArray<_real> > guess = recursiveSolver(rhs_temp.get(),cg,depth-1);
-		guess = cuNDA_upsample<_real,2>(guess.get());
+		boost::shared_ptr< cuNDArray<float> > guess = recursiveSolver(rhs_temp.get(),cg,depth-1);
+		guess = cuNDA_upsample<float,2>(guess.get());
 		std::cout << "Running solver for depth " << depth  << std::endl;
 		return cg->solve(rhs,guess.get());
 
@@ -72,7 +73,7 @@ int main( int argc, char** argv)
 	//
 	// Parse command line
 	//
-	_real background =  0.00106;
+	float background =  0.00106;
 	/*
   ParameterParser parms;
   parms.add_parameter( 'p', COMMAND_LINE_STRING, 1, "Input projection file name (.real)", true,"projections.real" );
@@ -164,105 +165,114 @@ int main( int argc, char** argv)
 	cudaSetDevice(device);
 	cudaDeviceReset();
 	std::cout <<  std::endl;
-	boost::shared_ptr<hoNDArray<vector_td<_real,3> > > host_splines = read_nd_array< vector_td<_real,3> >(splinesName.c_str());
-	boost::shared_ptr<cuNDArray<vector_td<_real,3> > > splines (new cuNDArray< vector_td<_real,3> >(host_splines.get()));
-	cout << "Number of spline elements: " << splines->get_number_of_elements() << endl;
+	boost::shared_ptr<hoNDArray<vector_td<float,3> > > host_splines = read_nd_array< vector_td<float,3> >(splinesName.c_str());
 
-	boost::shared_ptr< hoNDArray<_real> > host_projections = read_nd_array<_real >(projectionsName.c_str());
-	boost::shared_ptr<cuNDArray<_real > > projections (new cuNDArray<_real >(host_projections.get()));
-	//boost::shared_ptr<cuNDArray<_real > > projections_old = projections;
+	cout << "Number of spline elements: " << host_splines->get_number_of_elements() << endl;
 
-	std::cout << "Number of elements " << projections->get_number_of_elements() << std::endl;
+	boost::shared_ptr< hoNDArray<float> > host_projections = read_nd_array<float >(projectionsName.c_str());
 
-	cout << "Number of projection elements: " << projections->get_number_of_elements() << endl;
-	if (projections->get_number_of_elements() != splines->get_number_of_elements()/4){
-		cout << "Critical error: Splines and projections do not match dimensions" << endl;
-		return 0;
-	}
+	//boost::shared_ptr<cuNDArray<float > > projections_old = projections;
+
+	cout << "Number of elements " << host_projections->get_number_of_elements() << endl;
+	cout << "Number of projection elements: " << host_projections->get_number_of_elements() << endl;
+
+
 
 	vector<size_t> ndims;
 	ndims.push_back(3);
 
 
 
-	//cuGpBbSolver<_real> solver;
-	cuNCGSolver<_real> solver;
-	//cuNlcgSolver<_real> solver;
-	//cuCgSolver<_real> solver;
-	//cuLbfgsSolver<_real> solver;
+	//cuGpBbSolver<float> solver;
+	cuNCGSolver<float> solver;
+	//cuNlcgSolver<float> solver;
+	//cuCgSolver<float> solver;
+	//cuLbfgsSolver<float> solver;
 
 	solver.set_max_iterations( iterations);
 	solver.set_tc_tolerance((float)std::sqrt(1e-10));
 	//solver.set_tc_tolerance((float)(1e-10));
 	//solver.set_m(5);
-	solver.set_output_mode( cuNCGSolver<_real>::OUTPUT_VERBOSE );
+	solver.set_output_mode( cuNCGSolver<float>::OUTPUT_VERBOSE );
 	//if (!use_hull)
 		solver.set_non_negativity_constraint(true);
-	boost::shared_ptr< cuOperatorPathBackprojection<_real> > E (new cuOperatorPathBackprojection<_real> );
 
 
+	boost::shared_ptr<protonDataset<cuNDArray> > data;
 
 
-	vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]);
-
-
-
-
-	E->set_domain_dimensions(&rhs_dims);
-	//E->set_codomain_dimensions(projections->get_dimensions().get());
 
 	if (vm.count("variance")){
-		boost::shared_ptr<cuNDArray<_real> > variance(new cuNDArray<_real>(read_nd_array<_real >(vm["variance"].as<std::string>().c_str()).get()));
-		if (variance->get_number_of_elements() != projections->get_number_of_elements())
-			throw std::runtime_error("Number of elements in the variance vector does not match the number of projections ");
-		reciprocal_inplace(variance.get());
-		E->setup(splines,physical_dims,projections,variance,origin,rhs_dims,use_hull,background);
-	} else E->setup(splines,physical_dims,projections,origin,rhs_dims,use_hull, background);
+			boost::shared_ptr< hoNDArray<float> > host_variance = read_nd_array<float >(vm["variance"].as<std::string>().c_str());
+			if (host_variance->get_number_of_elements() != host_projections->get_number_of_elements())
+				throw std::runtime_error("Number of elements in the variance vector does not match the number of projections ");
+			reciprocal_inplace(host_variance.get());
+			data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines,host_variance));
+			*data->get_projections() *= *data->get_weights(); //Have to scale projection data by weights before handing it to the solver. Write up the cost function and see why.
+		} else data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines));
 
 
-	if (use_hull) write_nd_array<float>(E->get_hull()->to_host().get(),"hull.real");
-	boost::shared_ptr<encodingOperatorContainer<cuNDArray<_real> > > enc (new encodingOperatorContainer<cuNDArray<_real> >());
+
+	vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Line to turn vector_td into std::vector.
+
+	data->preprocess(rhs_dims,physical_dims,use_hull);
+
+	if (use_hull) write_nd_array<float>(data->get_hull()->to_host().get(),"hull.real");
+
+
+
+	boost::shared_ptr<cuNDArray<float> > rhs = data->get_projections();
+
+
+	//E->set_codomain_dimensions(projections->get_dimensions().get());
+
+
+	boost::shared_ptr< splineBackprojectionOperator<cuNDArray> > E(new splineBackprojectionOperator<cuNDArray>(data,physical_dims));
+	E->set_domain_dimensions(&rhs_dims);
+
+
+	boost::shared_ptr<encodingOperatorContainer<cuNDArray<float> > > enc (new encodingOperatorContainer<cuNDArray<float> >());
 
 
 	if (precon){
 		boost::shared_ptr<protonPreconditioner> P (new protonPreconditioner(rhs_dims));
-		if (use_hull) P->set_hull(E->get_hull());
+		if (use_hull) P->set_hull(data->get_hull());
 		solver.set_preconditioner(P);
 	}
 	enc->add_operator(E);
 
-	boost::shared_ptr<cuNDArray<_real > > prior;
+	boost::shared_ptr<cuNDArray<float > > prior;
 	if (vm.count("prior")){
 		std::cout << "Prior image regularization in use" << std::endl;
-		boost::shared_ptr<hoNDArray<_real> > host_prior = read_nd_array<_real >(vm["prior"].as<std::string>().c_str());
+		boost::shared_ptr<hoNDArray<float> > host_prior = read_nd_array<float >(vm["prior"].as<std::string>().c_str());
 
 		host_prior->reshape(&rhs_dims);
-		prior = boost::shared_ptr<cuNDArray<_real> >(new cuNDArray<_real>(host_prior.get()));
-		_real offset = _real(0.01);
+		prior = boost::shared_ptr<cuNDArray<float> >(new cuNDArray<float>(host_prior.get()));
+		float offset = float(0.01);
 		//cuNDA_add(offset,prior.get());
 
 
 		if (vm.count("prior-weight")){
 
-			//boost::shared_ptr<cuImageOperator<_real > > I (new cuImageOperator<_real >());
-			boost::shared_ptr<identityOperator<cuNDArray<_real > > > I (new identityOperator<cuNDArray<_real > >());
+			//boost::shared_ptr<cuImageOperator<float > > I (new cuImageOperator<float >());
+			boost::shared_ptr<identityOperator<cuNDArray<float > > > I (new identityOperator<cuNDArray<float > >());
 			//I->compute(prior.get());
 
 			I->set_weight(vm["prior-weight"].as<float>());
 
 			I->set_codomain_dimensions(&rhs_dims);
 			I->set_domain_dimensions(&rhs_dims);
-			cuNDArray<_real> tmp = *prior;
+			cuNDArray<float> tmp = *prior;
 
 
 			I->mult_M(prior.get(),&tmp);
 
 			//cuNDA_scal(I->get_weight(),&tmp);
-			std::vector<cuNDArray<_real>* > proj;
-			proj.push_back(projections.get());
+			std::vector<cuNDArray<float>* > proj;
+			proj.push_back(rhs.get());
 			proj.push_back(&tmp);
 			enc->add_operator(I);
-			projections = enc->create_codomain(proj);
+			rhs = enc->create_codomain(proj);
 
 		} else {
 			std::cout << "WARNING: Prior image set, but weight not specified" << std::endl;
@@ -272,21 +282,21 @@ int main( int argc, char** argv)
 
 	solver.set_encoding_operator(enc);
 
-	//boost::shared_ptr< cuNDArray<_real> > cgresult(new cuNDArray<_real>(&rhs_dims));
+	//boost::shared_ptr< cuNDArray<float> > cgresult(new cuNDArray<float>(&rhs_dims));
 	//clear(cgresult.get());
   //E->mult_MH(projections.get(),cgresult.get());
   //P->apply(cgresult.get(),cgresult.get());
-	boost::shared_ptr< cuNDArray<_real> > cgresult = solver.solve(projections.get());
+	boost::shared_ptr< cuNDArray<float> > cgresult = solver.solve(rhs.get());
 
-	//cuNDArray<_real> tp = *projections;
+	//cuNDArray<float> tp = *projections;
 
 	//E->mult_M(cgresult.get(),&tp);
 	//axpy(-1.0f,projections.get(),&tp);
 	//std::cout << "Total residual " << nrm2(&tp) << std::endl;
 
 
-	boost::shared_ptr< hoNDArray<_real> > host_result = cgresult->to_host();
-	//write_nd_array<_real>(host_result.get(), (char*)parms.get_parameter('f')->get_string_value());
+	boost::shared_ptr< hoNDArray<float> > host_result = cgresult->to_host();
+	//write_nd_array<float>(host_result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;
 	for (int i = 0; i < argc; i++){
 		ss << argv[i] << " ";

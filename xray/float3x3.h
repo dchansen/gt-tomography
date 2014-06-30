@@ -24,7 +24,7 @@ float3x3 make_float3x3(float v0, float v1, float v2,
 }
 
 __inline__ __device__ 
-floatd3 mul(float3x3 m, floatd3 v) {
+floatd3 mul(const float3x3 & m, const floatd3 & v) {
     return floatd3( dot(m.row0,v), dot(m.row1,v), dot(m.row2,v) );
 }
 

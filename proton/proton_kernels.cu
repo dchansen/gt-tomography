@@ -4,6 +4,7 @@
 #include "cuNDArray.h"
 
 #include <stdio.h>
+#include "float3x3.h"
 
 //TODO: Get rid of these defines.
 #define INT_STEPS 2048
@@ -40,7 +41,7 @@ template< class T, class R, unsigned int D > __inline__ __host__ __device__ vect
 }
  */
 template< class T, unsigned int D > __inline__ __host__ __device__ vector_td<T,D> remove_neg ( const vector_td<T,D> &v1)
-								{
+												{
 	vector_td<T,D> res;
 	for(unsigned int i=0; i<D; i++ ){
 		if (v1.vec[i]<0){ res.vec[i] =0;}
@@ -48,7 +49,7 @@ template< class T, unsigned int D > __inline__ __host__ __device__ vector_td<T,D
 	}
 
 	return res;
-								}
+												}
 
 
 
@@ -71,10 +72,16 @@ template <class REAL> __global__ void Gadgetron::forward_kernel(const REAL*  __r
 		REAL length=0;
 
 		//Load in points to registers
-		vector_td<REAL,3> a = splines[sid];
-		vector_td<REAL,3> b = splines[sid+1];
-		vector_td<REAL,3> c = splines[sid+2];
-		vector_td<REAL,3> d = splines[sid+3];
+		const vector_td<REAL,3> p0 = splines[sid]; //Position at entrance
+		const vector_td<REAL,3> p1 = splines[sid+1]; // Position at exit
+		const vector_td<REAL,3> m0 = splines[sid+2]; // Direction at entrance
+		const vector_td<REAL,3> m1 = splines[sid+3]; // Direction at exit
+
+
+		const vector_td<REAL,3> a = 2*p0+m0+m1-2*p1;
+		const vector_td<REAL,3> b = -3*p0-2*m0+3*p1-m1;
+		const vector_td<REAL,3> c = m0;
+		const vector_td<REAL,3> d = p0;
 
 
 		vector_td<REAL,3> p;
@@ -130,11 +137,18 @@ template <class REAL> __global__ void Gadgetron::backwards_kernel(const REAL* __
 		REAL length=0;
 
 		//Load in points to registers
-		vector_td<REAL,3> a = splines[sid];
-		vector_td<REAL,3> b = splines[sid+1];
-		vector_td<REAL,3> c = splines[sid+2];
-		vector_td<REAL,3> d = splines[sid+3];
-		REAL proj = projections[idx];
+		//Load in points to registers
+		const vector_td<REAL,3> p0 = splines[sid]; //Position at entrance
+		const vector_td<REAL,3> p1 = splines[sid+1]; // Position at exit
+		const vector_td<REAL,3> m0 = splines[sid+2]; // Direction at entrance
+		const vector_td<REAL,3> m1 = splines[sid+3]; // Direction at exit
+
+
+		const vector_td<REAL,3> a = 2*p0+m0+m1-2*p1;
+		const vector_td<REAL,3> b = -3*p0-2*m0+3*p1-m1;
+		const vector_td<REAL,3> c = m0;
+		const vector_td<REAL,3> d = p0;
+		const REAL proj = projections[idx];
 
 		vector_td<REAL,3> p;
 		vector_td<REAL,3> p_old=d;
@@ -171,7 +185,7 @@ template <class REAL> __global__ void Gadgetron::backwards_kernel(const REAL* __
 
 
 template <class REAL> __global__ void Gadgetron::space_carver_kernel(const REAL* __restrict__ projections, REAL* __restrict__ image,
-		const vector_td<REAL,3> * __restrict__ splines,  const vector_td<REAL,3> origin, const vector_td<REAL,3> dims, REAL cutoff,
+		const vector_td<REAL,3> * __restrict__ splines,   const vector_td<REAL,3> dims, REAL cutoff,
 		const typename intd<3>::Type ndims, const int proj_dim, const int offset){
 
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
@@ -187,8 +201,8 @@ template <class REAL> __global__ void Gadgetron::space_carver_kernel(const REAL*
 			REAL t;
 
 			//Load in points to registers
-			vector_td<REAL,3> p0 = splines[sid]-origin;
-			vector_td<REAL,3> p1 = splines[sid+1]-origin;
+			vector_td<REAL,3> p0 = splines[sid];
+			vector_td<REAL,3> p1 = splines[sid+1];
 			vector_td<REAL,3> m0 = splines[sid+2];
 			vector_td<REAL,3> m1 = splines[sid+3];
 			REAL length = norm(p1-p0);
@@ -230,7 +244,25 @@ template <class REAL> __global__ void Gadgetron::space_carver_kernel(const REAL*
 }
 
 
-template <class REAL> __global__ void Gadgetron::crop_splines_kernel(vector_td<REAL,3> * splines, REAL* projections, const  vector_td<REAL,3>  dims, const  vector_td<REAL,3>  origin, const int proj_dim,const REAL background,int offset)
+template<class REAL> __global__ void Gadgetron::rotate_splines_kernel(vector_td<REAL,3> * splines,REAL angle, unsigned int total, unsigned int offset){
+	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
+
+	if (idx < total){
+		const unsigned int sid = idx*4;
+		const float3x3 inverseRotation = calcRotationMatrixAroundZ(-angle);
+		vector_td<REAL,3> p0 = mul(inverseRotation,splines[sid]);
+		vector_td<REAL,3> p1 = mul(inverseRotation,splines[sid+1]);
+		vector_td<REAL,3> m0 = mul(inverseRotation,splines[sid+2]);
+		vector_td<REAL,3> m1 = mul(inverseRotation,splines[sid+3]);
+
+		splines[sid] = p0;
+		splines[sid+1] = p1;
+		splines[sid+2] = m0;
+		splines[sid+3] = m1;
+	}
+}
+
+template <class REAL> __global__ void Gadgetron::crop_splines_kernel(vector_td<REAL,3> * splines, REAL* projections, const  vector_td<REAL,3>  dims, const int proj_dim,const REAL background,int offset)
 {
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
 
@@ -244,8 +276,8 @@ template <class REAL> __global__ void Gadgetron::crop_splines_kernel(vector_td<R
 		REAL t,told;
 
 		//Load in points to registers
-		vector_td<REAL,3> p0 = splines[sid]-origin;
-		vector_td<REAL,3> p1 = splines[sid+1]-origin;
+		vector_td<REAL,3> p0 = splines[sid];
+		vector_td<REAL,3> p1 = splines[sid+1];
 		vector_td<REAL,3> m0 = splines[sid+2];
 		vector_td<REAL,3> m1 = splines[sid+3];
 
@@ -295,7 +327,7 @@ template <class REAL> __global__ void Gadgetron::crop_splines_kernel(vector_td<R
 	}
 }
 
-template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector_td<REAL,3> * splines, REAL* projections,REAL* hull_mask,const vector_td<int,3> ndims, const  vector_td<REAL,3>  dims, const  vector_td<REAL,3>  origin, const int proj_dim,const REAL background,int offset)
+template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector_td<REAL,3> * splines, REAL* projections,REAL* hull_mask,const vector_td<int,3> ndims, const  vector_td<REAL,3>  dims, const int proj_dim,const REAL background,int offset)
 {
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
 
@@ -310,8 +342,8 @@ template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector
 		int id, id_old;
 		REAL t,told;
 		//Load in points to registers
-		vector_td<REAL,3> p0 = splines[sid]-origin;
-		vector_td<REAL,3> p1 = splines[sid+1]-origin;
+		vector_td<REAL,3> p0 = splines[sid];
+		vector_td<REAL,3> p1 = splines[sid+1];
 		vector_td<REAL,3> m0 = splines[sid+2];
 		vector_td<REAL,3> m1 = splines[sid+3];
 		REAL length = norm(p1-p0);
@@ -326,7 +358,7 @@ template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector
 
 		int steps =max(ndims)*STEPS;
 		t = 0;
-		for (int i = 1; i < steps; i++){
+		for (int i = 1; i <= steps; i++){
 			told = t;
 			t = REAL(i)/(steps);
 			p=t*m0+p0+half_dims;
@@ -344,14 +376,14 @@ template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector
 			//co = to_intd((p+dims/2)*ndims/dims);
 			//co = amax(amin(co,ndims-1),0);
 		}
-		t = told;
+		const REAL t1 = t;
 		//t2 = t*t;
 
 		//pt0 =  (2*t3-3*t2+1)*p0+(t3-2*t2+t)*m0+(3*t2-2*t3)*p1+(t3-t2)*m1; //Calculate new starting point
-		pt0=t*m0+p0;
+		pt0=told*m0+p0;
 
 		t = 0;
-		for (int i = 0; i < steps; i++){
+		for (int i = 0; i <= steps; i++){
 			told = t;
 			t = ((REAL) i)/MAXSTEP;
 			//t2 = t*t;
@@ -369,11 +401,15 @@ template <class REAL> __global__ void Gadgetron::crop_splines_hull_kernel(vector
 			id_old=id;
 			p_old=p;
 		}
-		t = told;
 
-		pt1=p1-t*m1;
-		REAL deltaLength = norm(p1-pt1)+norm(p0-pt0);
-		projections[idx] -= deltaLength*background;
+
+		pt1=p1-told*m1;
+		if (t >= 1 || t1 >= 1){
+			projections[idx]=0;
+		} else {
+			REAL deltaLength = norm(p1-pt1)+norm(p0-pt0);
+			projections[idx] -= deltaLength*background;
+		}
 		splines[sid]=pt0;
 		splines[sid+1]=pt1;
 
@@ -499,6 +535,19 @@ template <class REAL> __global__ void Gadgetron::length_correction_kernel(vector
 }
 
 
+template <class REAL> __global__ void Gadgetron::move_origin_kernel(vector_td<REAL,3> * splines,  const vector_td<REAL,3> origin,const unsigned int proj_dim, const unsigned int offset){
+
+	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x+offset;
+	if (idx < proj_dim){
+		const int sid = idx*4;
+
+		splines[sid] -= origin;
+		splines[sid+1] -= origin;
+	}
+
+}
+
+
 template __global__ void Gadgetron::forward_kernel<float>(const float * __restrict__, float* ,const vector_td<float,3>  * __restrict__ ,  const vector_td<float,3> ,
 		const typename intd<3>::Type, const int , const int );
 
@@ -507,17 +556,20 @@ template __global__ void Gadgetron::backwards_kernel<float>(const float* __restr
 		const typename intd<3>::Type ndims, const int proj_dim, const int offset);
 
 template __global__ void Gadgetron::space_carver_kernel<float>(const float* __restrict__ projections, float* __restrict__ image,
-		const vector_td<float,3> * __restrict__ splines, const vector_td<float,3> origin, const vector_td<float,3> dims, float cutoff,
+		const vector_td<float,3> * __restrict__ splines, const vector_td<float,3> dims, float cutoff,
 		const typename intd<3>::Type ndims, const int proj_dim, const int offset);
 
-template __global__ void Gadgetron::crop_splines_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims, const  vector_td<float,3>  origin,const int proj_dim,float background,int offset);
+template __global__ void Gadgetron::crop_splines_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims, const int proj_dim,float background,int offset);
 template __global__ void Gadgetron::rescale_directions_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims,  const int proj_dim, const int offset);
 
-template __global__ void Gadgetron::crop_splines_hull_kernel<float>(vector_td<float,3> * splines, float* projections,float* hull_mask,const vector_td<int,3,> ndims, const  vector_td<float,3>  dims, const  vector_td<float,3>  origin, const int proj_dim,const float background,int offset);
+template __global__ void Gadgetron::crop_splines_hull_kernel<float>(vector_td<float,3> * splines, float* projections,float* hull_mask,const vector_td<int,3,> ndims, const  vector_td<float,3>  dims, const int proj_dim,const float background,int offset);
 
 template __global__ void Gadgetron::points_to_coefficients<float>(vector_td<float,3> * splines, int dim,int offset);
 
 template __global__  void Gadgetron::length_correction_kernel<float>(vector_td<float,3> * splines, float* projections, int dim, int offset);
+
+template __global__ void Gadgetron::rotate_splines_kernel(vector_td<float,3> * splines,float angle, unsigned int total, unsigned int offset);
+template __global__ void Gadgetron::move_origin_kernel(vector_td<float,3> * splines,const vector_td<float,3> origin, unsigned int total, unsigned int offset);
 /*
 template<> __global__ void forward_kernel<float>(float* image, float* projections,
 		vector_td<float,3> * splines,  const vector_td<float,3> dims,

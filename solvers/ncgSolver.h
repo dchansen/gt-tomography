@@ -98,7 +98,7 @@ public:
 
 		ARRAY_TYPE gtmp(image_dims.get());
 		ARRAY_TYPE encoding_space2(in->get_dimensions().get());
-		REAL reg_res,data_res;
+		//REAL reg_res,data_res;
 		ARRAY_TYPE x2(x);
 		if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 			std::cout << "Iterating..." << std::endl;
@@ -114,7 +114,7 @@ public:
 				this->encoding_operator_->mult_MH(&encoding_space,g);
 
 				*g *=  this->encoding_operator_->get_weight();
-				data_res = std::sqrt(this->encoding_operator_->get_weight())*real(dot(&encoding_space,&encoding_space));
+				//data_res = std::sqrt(this->encoding_operator_->get_weight())*real(dot(&encoding_space,&encoding_space));
 
 				calc_regMultM(x,regEnc);
 				for (int n = 0; n < regEnc.size(); n++)
@@ -122,14 +122,14 @@ public:
 						axpy(-std::sqrt(this->regularization_operators_[n]->get_weight()),reg_priors[n].get(),&regEnc[n]);
 				this->add_gradient(x,g);
 				add_linear_gradient(regEnc,g);
-				reg_res=REAL(0);
+				//reg_res=REAL(0);
 				if (this->precond_.get()){
 					this->precond_->apply(g,g);
 					this->precond_->apply(g,g);
 				}
 
 			}else {
-				data_res = real(dot(&encoding_space,&encoding_space));
+				//data_res = real(dot(&encoding_space,&encoding_space));
 			}
 
 
