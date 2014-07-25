@@ -186,6 +186,7 @@ public:
 				alpha = backtracking(f,alpha0,gd,rho,old_norm);
 				if (alpha <= 0){
 					std::cout << "Backtracking linesearch failed, returning current iteration" << std::endl;
+					*x = d;
 					return boost::shared_ptr<ARRAY_TYPE>(x);
 				}				std::cout << "Alpha: " << alpha << std::endl;
 				/*
@@ -221,6 +222,7 @@ public:
 				alpha = backtracking(f,alpha0,gd,rho,old_norm);
 				if (alpha <= 0){
 					std::cout << "Backtracking linesearch failed, returning current iteration" << std::endl;
+					*x = d;
 					return boost::shared_ptr<ARRAY_TYPE>(x);
 				}
 				axpy(alpha,&d,x);

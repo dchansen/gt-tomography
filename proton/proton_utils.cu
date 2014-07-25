@@ -11,9 +11,9 @@
 #define MAX_BLOCKS 4096*4
 
 namespace Gadgetron {
-static size_t calculate_batch_size(){
+static size_t calculate_batch_size(size_t floats_per_proton = 14){
 
-	int mem_per_proton = 14*sizeof(float); // Need 12 floatS for the splines and 1 for the projection
+	size_t mem_per_proton = floats_per_proton*sizeof(float); // Need 12 floatS for the splines and 1 for the projection
 	size_t free;
 	size_t total;
 
@@ -44,7 +44,7 @@ void rotate_splines(cuNDArray<floatd3> * splines,float angle){
 
 }
 
-template<> void protonProjection<cuNDArray>(cuNDArray<float>* image, cuNDArray<float>* projections, cuNDArray<floatd3>* splines, floatd3 phys_dims){
+template<> void protonProjection<cuNDArray>(cuNDArray<float>* image, cuNDArray<float>* projections, cuNDArray<floatd3>* splines, floatd3 phys_dims, cuNDArray<float>* exterior_path_lengths){
 	int dims =  projections->get_number_of_elements();
 
 	int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
@@ -57,86 +57,109 @@ template<> void protonProjection<cuNDArray>(cuNDArray<float>* image, cuNDArray<f
 	int batchSize = dimGrid.x*dimBlock.x;
 	//std::cout << "Starting forward kernel with grid " << dimGrid.x << " " << dimGrid.y << " " << dimGrid.z << std::endl;
 	cudaFuncSetCacheConfig(forward_kernel<float>, cudaFuncCachePreferL1);
+	cudaFuncSetCacheConfig(forward_kernel2<float>, cudaFuncCachePreferL1);
 	for (int offset = 0; offset < (dims+batchSize); offset += batchSize){
-		forward_kernel<float><<< dimGrid, dimBlock >>> (image->get_data_ptr(), projections->get_data_ptr(),splines->get_data_ptr(),phys_dims, (vector_td<int,3>)_dims, dims,offset);
+		if (exterior_path_lengths != NULL)
+			forward_kernel2<float><<< dimGrid, dimBlock >>> (image->get_data_ptr(), projections->get_data_ptr(),splines->get_data_ptr(),exterior_path_lengths->get_data_ptr(),phys_dims, (vector_td<int,3>)_dims, dims,offset);
+		else
+			forward_kernel<float><<< dimGrid, dimBlock >>> (image->get_data_ptr(), projections->get_data_ptr(),splines->get_data_ptr(),phys_dims, (vector_td<int,3>)_dims, dims,offset);
 	}
 
 	//cudaDeviceSynchronize();
 	//CHECK_FOR_CUDA_ERROR();
 }
 
-template<> void protonProjection<hoCuNDArray>(hoCuNDArray<float> * image,hoCuNDArray<float> * projections, hoCuNDArray<floatd3> * splines, floatd3 phys_dims){
-	 size_t max_batch_size = calculate_batch_size();
-		 size_t elements = projections->get_number_of_elements();
-		 size_t offset = 0;
+template<> void protonProjection<hoCuNDArray>(hoCuNDArray<float> * image,hoCuNDArray<float> * projections, hoCuNDArray<floatd3> * splines, floatd3 phys_dims, hoCuNDArray<float>* exterior_path_lengths){
+	size_t floats_per_proton = exterior_path_lengths == NULL ? 13 : 15;
+	size_t max_batch_size = calculate_batch_size(floats_per_proton);
+	size_t elements = projections->get_number_of_elements();
+	size_t offset = 0;
 
-		 cuNDArray<float> cu_image(image);
-		 for (size_t n = 0; n < (elements+max_batch_size-1)/max_batch_size; n++){
+	cuNDArray<float> cu_image(image);
+	for (size_t n = 0; n < (elements+max_batch_size-1)/max_batch_size; n++){
 
-			 size_t batch_size = std::min(max_batch_size,elements-offset);
-			 std::vector<size_t> batch_dim;
-			 batch_dim.push_back(batch_size);
+		size_t batch_size = std::min(max_batch_size,elements-offset);
+		std::vector<size_t> batch_dim;
+		batch_dim.push_back(batch_size);
 
-			 hoCuNDArray<float> projections_view(&batch_dim,projections->get_data_ptr()+offset); //This creates a "view" of out
+		hoCuNDArray<float> projections_view(&batch_dim,projections->get_data_ptr()+offset); //This creates a "view" of out
 
-			 cuNDArray<float> cu_projections(&projections_view);
-			 batch_dim.push_back(4);
-			 hoCuNDArray<vector_td<float,3> > splines_view(&batch_dim,splines->get_data_ptr()+offset*4); // This creates a "view" of splines
-			 cuNDArray<vector_td<float,3> > cu_splines(&splines_view);
+		cuNDArray<float> cu_projections(&projections_view);
+		batch_dim.push_back(4);
+		hoCuNDArray<vector_td<float,3> > splines_view(&batch_dim,splines->get_data_ptr()+offset*4); // This creates a "view" of splines
+		cuNDArray<vector_td<float,3> > cu_splines(&splines_view);
 
-			 protonProjection(&cu_image,&cu_projections, &cu_splines,phys_dims);
-			 cudaMemcpy(projections_view.get_data_ptr(),cu_projections.get_data_ptr(),batch_size*sizeof(float),cudaMemcpyDeviceToHost); //Copies back the data to the host
+		if (exterior_path_lengths != NULL){
+			batch_dim.back() = 2;
+			hoCuNDArray<float> EPL_view(&batch_dim,exterior_path_lengths->get_data_ptr()+offset*2); //This creates a "view" of out
+			cuNDArray<float> cu_EPL(&EPL_view);
+			protonProjection(&cu_image,&cu_projections, &cu_splines,phys_dims,&cu_EPL);
+		}else
+			protonProjection(&cu_image,&cu_projections, &cu_splines,phys_dims);
 
-			offset += batch_size;
+		cudaMemcpy(projections_view.get_data_ptr(),cu_projections.get_data_ptr(),batch_size*sizeof(float),cudaMemcpyDeviceToHost); //Copies back the data to the host
+		offset += batch_size;
 
-		 }
+	}
 }
 
 
-template<> void protonBackprojection<cuNDArray>(cuNDArray<float> * image, cuNDArray<float> * projections, cuNDArray<floatd3>* splines, floatd3 phys_dims){
+template<> void protonBackprojection<cuNDArray>(cuNDArray<float> * image, cuNDArray<float> * projections, cuNDArray<floatd3>* splines, floatd3 phys_dims, cuNDArray<float>* exterior_path_lengths){
 	int dims =  projections->get_number_of_elements();
-		int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
-		dim3 dimBlock( threadsPerBlock);
-		int totalBlocksPerGrid = (dims+threadsPerBlock-1)/threadsPerBlock;
-		dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
-		uint64d3 _dims = from_std_vector<size_t,3>( *(image->get_dimensions().get()) );
+	int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
+	dim3 dimBlock( threadsPerBlock);
+	int totalBlocksPerGrid = (dims+threadsPerBlock-1)/threadsPerBlock;
+	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	uint64d3 _dims = from_std_vector<size_t,3>( *(image->get_dimensions().get()) );
 
-		// Invoke kernel
-		int batchSize = dimBlock.x*dimGrid.x;
+	// Invoke kernel
+	int batchSize = dimBlock.x*dimGrid.x;
 
-		cudaFuncSetCacheConfig(backwards_kernel<float>, cudaFuncCachePreferL1);
-		for (int offset = 0; offset <  (dims+batchSize); offset += batchSize){
+	cudaFuncSetCacheConfig(backwards_kernel<float>, cudaFuncCachePreferL1);
+	cudaFuncSetCacheConfig(backwards_kernel2<float>, cudaFuncCachePreferL1);
+	for (int offset = 0; offset <  (dims+batchSize); offset += batchSize){
+		if (exterior_path_lengths != NULL){
+			std::cout << "DEBUG DUCK SAYS HI!" << std::endl;
+			backwards_kernel2<float><<< dimGrid, dimBlock >>> (projections->get_data_ptr(), image->get_data_ptr(),splines->get_data_ptr(),exterior_path_lengths->get_data_ptr(),phys_dims, (vector_td<int,3>)_dims, dims,offset);
+		}else
 			backwards_kernel<float><<< dimGrid, dimBlock >>> (projections->get_data_ptr(), image->get_data_ptr(),splines->get_data_ptr(),phys_dims, (vector_td<int,3>)_dims, dims,offset);
-		}
+	}
 
 }
 
-template<> void protonBackprojection<hoCuNDArray>(hoCuNDArray<float>* image, hoCuNDArray<float>* projections, hoCuNDArray<floatd3>* splines, floatd3 phys_dims) {
+template<> void protonBackprojection<hoCuNDArray>(hoCuNDArray<float>* image, hoCuNDArray<float>* projections, hoCuNDArray<floatd3>* splines, floatd3 phys_dims, hoCuNDArray<float>* exterior_path_lengths) {
 
-	 cuNDArray<float> cu_image(image);
-	 CHECK_FOR_CUDA_ERROR();
-	 size_t max_batch_size = calculate_batch_size();
-	 size_t elements = projections->get_number_of_elements();
-	 size_t offset = 0;
+	cuNDArray<float> cu_image(image);
+	CHECK_FOR_CUDA_ERROR();
 
-	 for (size_t n = 0; n < (elements+max_batch_size-1)/max_batch_size; n++){
-		 size_t batch_size = std::min(max_batch_size,elements-offset);
-		 std::vector<size_t> batch_dim;
-		 batch_dim.push_back(batch_size);
+	size_t floats_per_proton = exterior_path_lengths == NULL ? 13 : 15;
+	size_t max_batch_size = calculate_batch_size(floats_per_proton);
+	size_t elements = projections->get_number_of_elements();
+	size_t offset = 0;
 
-		 hoCuNDArray<float> projection_view(&batch_dim,projections->get_data_ptr()+offset); //This creates a "view" of projections
+	for (size_t n = 0; n < (elements+max_batch_size-1)/max_batch_size; n++){
+		size_t batch_size = std::min(max_batch_size,elements-offset);
+		std::vector<size_t> batch_dim;
+		batch_dim.push_back(batch_size);
 
-		 cuNDArray<float> cu_projections(&projection_view);
-		 batch_dim.push_back(4);
-		 hoCuNDArray<floatd3 > splines_view(&batch_dim,splines->get_data_ptr()+offset*4); // This creates a "view" of splines
-		 cuNDArray<floatd3 > cu_splines(&splines_view);
+		hoCuNDArray<float> projection_view(&batch_dim,projections->get_data_ptr()+offset); //This creates a "view" of projections
+		cuNDArray<float> cu_projections(&projection_view);
+		batch_dim.push_back(4);
+		hoCuNDArray<floatd3 > splines_view(&batch_dim,splines->get_data_ptr()+offset*4); // This creates a "view" of splines
+		cuNDArray<floatd3 > cu_splines(&splines_view);
 
-		 protonBackprojection<cuNDArray>(&cu_image,&cu_projections,&cu_splines,phys_dims);
-			CHECK_FOR_CUDA_ERROR();
-			offset += batch_size;
-	 }
+		if (exterior_path_lengths != NULL){
+			batch_dim.back() = 2;
+			hoCuNDArray<float> EPL_view(&batch_dim,exterior_path_lengths->get_data_ptr()+offset*2); //This creates a "view" of projections
+			cuNDArray<float> cu_EPL(&EPL_view);
+			protonBackprojection<cuNDArray>(&cu_image,&cu_projections,&cu_splines,phys_dims,&cu_EPL);
+		} else
+			protonBackprojection<cuNDArray>(&cu_image,&cu_projections,&cu_splines,phys_dims);
+		CHECK_FOR_CUDA_ERROR();
+		offset += batch_size;
+	}
 
-	 cudaMemcpy(image->get_data_ptr(),cu_image.get_data_ptr(),cu_image.get_number_of_elements()*sizeof(float),cudaMemcpyDeviceToHost);
+	cudaMemcpy(image->get_data_ptr(),cu_image.get_data_ptr(),cu_image.get_number_of_elements()*sizeof(float),cudaMemcpyDeviceToHost);
 }
 
 }

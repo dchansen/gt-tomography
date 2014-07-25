@@ -50,7 +50,7 @@ public:
 			}
 		}
 
-		unsigned int oversampling = 4;
+		unsigned int oversampling = 2;
 
 		cuNDArray<double_complext> ramp = *calc_filter(dims_proj[0]*oversampling,physical_dims[0]/(dims[0]));
 		//ramp *= 2.0f*oversampling;
@@ -62,18 +62,29 @@ public:
 			//std::cout << "Penguin processing group " << group << std::endl;
 			boost::shared_ptr<cuNDArray<float> > cu_paths(new cuNDArray<float>(*data->get_projection_group(group)));
 			cuNDArray<floatd3>  cu_splines(*data->get_spline_group(group));
-			rotate_splines(&cu_splines, -data->get_angle(group));
+			rotate_splines(&cu_splines, data->get_angle(group));
 			//std::cout << "Setup done " << std::endl;
 			cuNDArray<float> projection(dims_proj);
 			clear(&projection);
+
+			boost::shared_ptr< cuNDArray<float> > EPL;
+			if (data->get_EPL()){
+				EPL = boost::shared_ptr< cuNDArray<float> >(new cuNDArray<float>(*data->get_EPL_group(group)));
+			}
+
 			{
 				cuNDArray<float> projection_nrm(dims_proj);
 				clear(&projection_nrm);
-				cuNDArray<float> ones(cu_paths->get_dimensions());
-				fill(&ones,1.0f);
+				cuNDArray<float> normalization(cu_paths->get_dimensions());
 
-				protonBackprojection(&projection,cu_paths.get(),&cu_splines,physical_dims_proj);
-				protonBackprojection(&projection_nrm,&ones,&cu_splines,physical_dims_proj);
+				if (data->get_weights())
+					normalization = *data->get_weights_group(group);
+				else
+					fill(&normalization,1.0f);
+
+
+				protonBackprojection(&projection,cu_paths.get(),&cu_splines,physical_dims_proj,EPL.get());
+				protonBackprojection(&projection_nrm,&normalization,&cu_splines,physical_dims_proj,EPL.get());
 				clamp(&projection_nrm,1e-6f,1e8f,1.0f,1.0f);
 				projection /= projection_nrm;
 				CHECK_FOR_CUDA_ERROR();

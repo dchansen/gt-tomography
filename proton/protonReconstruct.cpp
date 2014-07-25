@@ -30,7 +30,7 @@
 #include "cuCgSolver.h"
 #include "vector_td_io.h"
 #include "protonPreconditioner.h"
-//#include "cuLbfgsSolver.h"
+#include "cuLbfgsSolver.h"
 
 
 
@@ -74,42 +74,7 @@ int main( int argc, char** argv)
 	// Parse command line
 	//
 	float background =  0.00106;
-	/*
-  ParameterParser parms;
-  parms.add_parameter( 'p', COMMAND_LINE_STRING, 1, "Input projection file name (.real)", true,"projections.real" );
-  parms.add_parameter( 'w', COMMAND_LINE_STRING, 1, "Input uncertainties file name (.real)", false);
-  parms.add_parameter( 't', COMMAND_LINE_STRING, 1, "Prior image file name (.real)", false);
-  parms.add_parameter( 'v', COMMAND_LINE_FLOAT, 1, "Total Variation weight",false);
-  parms.add_parameter( 'k', COMMAND_LINE_FLOAT,    1, "Prior Image TV ", false);
-  parms.add_parameter( 'c', COMMAND_LINE_FLOAT,    1, "Prior image kappa ", true, "0" );
-  parms.add_parameter( 's', COMMAND_LINE_STRING, 1, "Splines projection file name (.real)", true,"splines.real" );
-  parms.add_parameter( 'f', COMMAND_LINE_STRING, 1, "Output image file name ", true,"image.hdf5" );
 
-  parms.add_parameter( 'm', COMMAND_LINE_INT,    3, "x y and z image size in voxels ", true, "256 256 1" );
-  parms.add_parameter( 'n', COMMAND_LINE_INT,    1, "z image size ", true, "1" );
-
-  parms.add_parameter( 'i', COMMAND_LINE_INT,    1, "Number of iterations", true, "10" );
-  parms.add_parameter( 'e', COMMAND_LINE_FLOAT,    1, "Residual ", true, "1e-8" );
-
-  parms.add_parameter( 'x', COMMAND_LINE_FLOAT,  1, "X size  (cm)", true, "1.0" );
-  parms.add_parameter( 'y', COMMAND_LINE_FLOAT,  1, "Y size (cm)", true, "1.0" );
-  parms.add_parameter( 'z', COMMAND_LINE_FLOAT,  1, "Z size (cm)", true, "1.0" );
-
-  parms.add_parameter( 'd', COMMAND_LINE_INT,    1, "Multiscale depth ", true, "1" );
-  parms.add_parameter('O', COMMAND_LINE_FLOAT, 3, "X, Y and Z origin (cm)",true, "0 0 0 ");
-
-  parms.parse_parameter_list(argc, argv);
-  if( parms.all_required_parameters_set() ){
-    cout << " Running reconstruction with the following parameters: " << endl;
-    parms.print_parameter_list();
-  }
-  else{
-    cout << " Some required parameters are missing: " << endl;
-    parms.print_parameter_list();
-    parms.print_usage();
-    return 1;
-  }
-	 */
 
 	std::string projectionsName;
 	std::string splinesName;
@@ -119,25 +84,26 @@ int main( int argc, char** argv)
 	vector_td<float,3> origin;
 	int iterations;
 	int device;
-	bool precon,use_hull;
+	bool precon,use_hull,use_weights;
 	po::options_description desc("Allowed options");
 	desc.add_options()
-      				("help", "produce help message")
-      				("projections,p", po::value<std::string>(&projectionsName)->default_value("projections.real"), "File containing the projection data")
-      				("splines,s", po::value<std::string>(&splinesName)->default_value("splines.real"), "File containing the spline trajectories")
-      				("dimensions,d", po::value<vector_td<int,3> >(&dimensions)->default_value(vector_td<int,3>(512,512,1)), "Pixel dimensions of the image")
-      				("size,S", po::value<vector_td<float,3> >(&physical_dims)->default_value(vector_td<float,3>(20,20,5)), "Dimensions of the image in cm")
-      				("center,c", po::value<vector_td<float,3> >(&origin)->default_value(vector_td<float,3>(0,0,0)), "Center of the reconstruction")
-      				("iterations,i", po::value<int>(&iterations)->default_value(10), "Dimensions of the image")
-      				("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
-      				("prior,P", po::value<std::string>(),"Prior image filename")
-      				("prior-weight,k",po::value<float>(),"Weight of the prior image")
-      				("variance,v",po::value<std::string>(),"File containing the variance of data")
-      				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-      				("preconditioner",po::value<bool>(&precon)->default_value(false),"Use preconditioner")
-      				("use_hull",po::value<bool>(&use_hull)->default_value(false),"Use preconditioner")
-
-      				;
+      								("help", "produce help message")
+      								("projections,p", po::value<std::string>(&projectionsName)->default_value("projections.real"), "File containing the projection data")
+      								("splines,s", po::value<std::string>(&splinesName)->default_value("splines.real"), "File containing the spline trajectories")
+      								("data,D", po::value<std::string>(), "HDF5 file containing projections and splines. Used instead of the *.real files")
+      								("dimensions,d", po::value<vector_td<int,3> >(&dimensions)->default_value(vector_td<int,3>(512,512,1)), "Pixel dimensions of the image")
+      								("size,S", po::value<vector_td<float,3> >(&physical_dims)->default_value(vector_td<float,3>(20,20,5)), "Dimensions of the image in cm")
+      								("center,c", po::value<vector_td<float,3> >(&origin)->default_value(vector_td<float,3>(0,0,0)), "Center of the reconstruction")
+      								("iterations,i", po::value<int>(&iterations)->default_value(10), "Dimensions of the image")
+      								("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
+      								("prior,P", po::value<std::string>(),"Prior image filename")
+      								("prior-weight,k",po::value<float>(),"Weight of the prior image")
+      								("weights,w",po::value<std::string>(),"File containing the variance of data")
+      								("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+      								("preconditioner",po::value<bool>(&precon)->default_value(false),"Use preconditioner")
+      								("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
+      								("use_weights",po::value<bool>(&use_weights)->default_value(true),"Use weights if available. Always true if variance is set")
+      								;
 
 
 	po::variables_map vm;
@@ -165,18 +131,29 @@ int main( int argc, char** argv)
 	cudaSetDevice(device);
 	cudaDeviceReset();
 	std::cout <<  std::endl;
-	boost::shared_ptr<hoNDArray<vector_td<float,3> > > host_splines = read_nd_array< vector_td<float,3> >(splinesName.c_str());
 
-	cout << "Number of spline elements: " << host_splines->get_number_of_elements() << endl;
+	boost::shared_ptr<protonDataset<cuNDArray> > data;
 
-	boost::shared_ptr< hoNDArray<float> > host_projections = read_nd_array<float >(projectionsName.c_str());
+	if (vm.count("data")){
+		data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(vm["data"].as<std::string>(),use_weights));
 
-	//boost::shared_ptr<cuNDArray<float > > projections_old = projections;
+	} else {
+		boost::shared_ptr<hoNDArray<vector_td<float,3> > > host_splines = read_nd_array< vector_td<float,3> >(splinesName.c_str());
+		cout << "Number of spline elements: " << host_splines->get_number_of_elements() << endl;
+		boost::shared_ptr< hoNDArray<float> > host_projections = read_nd_array<float >(projectionsName.c_str());
+		//boost::shared_ptr<cuNDArray<float > > projections_old = projections;
+		cout << "Number of elements " << host_projections->get_number_of_elements() << endl;
+		cout << "Number of projection elements: " << host_projections->get_number_of_elements() << endl;
+		if (vm.count("weights")){
+			boost::shared_ptr< hoNDArray<float> > host_weights = read_nd_array<float >(vm["variance"].as<std::string>().c_str());
+			if (host_weights->get_number_of_elements() != host_projections->get_number_of_elements())
+				throw std::runtime_error("Number of elements in the variance vector does not match the number of projections ");
 
-	cout << "Number of elements " << host_projections->get_number_of_elements() << endl;
-	cout << "Number of projection elements: " << host_projections->get_number_of_elements() << endl;
+			data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines,host_weights));
 
+		} else data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines));
 
+	}
 
 	vector<size_t> ndims;
 	ndims.push_back(3);
@@ -192,30 +169,21 @@ int main( int argc, char** argv)
 	solver.set_max_iterations( iterations);
 	solver.set_tc_tolerance((float)std::sqrt(1e-10));
 	//solver.set_tc_tolerance((float)(1e-10));
-	//solver.set_m(5);
+	//solver.set_m(12);
 	solver.set_output_mode( cuNCGSolver<float>::OUTPUT_VERBOSE );
 	//if (!use_hull)
-		solver.set_non_negativity_constraint(true);
+	solver.set_non_negativity_constraint(true);
 
 
-	boost::shared_ptr<protonDataset<cuNDArray> > data;
-
-
-
-	if (vm.count("variance")){
-			boost::shared_ptr< hoNDArray<float> > host_variance = read_nd_array<float >(vm["variance"].as<std::string>().c_str());
-			if (host_variance->get_number_of_elements() != host_projections->get_number_of_elements())
-				throw std::runtime_error("Number of elements in the variance vector does not match the number of projections ");
-			reciprocal_inplace(host_variance.get());
-			data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines,host_variance));
-			*data->get_projections() *= *data->get_weights(); //Have to scale projection data by weights before handing it to the solver. Write up the cost function and see why.
-		} else data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines));
 
 
 
 	vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Line to turn vector_td into std::vector.
 
 	data->preprocess(rhs_dims,physical_dims,use_hull);
+
+	if (data->get_weights())
+		*data->get_projections() *= *data->get_weights(); //Have to scale projection data by weights before handing it to the solver. Write up the cost function and see why.
 
 	if (use_hull) write_nd_array<float>(data->get_hull()->to_host().get(),"hull.real");
 
@@ -282,11 +250,15 @@ int main( int argc, char** argv)
 
 	solver.set_encoding_operator(enc);
 
-	//boost::shared_ptr< cuNDArray<float> > cgresult(new cuNDArray<float>(&rhs_dims));
-	//clear(cgresult.get());
-  //E->mult_MH(projections.get(),cgresult.get());
-  //P->apply(cgresult.get(),cgresult.get());
-	boost::shared_ptr< cuNDArray<float> > cgresult = solver.solve(rhs.get());
+	boost::shared_ptr< cuNDArray<float> > cgresult(new cuNDArray<float>(&rhs_dims));
+	clear(cgresult.get());
+	std::cout << "Groups: " << data->get_number_of_groups() << std::endl;
+
+
+	E->mult_MH(data->get_projection_group(0).get(),cgresult.get());
+	//E->mult_MH(rhs.get(),cgresult.get());
+	//P->apply(cgresult.get(),cgresult.get());
+	//boost::shared_ptr< cuNDArray<float> > cgresult = solver.solve(rhs.get());
 
 	//cuNDArray<float> tp = *projections;
 

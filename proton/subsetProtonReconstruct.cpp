@@ -135,7 +135,7 @@ int main( int argc, char** argv)
   //solver.set_tc_tolerance(1e-10f);
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
-  boost::shared_ptr<protonDataset<cuNDArray> >  data(new protonDataset<cuNDArray>(dataName));
+  boost::shared_ptr<protonDataset<cuNDArray> >  data(new protonDataset<cuNDArray>(dataName,false));
 
   data = protonDataset<cuNDArray>::shuffle_dataset(data,subsets);
 

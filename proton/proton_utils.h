@@ -13,8 +13,9 @@ void rotate_splines(cuNDArray<floatd3> * splines,float angle);
  * @param[out] projections Output array to contain projections
  * @param[in] splines Array containing the information for the cubic splines
  * @param[in] phys_dims Physical dimensions of the image in cm
+ * @param[in] exterior_path_lengths Array containing length from starting position to hull
  */
-template<template<class> class ARRAY> void protonProjection(ARRAY<float>* image,ARRAY<float>* projections, ARRAY<floatd3>* splines, floatd3 phys_dims);
+template<template<class> class ARRAY> void protonProjection(ARRAY<float>* image,ARRAY<float>* projections, ARRAY<floatd3>* splines, floatd3 phys_dims,ARRAY<float>* exterior_path_lengths=NULL );
 
 /**
  *
@@ -22,7 +23,8 @@ template<template<class> class ARRAY> void protonProjection(ARRAY<float>* image,
  * @param[in] projections Proton projections to backproject
  * @param[in] splines Array containing the information for the cubic splines
  * @param[in] phys_dims Physical dimensions of the image in cm
+ * @param[in] exterior_path_lengths Array containing length from starting position to hull
  */
-template<template<class> class ARRAY> void protonBackprojection(ARRAY<float>* image,ARRAY<float>* projections, ARRAY<floatd3>* splines, floatd3 phys_dims);
+template<template<class> class ARRAY> void protonBackprojection(ARRAY<float>* image,ARRAY<float>* projections, ARRAY<floatd3>* splines, floatd3 phys_dims,ARRAY<float>* exterior_path_lengths=NULL);
 
 }

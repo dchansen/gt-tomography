@@ -61,7 +61,7 @@ int main( int argc, char** argv)
 	int iterations;
 	int device;
 	int subsets;
-	bool use_hull;
+	bool use_hull,use_weights;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 					("help", "produce help message")
@@ -72,6 +72,7 @@ int main( int argc, char** argv)
 					("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
 					("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
 					("use_hull",po::value<bool>(&use_hull)->default_value(true),"Use hull estimate")
+					("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. Always true if variance is set")
 					;
 
 	po::variables_map vm;
@@ -100,7 +101,7 @@ int main( int argc, char** argv)
 
 	std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
-	boost::shared_ptr< protonDataset<hoCuNDArray> > data(new protonDataset<hoCuNDArray>(dataName) );
+	boost::shared_ptr< protonDataset<hoCuNDArray> > data(new protonDataset<hoCuNDArray>(dataName,use_weights) );
 	if (use_hull) //If we don't estimate the hull, we should use a larger volume
 		data->preprocess(rhs_dims,physical_dims,use_hull,background);
 	else {
@@ -110,12 +111,19 @@ int main( int argc, char** argv)
 	hoCuFilteredProton E;
 
 
+	if (data->get_weights())
+		*data->get_projections() *= *data->get_weights(); //Have to scale projection data by weights before handing it to the solver. Write up the cost function and see why.
+
+
 	boost::shared_ptr< hoCuNDArray<_real> > result = E.calculate(rhs_dims,physical_dims,data);
 
 	splineBackprojectionOperator<hoCuNDArray> op(data,physical_dims);
 
-	//hoCuNDArray<float> tmp(*data->get_projections());
-	//op.mult_M(result.get(),&tmp);
+	hoCuNDArray<float> tmp(*data->get_projections());
+	op.mult_M(result.get(),&tmp);
+	tmp -= *data->get_projections();
+
+	std::cout << "Residual: " << dot(&tmp,&tmp) << std::endl;
 
 	//Calculate correct scaling factor because someone cannot be bother to calculate it by hand...
 	//float s = dot(data->get_projections().get(),&tmp)/dot(&tmp,&tmp);

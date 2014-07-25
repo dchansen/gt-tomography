@@ -13,6 +13,8 @@
 #include "hoCuNDArray_math.h"
 #include "hoNDArray_reductions.h"
 
+#include <functional>
+#include <algorithm>
 #define MAX_THREADS_PER_BLOCK 128
 #define BLOCKS_PER_GRID 65535
 #define MAX_BLOCKS 4096*4
@@ -29,7 +31,7 @@ static size_t calculate_batch_size(){
 	return 1024*1024*(free/(1024*1024*mem_per_proton)); //Divisons by 1024*1024 to ensure MB batch size
 }
 
-template<template<class> class ARRAY> protonDataset<ARRAY>::protonDataset(std::string & filename){
+template<template<class> class ARRAY> protonDataset<ARRAY>::protonDataset(const std::string & filename, bool load_weights){
 	hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
 	std::vector<std::string> groupnames = group_paths("/",file_id);
 	size_t num_element = get_num_elements(file_id,groupnames);
@@ -46,18 +48,43 @@ template<template<class> class ARRAY> protonDataset<ARRAY>::protonDataset(std::s
 	spline_arrays = std::vector< boost::shared_ptr<ARRAY<vector_td<float,3> > > >();
 	projection_arrays=std::vector< boost::shared_ptr<ARRAY<float > > >();
 
+	if (has_weights(file_id,groupnames) && load_weights){
+		std::cout << "Loading weights" << std::endl;
+		weights =boost::shared_ptr<ARRAY<float > >(new ARRAY<float>(dims));
+		weight_arrays =std::vector< boost::shared_ptr<ARRAY<float > > >();
+
+	}
+
 	angles = std::vector<float>();
 	load_fromtable(file_id,groupnames);
 
 	if (!angles.empty()){
-		rotateSplines(spline_arrays,angles);
+		std::vector<float> neg_angles(angles.size());
+		std::transform(angles.begin(),angles.end(),neg_angles.begin(),std::negate<float>());
+		rotateSplines(spline_arrays,neg_angles);
 	}
 }
 
 
 template<template<class> class ARRAY> void protonDataset<ARRAY>::preprocess(std::vector<size_t> & img_dims, floatd3 physical_dims, bool use_hull, float background){
-	if (use_hull) _hull = calc_hull(img_dims,physical_dims);
+
 	crop_splines(img_dims,physical_dims,background);
+	if (use_hull){
+		_hull = calc_hull(img_dims,physical_dims);
+
+		exterior_path_lengths = calc_exterior_path_lengths(this->spline_data,_hull,physical_dims);
+
+		exterior_path_lengths_arrays = std::vector< boost::shared_ptr<ARRAY<float > > >();
+		//Split space lengths
+		size_t offset = 0;
+		for (size_t i = 0; i < projection_arrays.size(); i++){
+			std::vector<size_t> space_length_dim = *projection_arrays[i]->get_dimensions();
+			space_length_dim.push_back(2);
+			boost::shared_ptr<ARRAY<float > > EPL_view(new ARRAY<float>(space_length_dim,exterior_path_lengths->get_data_ptr()+offset));
+			exterior_path_lengths_arrays.push_back(EPL_view);
+			offset += EPL_view->get_number_of_elements();
+		}
+	}
 	_preprocessed = true;
 }
 
@@ -70,25 +97,15 @@ template<> void protonDataset<cuNDArray>::crop_splines(std::vector<size_t> & img
 
 	unsigned int batchSize = dimGrid.x*dimBlock.x;
 	vector_td<int,3> ndims = vector_td<int,3>(from_std_vector<size_t,3>(img_dims));
-	if (_hull){
-		for (unsigned int offset = 0; offset <  (dims+batchSize); offset += batchSize){
-			crop_splines_hull_kernel<<< dimGrid, dimBlock >>> (spline_data->get_data_ptr(),projection_data->get_data_ptr(),_hull->get_data_ptr(),ndims,physical_dims,dims,background,offset);
-			//crop_splines_kernel<<< dimGrid, dimBlock >>> (this->splines->get_data_ptr(),projections->get_data_ptr(),physical_dims,origin,dims,background,offset);
-			//cudaThreadSynchronize();
 
-		}
-		CHECK_FOR_CUDA_ERROR();
-		std::cout << "Minimum element " << min(projection_data.get()) << std::endl;
-		clamp_min(projection_data.get(),0.0f);
-	} else {
-		for (int offset = 0; offset <  (dims+batchSize); offset += batchSize){
+	for (int offset = 0; offset <  (dims+batchSize); offset += batchSize){
 
-			crop_splines_kernel<<< dimGrid, dimBlock >>> (spline_data->get_data_ptr(),projection_data->get_data_ptr(),physical_dims,dims,background,offset);
-			//cudaThreadSynchronize();
+		crop_splines_kernel<<< dimGrid, dimBlock >>> (spline_data->get_data_ptr(),projection_data->get_data_ptr(),physical_dims,dims,background,offset);
+		//cudaThreadSynchronize();
 
-		}
-		CHECK_FOR_CUDA_ERROR();
 	}
+	CHECK_FOR_CUDA_ERROR();
+
 	for (int offset = 0; offset <  (dims+batchSize); offset += batchSize){
 		rescale_directions_kernel<<< dimGrid, dimBlock >>>(spline_data->get_data_ptr(),projection_data->get_data_ptr(),physical_dims,(int) dims,offset);
 	}
@@ -101,8 +118,8 @@ template<> void protonDataset<hoCuNDArray>::crop_splines(std::vector<size_t> & i
 
 	size_t elements = spline_data->get_number_of_elements()/4;
 	size_t offset = 0;
-	cuNDArray<float>* hull;
-	if (_hull) hull = new cuNDArray<float>(*_hull);
+
+
 	for (size_t n = 0; n < (elements-1)/max_batch_size+1; n++){
 
 		size_t batch_size = std::min(max_batch_size,elements-offset);
@@ -125,22 +142,12 @@ template<> void protonDataset<hoCuNDArray>::crop_splines(std::vector<size_t> & i
 		vector_td<int,3> ndims = vector_td<int,3>(from_std_vector<size_t,3>(img_dims));
 		// Invoke kernel
 		int offset_k = 0;
-		if (_hull){
-			for (unsigned int i = 0; i <= (totalBlocksPerGrid-1)/MAX_BLOCKS+1; i++){
-				crop_splines_hull_kernel<<< dimGrid, dimBlock >>> (splines_dev.get_data_ptr(),projections_dev.get_data_ptr(),hull->get_data_ptr(),ndims,physical_dims,batch_size,background,offset_k);
-				offset_k += dimGrid.x*dimBlock.x;
-				//crop_splines_kernel<<< dimGrid, dimBlock >>> (this->splines->get_data_ptr(),projections->get_data_ptr(),physical_dims,origin,dims,background,offset);
-				cudaThreadSynchronize();
-				CHECK_FOR_CUDA_ERROR();
-			}
-			std::cout << "Minimum element " << min(projection_data.get()) << std::endl;
-			clamp_min(projection_data.get(),0.0f);
-		} else {
-			for (unsigned int i = 0; i <= (totalBlocksPerGrid-1)/MAX_BLOCKS+1; i++){
-				crop_splines_kernel<<< dimGrid, dimBlock >>> (splines_dev.get_data_ptr(),projections_dev.get_data_ptr(),physical_dims, batch_size,background,offset_k);
-				offset_k += dimGrid.x*dimBlock.x;
-			}
+
+		for (unsigned int i = 0; i <= (totalBlocksPerGrid-1)/MAX_BLOCKS+1; i++){
+			crop_splines_kernel<<< dimGrid, dimBlock >>> (splines_dev.get_data_ptr(),projections_dev.get_data_ptr(),physical_dims, batch_size,background,offset_k);
+			offset_k += dimGrid.x*dimBlock.x;
 		}
+
 		offset_k = 0;
 		for (unsigned int i = 0; i <= (totalBlocksPerGrid-1)/MAX_BLOCKS+1; i++){
 			rescale_directions_kernel<<< dimGrid, dimBlock >>>(splines_dev.get_data_ptr(),projections_dev.get_data_ptr(),physical_dims, batch_size,offset_k);
@@ -150,9 +157,8 @@ template<> void protonDataset<hoCuNDArray>::crop_splines(std::vector<size_t> & i
 		cudaMemcpy(projections_view.get_data_ptr(),projections_dev.get_data_ptr(),batch_size*sizeof(float),cudaMemcpyDeviceToHost);
 		offset += batch_size;
 
-
 	}
-	if (_hull) delete hull;
+
 }
 
 template<template<class> class ARRAY> void protonDataset<ARRAY>::rotateSplines(std::vector< boost::shared_ptr<ARRAY<vector_td<float,3> > > >  & splines, std::vector<float> & angles){
@@ -162,6 +168,17 @@ template<template<class> class ARRAY> void protonDataset<ARRAY>::rotateSplines(s
 		rotate_splines(cu_splines.get(),angles[i]);
 		copy_to_Array(cu_splines,splines[i]);
 	}
+}
+template<template<class> class ARRAY> bool protonDataset<ARRAY>::has_weights(hid_t file_id, std::vector<std::string>& groupnames){
+
+
+	for (size_t i = 0; i < groupnames.size(); i++){
+		hid_t group = H5Gopen(file_id,groupnames[i].c_str());
+		herr_t err=H5LTfind_dataset(group,"weights");
+		H5Gclose(group);
+		if (!err) return false;
+	}
+	return true;
 }
 template<template<class> class ARRAY> void protonDataset<ARRAY>::load_fromtable(hid_t file_id, std::vector<std::string>& groupnames){
 
@@ -180,7 +197,8 @@ template<template<class> class ARRAY> void protonDataset<ARRAY>::load_fromtable(
 
 	const size_t float_size[1] = {sizeof(float) };
 	const size_t float_offset[1] = {0};
-	std::string projections_name = "projections";
+	const std::string projections_name = "projections";
+	const std::string weights_name = "weights";
 
 	//hid_t strtype;                     /* Datatype ID */
 	//herr_t status;
@@ -188,7 +206,7 @@ template<template<class> class ARRAY> void protonDataset<ARRAY>::load_fromtable(
 
 	size_t offset = 0;
 
-	for (int i = 0; i < groupnames.size(); i++){
+for (int i = 0; i < groupnames.size(); i++){
 		hsize_t nfields,nrecords;
 		herr_t err = H5TBget_table_info (file_id, (groupnames[i]+splines_name).c_str(), &nfields, &nrecords );
 		if (err < 0) throw std::runtime_error("Illegal hdf5 dataset provided");
@@ -217,6 +235,16 @@ template<template<class> class ARRAY> void protonDataset<ARRAY>::load_fromtable(
 		}
 
 		projection_arrays.push_back(projections);
+
+		if (weights){
+			boost::shared_ptr<ARRAY<float > > local_weights(new ARRAY<float >(proj_dims,weights->get_data_ptr()+offset));
+			hoCuNDArray<float > tmp_weights(proj_dims);
+			err = H5TBread_table (file_id, (groupnames[i]+projections_name).c_str(), sizeof(float),  float_offset, float_size,  tmp_weights.get_data_ptr());
+			if (err < 0) throw std::runtime_error("Unable to read projections from hdf5 file");
+			*local_weights= tmp_weights;
+			weight_arrays.push_back(local_weights);
+		}
+
 		offset += nrecords;
 
 
@@ -290,6 +318,99 @@ static float find_percentile(cuNDArray<float>* arr,float fraction){
 	return tmp.at((size_t)(tmp.get_number_of_elements()*fraction));
 }
 
+template<> boost::shared_ptr<hoCuNDArray<float> > protonDataset<hoCuNDArray>::calc_exterior_path_lengths(boost::shared_ptr<hoCuNDArray<vector_td<float,3> > > splines, boost::shared_ptr<hoCuNDArray<float> > hull, floatd3 physical_dims){
+
+	size_t max_batch_size = calculate_batch_size();
+
+
+	size_t elements = splines->get_number_of_elements()/4;
+	size_t offset = 0;
+	cuNDArray<float> cu_hull(*hull);
+
+	std::vector<size_t> length_dims;
+	length_dims.push_back(elements);
+	length_dims.push_back(2);
+	boost::shared_ptr<hoCuNDArray<float> > space_lengths(new hoCuNDArray<float>(length_dims));
+
+	vector_td<int,3> ndims = vector_td<int,3>(from_std_vector<size_t,3>(*hull->get_dimensions()));
+
+	for (size_t n = 0; n < (elements-1)/max_batch_size+1; n++){
+
+		size_t batch_size = std::min(max_batch_size,elements-offset);
+		std::vector<size_t> batch_dim;
+		batch_dim.push_back(batch_size);
+		batch_dim.push_back(2);
+
+
+		hoCuNDArray<float> space_lengths_view(batch_dim,space_lengths->get_data_ptr()+offset*2);
+		cuNDArray<float> space_lengths_dev(&space_lengths_view);
+
+		CHECK_FOR_CUDA_ERROR();
+		batch_dim.back() = 4;
+		hoCuNDArray<floatd3 > splines_view(&batch_dim,splines->get_data_ptr()+offset*4); // This creates a "view" of splines
+		cuNDArray<floatd3 > splines_dev(&splines_view);
+		CHECK_FOR_CUDA_ERROR();
+
+		int threadsPerBlock = std::min((int)batch_size, MAX_THREADS_PER_BLOCK);
+		dim3 dimBlock( threadsPerBlock);
+		int totalBlocksPerGrid = (batch_size-1)/MAX_THREADS_PER_BLOCK+1;
+		dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+
+		// Invoke kernel
+		int offset_k = 0;
+
+		for (unsigned int i = 0; i <= (totalBlocksPerGrid-1)/MAX_BLOCKS+1; i++){
+			calc_spaceLengths_kernel<<< dimGrid, dimBlock >>>(splines_dev.get_data_ptr(),space_lengths_dev.get_data_ptr(),cu_hull.get_data_ptr(),ndims,physical_dims,batch_dim[0],offset_k);
+
+			offset_k += dimGrid.x*dimBlock.x;
+			//crop_splines_kernel<<< dimGrid, dimBlock >>> (this->splines->get_data_ptr(),projections->get_data_ptr(),physical_dims,origin,dims,background,offset);
+			cudaThreadSynchronize();
+			CHECK_FOR_CUDA_ERROR();
+		}
+
+		cudaMemcpy(space_lengths->get_data_ptr()+offset*2,space_lengths_dev.get_data_ptr(),batch_size*sizeof(float),cudaMemcpyDeviceToHost);
+		offset += batch_size;
+
+
+	}
+
+	return space_lengths;
+}
+
+
+template<> boost::shared_ptr<cuNDArray<float> > protonDataset<cuNDArray>::calc_exterior_path_lengths(boost::shared_ptr<cuNDArray<vector_td<float,3> > > splines, boost::shared_ptr<cuNDArray<float> > hull, floatd3 physical_dims){
+
+	size_t elements = splines->get_number_of_elements()/4;
+
+	std::vector<size_t> length_dims;
+	length_dims.push_back(elements);
+	length_dims.push_back(2);
+	boost::shared_ptr<cuNDArray<float> > space_lengths(new cuNDArray<float>(length_dims));
+
+	//clear(space_lengths.get());
+	vector_td<int,3> ndims = vector_td<int,3>(from_std_vector<size_t,3>(*hull->get_dimensions()));
+
+
+	int threadsPerBlock = std::min((int)elements, MAX_THREADS_PER_BLOCK);
+	dim3 dimBlock( threadsPerBlock);
+	int totalBlocksPerGrid = (elements-1)/MAX_THREADS_PER_BLOCK+1;
+	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	// Invoke kernel
+	int offset_k = 0;
+	for (unsigned int i = 0; i <= (totalBlocksPerGrid-1)/MAX_BLOCKS+1; i++){
+		calc_spaceLengths_kernel<<< dimGrid, dimBlock >>>(splines->get_data_ptr(),space_lengths->get_data_ptr(),hull->get_data_ptr(),ndims,physical_dims,elements,offset_k);
+
+		offset_k += dimGrid.x*dimBlock.x;
+		//crop_splines_kernel<<< dimGrid, dimBlock >>> (this->splines->get_data_ptr(),projections->get_data_ptr(),physical_dims,origin,dims,background,offset);
+		cudaThreadSynchronize();
+		CHECK_FOR_CUDA_ERROR();
+	}
+
+	std::cout << "Exterior path length mean: " << asum(space_lengths.get())/space_lengths->get_number_of_bytes() << std::endl;
+	std::cout << "Max: " << max(space_lengths.get()) << std::endl;
+	return space_lengths;
+}
+
 template<template<class> class ARRAY>  boost::shared_ptr<ARRAY<float> > protonDataset<ARRAY>::calc_hull(std::vector<size_t> & img_dims, floatd3 physical_dims){
 
 
@@ -317,7 +438,7 @@ template<template<class> class ARRAY>  boost::shared_ptr<ARRAY<float> > protonDa
 		boost::shared_ptr< cuNDArray<vector_td<float,3> > >  cu_splines=to_cuNDArray(spline_arrays[group]);
 		boost::shared_ptr< cuNDArray<float > >  cu_projections=to_cuNDArray(projection_arrays[group]);
 
-		float cutoff = find_percentile(cu_projections.get(),0.01f);
+		float cutoff = find_percentile(cu_projections.get(),0.001f);
 		for (int offset = 0; offset <  (dims+batchSize); offset += batchSize){
 			space_carver_kernel<float><<< dimGrid, dimBlock >>> (cu_projections->get_data_ptr(), cuHull->get_data_ptr(),cu_splines->get_data_ptr(),physical_dims, cutoff, (vector_td<int,3>)_dims, dims,offset);
 		}
@@ -326,7 +447,7 @@ template<template<class> class ARRAY>  boost::shared_ptr<ARRAY<float> > protonDa
 	std::cout << "Hull norm: " << nrm2(cuHull.get()) << std::endl;
 	cuNDArray<float> tmp(*cuHull);
 	cuGaussianFilterOperator<float,3> gauss;
-	gauss.set_sigma(1.0f);
+	gauss.set_sigma(2.0f);
 	gauss.mult_M(&tmp,cuHull.get());
 
 	std::cout << "Hull norm: " << nrm2(cuHull.get()) << std::endl;

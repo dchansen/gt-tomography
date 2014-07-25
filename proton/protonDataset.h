@@ -35,6 +35,14 @@ public:
 		return weight_arrays[group];
 	}
 
+
+	boost::shared_ptr<ARRAY<float> > get_EPL(){
+		return exterior_path_lengths;
+	}
+	boost::shared_ptr<ARRAY<float> > get_EPL_group(size_t group){
+		return exterior_path_lengths_arrays[group];
+	}
+
 	unsigned int get_number_of_groups(){return projection_arrays.size();}
 	float get_angle(size_t group){
 		if (angles.size() > 0) return angles[group];
@@ -53,8 +61,9 @@ public:
 	/**
 	 * Creates a dataset from the hdf5 file
 	 * @param filename Hdf5 file containing data
+	 * @param load_weights If true, weights will be loaded from the hdf5 file, if present
 	 */
-	protonDataset(std::string & filename);
+	protonDataset(const std::string & filename, bool load_weights=true);
 
 	/**
 	 * Creates a dataset from spline and projection arrays
@@ -128,6 +137,7 @@ public:
 			subset->spline_data = spline_arrays[i];
 			subset->projection_data = projection_arrays[i];
 			if (weights) subset->weights = weight_arrays[i];
+			if (exterior_path_lengths) subset->exterior_path_lengths = exterior_path_lengths_arrays[i];
 
 			subset->spline_arrays.push_back(subset->spline_data);
 			subset->projection_arrays.push_back(subset->projection_data);
@@ -196,6 +206,13 @@ protected:
 	std::vector<std::string> group_paths(std::string path,hid_t file_id);
 
 
+/**
+ * Checks if a given data file has a complete set of weights
+ * @param file_id
+ * @param groupnames
+ * @return
+ */
+	bool has_weights(hid_t file_id, std::vector<std::string>& groupnames);
 	/**
 	 * Converts to array of type ARRAY
 	 * @param in
@@ -220,12 +237,20 @@ protected:
 	std::vector< boost::shared_ptr<ARRAY<float > > > weight_arrays;
 	std::vector< boost::shared_ptr<ARRAY<vector_td<float,3> > > > spline_arrays;
 
+	boost::shared_ptr<ARRAY<float> > exterior_path_lengths;
+	std::vector< boost::shared_ptr<ARRAY<float > > > exterior_path_lengths_arrays;
 	bool _preprocessed;
 
 	boost::shared_ptr<ARRAY<float> > _hull;
 
 	static void rotateSplines(std::vector< boost::shared_ptr<ARRAY<vector_td<float,3> > > >  &, std::vector<float> & );
 	void crop_splines(std::vector<size_t> & img_dims, floatd3 physical_dims, float background = 0.0f);
+
+
+	/**
+	 * Based on the current hull, calculates the length of the linear segment of the curves
+	 */
+	static boost::shared_ptr<ARRAY<float> > calc_exterior_path_lengths(boost::shared_ptr<ARRAY<vector_td<float,3> > > splines, boost::shared_ptr<ARRAY<float> > hull, floatd3 physical_dims	);
 
 
 
