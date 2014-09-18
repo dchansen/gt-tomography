@@ -36,22 +36,46 @@ public:
 		operators[subset].mult_M(in,out,accumulate);
 	}
 	virtual void mult_MH(ARRAY<float>* in, ARRAY<float>* out, int subset, bool accumulate=false){
-			std::stringstream ss;
-			ss << "Subset " << subset << " out of bounds";
-			if (subset >= operators.size() ) throw std::runtime_error(ss.str());
-			operators[subset].mult_MH(in,out,accumulate);
+		std::stringstream ss;
+		ss << "Subset " << subset << " out of bounds";
+		if (subset >= operators.size() ) throw std::runtime_error(ss.str());
+		operators[subset].mult_MH(in,out,accumulate);
 	}
 	virtual void mult_MH_M(ARRAY<float>* in, ARRAY<float>* out, int subset, bool accumulate=false){
-	  if (subset >= operators.size() ) throw std::runtime_error("Subset out of bounds");
-				operators[subset].mult_MH_M(in,out,accumulate);
+		if (subset >= operators.size() ) throw std::runtime_error("Subset out of bounds");
+		operators[subset].mult_MH_M(in,out,accumulate);
 	}
-  virtual boost::shared_ptr< linearOperator<ARRAY<float> > > clone() {
-       return linearOperator<ARRAY<float> >::clone(this);
-     }
+	virtual boost::shared_ptr< linearOperator<ARRAY<float> > > clone() {
+		return linearOperator<ARRAY<float> >::clone(this);
+	}
 
+	virtual void protonCount(ARRAY<float>* count_img, int subset){
+		std::stringstream ss;
+		ss << "Subset " << subset << " out of bounds";
+		if (subset >= operators.size() ) throw std::runtime_error(ss.str());
+		operators[subset].protonCount(count_img);
+	}
+
+	virtual void pathNorm(ARRAY<float>* projections, int subset ){
+		std::stringstream ss;
+		ss << "Subset " << subset << " out of bounds";
+		if (subset >= operators.size() ) throw std::runtime_error(ss.str());
+		operators[subset].pathNorm(projections);
+	}
+
+	virtual void pathNorm(ARRAY<float>* out){
+		std::vector<boost::shared_ptr<ARRAY<float> > > projections = projection_subsets(out);
+		for (int i = 0; i < operators.size(); i++) pathNorm(projections[i].get(),i);
+	}
 
 	virtual boost::shared_ptr< std::vector<size_t> > get_codomain_dimensions(int subset){
 		return subset_dimensions[subset];
+	}
+
+	virtual void set_domain_dimensions(std::vector<size_t> * dims){
+		subsetOperator<ARRAY<float> >::set_domain_dimensions(dims);
+		for (int i = 0; i < operators.size(); i++) operators[i].set_domain_dimensions(dims);
+
 	}
 
 protected:

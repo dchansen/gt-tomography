@@ -41,7 +41,7 @@ template<template<class> class ARRAY> void splineBackprojectionOperator<ARRAY>
 */
 	protonProjection(in,out,data->get_splines().get(),physical_dims,data->get_EPL().get());
 
-	if (data->get_weights()){
+	if (data->get_weights() && use_weights){
 		*out *= *data->get_weights();
 		std::cout << "Using weights" << std::endl;
 	}
@@ -67,7 +67,7 @@ template<template<class> class ARRAY> void splineBackprojectionOperator<ARRAY>
 	clear(out);
 
 	ARRAY<float>* in = in_orig;
-	if (data->get_weights()){
+	if (data->get_weights() && use_weights){
 		in = new ARRAY<float>(*in_orig);
 		*in *= *data->get_weights();
 	}
@@ -78,7 +78,7 @@ template<template<class> class ARRAY> void splineBackprojectionOperator<ARRAY>
 	}
 	if (accumulate) delete out;
 
-	if (data->get_weights()) delete in;
+	if (data->get_weights() && use_weights) delete in;
 }
 
 

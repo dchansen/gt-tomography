@@ -121,7 +121,7 @@ public:
 			//std::cout << "Backprojection done " << std::endl;
 
 		}
-		if (hull) image *= *hull;
+		//if (hull) image *= *hull;
 		//image *= float(dims_proj[0])/(float(ngroups)*2*boost::math::constants::pi<float>());
 		image *= 1.0f/float(ngroups);
 

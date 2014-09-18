@@ -11,7 +11,7 @@ include_directories(
 )
 
 cuda_add_library( proton_kernels SHARED
-  splineBackprojectionOperator.cu proton_kernels.cu histogram.cu hoCuParallelProjection.cu protonPreconditioner.cu proton_utils.cu protonDataset.cu
+  splineBackprojectionOperator.cu proton_kernels.cu histogram.cu hoCuParallelProjection.cu protonPreconditioner.cu proton_utils.cu proton_utils.h protonDataset.cu
 )
 
 target_link_libraries(proton_kernels gpucore hostutils gpufft gpunfft tomography_solvers ${CUDA_LIBRARIES} tomography_operators)

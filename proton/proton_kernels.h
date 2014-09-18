@@ -2,6 +2,96 @@
 #include "vector_td.h"
 
 namespace Gadgetron{
+
+
+
+template<class REAL> struct forward_functor {
+	forward_functor(const REAL* __restrict__ input_image, REAL* __restrict__ input_projections): image(input_image), projection(input_projections), res(0){};
+
+	__device__  __inline__ void begin(const int proj_idx){};
+	/**
+	 *
+	 * @param idx Image id
+	 * @param length
+	 */
+	__device__ __inline__ void operator() (const int img_idx, const REAL length ){
+		res += image[img_idx]*length;
+	}
+
+	__device__  __inline__ void final(const int proj_idx){
+		projection[proj_idx] = res;
+	}
+	REAL res;
+	const REAL* __restrict__ image;
+	REAL* __restrict__ projection;
+};
+
+template<class REAL> struct backward_functor {
+	backward_functor(REAL* __restrict__ input_image, REAL* __restrict__ input_projections): image(input_image), projection(input_projections){};
+	/**
+	 *
+	 * @param idx Image id
+	 * @param length
+	 */
+	__device__  __inline__ void begin(const int proj_idx){
+		proj = projection[proj_idx];
+	}
+
+	__device__ __inline__ void operator() (const int img_idx, const REAL length ){
+		atomicAdd(&(image[img_idx]),length*proj);
+	}
+
+	__device__  __inline__ void final(const int proj_idx){
+	}
+	REAL proj;
+	REAL* __restrict__ image;
+	const REAL* __restrict__ projection;
+};
+
+
+template<class REAL> struct backward_counting_functor {
+	backward_counting_functor(REAL* __restrict__ input_image): image(input_image){};
+	/**
+	 *
+	 * @param idx Image id
+	 * @param length
+	 */
+	__device__  __inline__ void begin(const int proj_idx){
+	}
+
+	__device__ __inline__ void operator() (const int img_idx, const REAL length ){
+		atomicAdd(&(image[img_idx]),REAL(1));
+	}
+
+	__device__  __inline__ void final(const int proj_idx){
+	}
+	REAL* __restrict__ image;
+
+};
+
+template<class REAL> struct forward_norm_functor {
+	forward_norm_functor(REAL* __restrict__ input_projections): projection(input_projections), res(0){};
+
+	__device__  __inline__ void begin(const int proj_idx){};
+	/**
+	 *
+	 * @param idx Image id
+	 * @param length
+	 */
+	__device__ __inline__ void operator() (const int img_idx, const REAL length ){
+		//res += image[img_idx]*length;
+		res += length*length;
+	}
+
+	__device__  __inline__ void final(const int proj_idx){
+		projection[proj_idx] = res;
+	}
+	REAL res;
+	REAL* __restrict__ projection;
+};
+
+
+
 /**
  * Calculates the forwards projection (Ax) of the image by integrating the cubic splines through.
  * @param[in] image
@@ -28,17 +118,13 @@ template <class REAL> __global__ void forward_kernel(const REAL* __restrict__ im
  * @param proj_dim
  * @param offset
  */
-template <class REAL> __global__ void forward_kernel2(const REAL* __restrict__ image, REAL* __restrict__ projections,
-		const vector_td<REAL,3> * __restrict__ splines, const REAL * __restrict__ space_lengths, const vector_td<REAL,3> dims,
-		const intd3 ndims, const int proj_dim, const int offset);
 
-template <class REAL> __global__ void backwards_kernel(const REAL* __restrict__ projections, REAL* __restrict__ image,
+template <class REAL, class OP> __global__ void path_kernel(OP op,
 		const vector_td<REAL,3> * __restrict__ splines,  const vector_td<REAL,3> dims,
 		const typename intd<3>::Type ndims, const int proj_dim, const int offset);
 
-template <class REAL> __global__ void backwards_kernel2(const REAL* __restrict__ projections, REAL* __restrict__ image,
-		const vector_td<REAL,3> * __restrict__ splines, const REAL * __restrict__ space_lengths, const vector_td<REAL,3> dims,
-		const typename intd<3>::Type ndims, const int proj_dim, const int offset);
+template <class REAL, class OP> __global__ void path_kernel2(OP op, const vector_td<REAL,3> * __restrict__ splines,  const REAL* __restrict__ space_lengths, const vector_td<REAL,3> dims,
+		const intd3 ndims, const int proj_dim, const int offset);
 
 template <class REAL> __global__ void space_carver_kernel(const REAL* __restrict__ projections, REAL* __restrict__ image,
 		const vector_td<REAL,3> * __restrict__ splines,  const vector_td<REAL,3> dims, REAL cutoff,

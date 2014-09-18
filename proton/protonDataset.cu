@@ -241,6 +241,7 @@ for (int i = 0; i < groupnames.size(); i++){
 			hoCuNDArray<float > tmp_weights(proj_dims);
 			err = H5TBread_table (file_id, (groupnames[i]+projections_name).c_str(), sizeof(float),  float_offset, float_size,  tmp_weights.get_data_ptr());
 			if (err < 0) throw std::runtime_error("Unable to read projections from hdf5 file");
+			reciprocal_inplace(&tmp_weights);
 			*local_weights= tmp_weights;
 			weight_arrays.push_back(local_weights);
 		}

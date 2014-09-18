@@ -93,12 +93,19 @@ public:
 				}
 
 			}
-			std::reverse(isubsets.begin(),isubsets.end());
+			//std::reverse(isubsets.begin(),isubsets.end());
 			//std::random_shuffle(isubsets.begin(),isubsets.end());
 			ARRAY_TYPE tmp_proj(*in);
 			clear(&tmp_proj);
 			this->encoding_operator_->mult_M(x,&tmp_proj,false);
 			tmp_proj -= *in;
+
+
+			std::stringstream ss;
+			ss << "osSPS-" << i << ".real";
+
+			save_nd_array(x,ss.str());
+
 			//calc_regMultM(x,regEnc);
 			//REAL f = functionValue(&tmp_proj,regEnc,x);
 			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;

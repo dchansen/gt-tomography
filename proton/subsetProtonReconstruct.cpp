@@ -23,6 +23,7 @@
 
 
 #include "osSARTSolver.h"
+#include "protonDROPSolver.h"
 #include "osSPSSolver.h"
 #include "hoOSGPBBSolver.h"
 #include "hoOSCGSolver.h"
@@ -32,6 +33,7 @@
 #include "hoCuNCGSolver.h"
 #include "cuNCGSolver.h"
 #include "hdf5_utils.h"
+#include "BILBSolver.h"
 
 #include "encodingOperatorContainer.h"
 #include "hoCuOperator.h"
@@ -63,11 +65,11 @@ int main( int argc, char** argv)
 	vector_td<int,3> dimensions;
 	vector_td<float,3> physical_dims;
 	vector_td<float,3> origin;
-	float beta;
+	float beta,gamma;
 	int iterations;
 	int device;
 	int subsets;
-	bool use_hull;
+	bool use_hull,use_weights;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 			("help", "produce help message")
@@ -83,7 +85,9 @@ int main( int argc, char** argv)
 			("TV,T",po::value<float>(),"TV Weight ")
 			("subsets,n", po::value<int>(&subsets)->default_value(10), "Number of subsets to use")
 			("beta",po::value<float>(&beta)->default_value(1),"Step size for SART")
+			("gamma",po::value<float>(&gamma)->default_value(0),"Relaxation Gamma")
 			("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
+			("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. ")
 	;
 
 	po::variables_map vm;
@@ -117,7 +121,10 @@ int main( int argc, char** argv)
   solver.set_max_iterations( iterations);
 
   solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );*/
-	osSARTSolver<cuNDArray<_real> > solver;
+	//osSARTSolver<cuNDArray<_real> > solver;
+	osSPSSolver<cuNDArray<_real> > solver;
+	//protonDROPSolver<cuNDArray > solver;
+	//BILBSolver<cuNDArray<float> > solver;
 	//osSPSSolver<cuNDArray<_real> > solver;
 	//cuNCGSolver<_real> solver;
 	//hoOSCGPBBSolver<hoCuNDArray<_real> > solver;
@@ -125,21 +132,23 @@ int main( int argc, char** argv)
 	//hoOSCGSolver<hoCuNDArray<_real> > solver;
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
 
-	//solver.set_m(subsets);
-	solver.set_beta(1.9f);
-	//solver.set_beta(beta);
-	//solver.set_gamma(1.0f/5);
+	//solver.set_m(24);
+	//solver.set_beta(1.9f);
+	solver.set_beta(beta);
+	solver.set_gamma(gamma);
   solver.set_non_negativity_constraint(true);
   solver.set_max_iterations(iterations);
 
   //solver.set_tc_tolerance(1e-10f);
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
-  boost::shared_ptr<protonDataset<cuNDArray> >  data(new protonDataset<cuNDArray>(dataName,false));
+  boost::shared_ptr<protonDataset<cuNDArray> >  data(new protonDataset<cuNDArray>(dataName,use_weights));
 
   data = protonDataset<cuNDArray>::shuffle_dataset(data,subsets);
 
   data->preprocess(rhs_dims,physical_dims,use_hull);
+
+  std::cout << "Size: " << data->get_projections()->get_number_of_elements() << std::endl;
 
   boost::shared_ptr< protonSubsetOperator<cuNDArray> > E (new protonSubsetOperator<cuNDArray>(data->get_subsets(), physical_dims) );
 
@@ -179,14 +188,15 @@ int main( int argc, char** argv)
 		solver.set_x0(prior);
   }
   */
-  /*
+/*
   if (vm.count("TV")){
 	  std::cout << "Total variation regularization in use" << std::endl;
-	  boost::shared_ptr<hoCuTvOperator<float,3> > tv(new hoCuTvOperator<float,3>);
-	  tv->set_weight(vm["TV"].as<float>());
-	  solver.add_nonlinear_operator(tv);
+	  boost::shared_ptr<cuTvOperator<float,3> > tv(new cuTvOperator<float,3>);
+	  //tv->set_weight(vm["TV"].as<float>());
+	  //solver.add_nonlinear_operator(tv);
+	  solver.set_reg_op(tv);
   }
-  */
+*/
 
   solver.set_encoding_operator(E);
   solver.set_output_mode(baseSolver::OUTPUT_VERBOSE);
@@ -196,14 +206,10 @@ int main( int argc, char** argv)
 
 	//float res = dot(projections.get(),projections.get());
 
-
+  if (data->get_weights()) *data->get_projections() *= *data->get_weights();
 	boost::shared_ptr< cuNDArray<_real> > result = solver.solve(data->get_projections().get());
 
-	cuNDArray<_real> tmp_proj(data->get_projections()->get_dimensions());
-	E->mult_M(result.get(),&tmp_proj,false);
-	tmp_proj -= *data->get_projections();
 
-	std::cout << "L2 norm of residual: " << dot(&tmp_proj,&tmp_proj) << std::endl;
 	boost::shared_ptr< hoNDArray<float> > host_result = result->to_host();
 	//write_nd_array<_real>(result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;

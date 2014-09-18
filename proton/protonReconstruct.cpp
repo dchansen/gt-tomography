@@ -31,11 +31,69 @@
 #include "vector_td_io.h"
 #include "protonPreconditioner.h"
 #include "cuLbfgsSolver.h"
+#include "solver_utils.h"
 
+#include "cuTvOperator.h"
 
+#include "circulantPreconditioner.h"
+
+#include "ADMM.h"
 
 using namespace std;
 using namespace Gadgetron;
+
+template <class T> class EXPORTGPUSOLVERS cuLbfgsSolver2 : public lbfgsSolver<cuNDArray<T> >
+  {
+  public:
+
+    cuLbfgsSolver2() : lbfgsSolver<cuNDArray<T> >() {}
+    virtual ~cuLbfgsSolver2() {}
+
+    virtual void solver_non_negativity_filter(cuNDArray<T> *x,cuNDArray<T> *g){
+    	::solver_non_negativity_filter(x,g);
+    }
+    virtual void iteration_callback(cuNDArray<T>* x ,int iteration,typename realType<T>::Type value){
+  	  if (iteration == 0){
+  		  std::ofstream textFile("residual.txt",std::ios::trunc);
+  	  	  textFile << value << std::endl;
+  	  } else{
+  		  std::ofstream textFile("residual.txt",std::ios::app);
+  		  textFile << value << std::endl;
+  	  }
+
+
+   	  std::stringstream ss;
+   	  ss << "LBFGS-" << iteration << ".real";
+   	  write_nd_array(x->to_host().get(),ss.str().c_str());
+
+    };
+  };
+
+
+
+template <class T> class EXPORTGPUSOLVERS cuNlcgSolver2 : public cuNlcgSolver<T >
+  {
+  public:
+
+    cuNlcgSolver2() : cuNlcgSolver<T >() {}
+    virtual ~cuNlcgSolver2() {}
+
+    virtual void iteration_callback(cuNDArray<T>* x ,int iteration,typename realType<T>::Type value, typename realType<T>::Type val2){
+  	  if (iteration == 0){
+  		  std::ofstream textFile("residual.txt",std::ios::trunc);
+  	  	  textFile << value << std::endl;
+  	  } else{
+  		  std::ofstream textFile("residual.txt",std::ios::app);
+  		  textFile << value << std::endl;
+  	  }
+
+
+   	  std::stringstream ss;
+   	  ss << "NLCG-" << iteration << ".real";
+   	  write_nd_array(x->to_host().get(),ss.str().c_str());
+
+    };
+  };
 
 /*
 boost::shared_ptr< cuNDArray<float> >  recursiveSolver(cuNDArray<float> * rhs,cuCGSolver<float, float> * cg,int depth){
@@ -98,6 +156,7 @@ int main( int argc, char** argv)
       								("output,f", po::value<std::string>(&outputFile)->default_value("image.hdf5"), "Output filename")
       								("prior,P", po::value<std::string>(),"Prior image filename")
       								("prior-weight,k",po::value<float>(),"Weight of the prior image")
+      								("TV",po::value<float>(),"Total variation weight")
       								("weights,w",po::value<std::string>(),"File containing the variance of data")
       								("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
       								("preconditioner",po::value<bool>(&precon)->default_value(false),"Use preconditioner")
@@ -145,10 +204,10 @@ int main( int argc, char** argv)
 		cout << "Number of elements " << host_projections->get_number_of_elements() << endl;
 		cout << "Number of projection elements: " << host_projections->get_number_of_elements() << endl;
 		if (vm.count("weights")){
-			boost::shared_ptr< hoNDArray<float> > host_weights = read_nd_array<float >(vm["variance"].as<std::string>().c_str());
+			boost::shared_ptr< hoNDArray<float> > host_weights = read_nd_array<float >(vm["weights"].as<std::string>().c_str());
 			if (host_weights->get_number_of_elements() != host_projections->get_number_of_elements())
 				throw std::runtime_error("Number of elements in the variance vector does not match the number of projections ");
-
+			reciprocal_inplace(host_weights.get());
 			data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines,host_weights));
 
 		} else data = boost::shared_ptr<protonDataset<cuNDArray> >(new protonDataset<cuNDArray>(host_projections,host_splines));
@@ -160,11 +219,12 @@ int main( int argc, char** argv)
 
 
 
+
 	//cuGpBbSolver<float> solver;
 	cuNCGSolver<float> solver;
-	//cuNlcgSolver<float> solver;
+	//cuNlcgSolver2<float> solver;
 	//cuCgSolver<float> solver;
-	//cuLbfgsSolver<float> solver;
+	//cuLbfgsSolver2<float> solver;
 
 	solver.set_max_iterations( iterations);
 	solver.set_tc_tolerance((float)std::sqrt(1e-10));
@@ -172,7 +232,7 @@ int main( int argc, char** argv)
 	//solver.set_m(12);
 	solver.set_output_mode( cuNCGSolver<float>::OUTPUT_VERBOSE );
 	//if (!use_hull)
-	solver.set_non_negativity_constraint(true);
+	//solver.set_non_negativity_constraint(true);
 
 
 
@@ -203,8 +263,11 @@ int main( int argc, char** argv)
 
 
 	if (precon){
-		boost::shared_ptr<protonPreconditioner> P (new protonPreconditioner(rhs_dims));
-		if (use_hull) P->set_hull(data->get_hull());
+		/*boost::shared_ptr<protonPreconditioner> P (new protonPreconditioner(rhs_dims));
+		if (use_hull) P->set_hull(data->get_hull());*/
+		std::cout << "Using preconditioner" << std::endl;
+		boost::shared_ptr<circulantPreconditioner<cuNDArray,float> > P(new circulantPreconditioner<cuNDArray,float>(E));
+
 		solver.set_preconditioner(P);
 	}
 	enc->add_operator(E);
@@ -248,17 +311,32 @@ int main( int argc, char** argv)
 		solver.set_x0(prior);
 	}
 
-	solver.set_encoding_operator(enc);
+	if (vm.count("TV")){
+			std::cout << "Total variation regularization in use" << std::endl;
+			boost::shared_ptr<cuTvOperator<float,3> > tv(new cuTvOperator<float,3>);
+			tv->set_weight(vm["TV"].as<float>());
+			solver.add_nonlinear_operator(tv);
 
+		}
+
+	solver.set_encoding_operator(enc);
+/*
 	boost::shared_ptr< cuNDArray<float> > cgresult(new cuNDArray<float>(&rhs_dims));
 	clear(cgresult.get());
 	std::cout << "Groups: " << data->get_number_of_groups() << std::endl;
+*/
 
-
-	E->mult_MH(data->get_projection_group(0).get(),cgresult.get());
+	//E->mult_MH(data->get_projection_group(0).get(),cgresult.get());
 	//E->mult_MH(rhs.get(),cgresult.get());
 	//P->apply(cgresult.get(),cgresult.get());
-	//boost::shared_ptr< cuNDArray<float> > cgresult = solver.solve(rhs.get());
+	/*
+	ADMM<cuNDArray<float>, cuCgSolver<float> > admm(&solver);
+	admm.set_iterations(10);
+	admm.set_weights(data->get_weights());
+	E->set_use_weights(false);
+	*/
+	boost::shared_ptr< cuNDArray<float> > cgresult = solver.solve(rhs.get());
+	//boost::shared_ptr< cuNDArray<float> > cgresult = admm.solve(rhs.get());
 
 	//cuNDArray<float> tp = *projections;
 
@@ -266,7 +344,7 @@ int main( int argc, char** argv)
 	//axpy(-1.0f,projections.get(),&tp);
 	//std::cout << "Total residual " << nrm2(&tp) << std::endl;
 
-
+	std::cout << "GRadient norm: " << nrm2(cgresult.get()) << std::endl;
 	boost::shared_ptr< hoNDArray<float> > host_result = cgresult->to_host();
 	//write_nd_array<float>(host_result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;

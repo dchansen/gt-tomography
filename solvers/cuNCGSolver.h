@@ -14,6 +14,7 @@
 
 #include <fstream>
 
+#include "hoNDArray_fileio.h"
 namespace Gadgetron{
   
   template <class T> class EXPORTGPUSOLVERS cuNCGSolver : public ncgSolver<cuNDArray<T> >
@@ -33,6 +34,11 @@ namespace Gadgetron{
      		  std::ofstream textFile("residual.txt",std::ios::app);
      		  textFile << value << std::endl;
      	  }
+
+     	  std::stringstream ss;
+     	  ss << "NCG-" << iteration << ".real";
+     	 write_nd_array(x->to_host().get(),ss.str().c_str());
+
 
        };
   };

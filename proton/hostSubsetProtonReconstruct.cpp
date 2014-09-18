@@ -28,6 +28,7 @@
 #include "hoOSCGPBBSolver.h"
 #include "hoCuBILBSolver.h"
 //#include "hoABIBBSolver.h"
+#include "protonDROPSolver.h"
 #include "hoCuNCGSolver.h"
 #include "hdf5_utils.h"
 
@@ -110,27 +111,27 @@ int main( int argc, char** argv)
   solver.set_max_iterations( iterations);
 
   solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );*/
-	osSARTSolver<hoCuNDArray<_real> > solver;
+	//osSARTSolver<hoCuNDArray<_real> > solver;
 	//hoCuNCGSolver<_real> solver;
 	//hoOSCGPBBSolver<hoCuNDArray<_real> > solver;
 	//hoABIBBSolver<hoCuNDArray<_real> > solver;
 	//hoOSCGSolver<hoCuNDArray<_real> > solver;
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
-
+	protonDROPSolver<hoCuNDArray > solver;
 	//solver.set_m(subsets);
 	solver.set_beta(1.9f);
-	solver.set_gamma(1.0f/15);
-  solver.set_non_negativity_constraint(true);
+	//solver.set_gamma(1.0f/15);
+  solver.set_non_negativity_constraint(false);
   solver.set_max_iterations(iterations);
 
 
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
-  boost::shared_ptr<protonDataset<hoCuNDArray> >  data(new protonDataset<hoCuNDArray>(dataName));
+  boost::shared_ptr<protonDataset<hoCuNDArray> >  data(new protonDataset<hoCuNDArray>(dataName,false));
 
   data = protonDataset<hoCuNDArray>::shuffle_dataset(data,subsets);
 
-  data->preprocess(rhs_dims,physical_dims,true);
+  data->preprocess(rhs_dims,physical_dims,false);
 
   boost::shared_ptr< protonSubsetOperator<hoCuNDArray> > E (new protonSubsetOperator<hoCuNDArray>(data->get_subsets(), physical_dims) );
 
@@ -186,10 +187,11 @@ int main( int argc, char** argv)
 
 
 	//float res = dot(projections.get(),projections.get());
-
-
-	boost::shared_ptr< hoCuNDArray<_real> > result = solver.solve(data->get_projections().get());
-
+  boost::shared_ptr< hoCuNDArray<_real> > result;
+  {
+  	GPUTimer timer("Time to solve");
+  	result = solver.solve(data->get_projections().get());
+  }
 	hoCuNDArray<_real> tmp_proj(data->get_projections()->get_dimensions());
 	E->mult_M(result.get(),&tmp_proj,false);
 	tmp_proj -= *data->get_projections();

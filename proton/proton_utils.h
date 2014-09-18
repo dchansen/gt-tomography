@@ -27,4 +27,11 @@ template<template<class> class ARRAY> void protonProjection(ARRAY<float>* image,
  */
 template<template<class> class ARRAY> void protonBackprojection(ARRAY<float>* image,ARRAY<float>* projections, ARRAY<floatd3>* splines, floatd3 phys_dims,ARRAY<float>* exterior_path_lengths=NULL);
 
+
+template<template<class> class ARRAY> void countProtonsPerVoxel(ARRAY<float>* counts,ARRAY<floatd3>* splines, floatd3 phys_dims,ARRAY<float>* exterior_path_lengths=NULL);
+
+template<template<class> class ARRAY> void protonPathNorm(std::vector<size_t> img_dims, ARRAY<float>* projections, ARRAY<floatd3>* splines, floatd3 phys_dims,ARRAY<float>* exterior_path_lengths=NULL );
+
+template<class T, unsigned int D> void pad_nearest( cuNDArray<T> *in, cuNDArray<T> *out );
 }
+

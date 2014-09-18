@@ -114,8 +114,12 @@ int main( int argc, char** argv)
 	if (data->get_weights())
 		*data->get_projections() *= *data->get_weights(); //Have to scale projection data by weights before handing it to the solver. Write up the cost function and see why.
 
+	boost::shared_ptr< hoCuNDArray<_real> > result;
+	{
+		GPUTimer tim("Reconstruction time:");
+		result = E.calculate(rhs_dims,physical_dims,data);
+	}
 
-	boost::shared_ptr< hoCuNDArray<_real> > result = E.calculate(rhs_dims,physical_dims,data);
 
 	splineBackprojectionOperator<hoCuNDArray> op(data,physical_dims);
 
