@@ -718,7 +718,7 @@ template __global__ void Gadgetron::space_carver_kernel<float>(const float* __re
 template __global__ void Gadgetron::crop_splines_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims, const int proj_dim,float background,int offset);
 template __global__ void Gadgetron::rescale_directions_kernel<float>(vector_td<float,3> * splines, float* projections, const  vector_td<float,3>  dims,  const int proj_dim, const int offset);
 
-template __global__ void Gadgetron::crop_splines_hull_kernel<float>(vector_td<float,3> * splines, float* projections,float* hull_mask,const vector_td<int,3,> ndims, const  vector_td<float,3>  dims, const int proj_dim,const float background,int offset);
+//template __global__ void Gadgetron::crop_splines_hull_kernel<float>(vector_td<float,3> * splines, float* projections,float* hull_mask,const vector_td<int,3,> ndims, const  vector_td<float,3>  dims, const int proj_dim,const float background,int offset);
 
 
 template __global__ void Gadgetron::calc_spaceLengths_kernel(const vector_td<float,3> * __restrict__ splines, float* __restrict__ space_lengths,const float*  __restrict__ hull_mask,const vector_td<int,3> ndims, const  vector_td<float,3>  dims, const int proj_dim,int offset);

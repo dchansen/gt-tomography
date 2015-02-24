@@ -4,7 +4,7 @@
 
 #include "conebeam_projection.h"
 #include "float3x3.h"
-#include "hoCuNDArray_operators.h"
+#include "hoCuNDArray_elemwise.h"
 #include "vector_td.h"
 #include "cuNDArray_elemwise.h"
 #include "cuNDArray_operators.h"
@@ -55,7 +55,7 @@ float degrees2radians(float degree) {
 //
 
 static boost::shared_ptr< cuNDArray<float_complext> > cb_fft( cuNDArray<float> *data )
-  		{
+  				{
 	if( data == 0x0 )
 		throw std::runtime_error("CB FFT : illegal input pointer provided");
 
@@ -81,7 +81,7 @@ static boost::shared_ptr< cuNDArray<float_complext> > cb_fft( cuNDArray<float> *
 	}
 
 	return result;
-  		}
+  				}
 
 static void cb_ifft( cuNDArray<float_complext> *in_data, cuNDArray<float> *out_data )
 {
@@ -357,6 +357,20 @@ void apply_offset_correct(hoCuNDArray<float>* projections,std::vector<floatd2>& 
 	}
 }
 
+void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& offsets,		floatd2 ps_dims_in_mm, float SDD,	float SAD){
+
+	std::vector<size_t> dims = *projections->get_dimensions();
+	size_t projection_size = dims[0]*dims[1];
+
+	thrust::device_vector<floatd2> offsets_devVec(offsets);
+	//Calculate number of projections we can fit on device, rounded to nearest MB
+	floatd2* cu_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
+	offset_correct_sqrt(projections,cu_offsets,ps_dims_in_mm,SAD,SDD);
+
+}
+
+
+
 //
 // Forwards projection
 //
@@ -372,7 +386,7 @@ conebeam_forwards_projection_kernel( float * __restrict__ projections,
 		int num_projections,
 		float SDD,
 		float SAD,
-		int num_samples_per_ray )
+		int num_samples_per_ray, bool accumulate )
 {
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
 	const int num_elements = prod(ps_dims_in_pixels_int)*num_projections;
@@ -477,28 +491,26 @@ conebeam_forwards_projection_kernel( float * __restrict__ projections,
 
 		// Output (normalized to the length of the ray)
 		//
-
-		projections[idx] = result*sampling_distance;
+		if (accumulate)
+			projections[idx] += result*sampling_distance;
+		else
+			projections[idx] = result*sampling_distance;
 	}
 }
 
-//
-// Forwards projection of a 3D volume onto a set of (binned) projections
-//
-
 void
-conebeam_forwards_projection( hoCuNDArray<float> *projections,
-		hoCuNDArray<float> *image,
+conebeam_forwards_projection( cuNDArray<float> *projections,
+		cuNDArray<float> *image,
 		std::vector<float> angles,
 		std::vector<floatd2> offsets,
-		std::vector<unsigned int> indices,
-		int projections_per_batch,
 		float samples_per_pixel,
 		floatd3 is_dims_in_mm,
 		floatd2 ps_dims_in_mm,
 		float SDD,
-		float SAD)
+		float SAD,
+		bool accumulate)
 {
+
 	//
 	// Validate the input
 	//
@@ -519,6 +531,124 @@ conebeam_forwards_projection( hoCuNDArray<float> *projections,
 		throw std::runtime_error("Error: conebeam_forwards_projection: inconsistent sizes of input arrays/vectors");
 	}
 
+
+	int projection_res_x = projections->get_size(0);
+	int projection_res_y = projections->get_size(1);
+	int num_projections = projections->get_size(2);
+
+	int matrix_size_x = image->get_size(0);
+	int matrix_size_y = image->get_size(1);
+	int matrix_size_z = image->get_size(2);
+
+
+	// Build texture from input image
+	//
+
+	cudaFuncSetCacheConfig(conebeam_forwards_projection_kernel, cudaFuncCachePreferL1);
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+	cudaExtent extent;
+	extent.width = matrix_size_x;
+	extent.height = matrix_size_y;
+	extent.depth = matrix_size_z;
+
+	cudaMemcpy3DParms cpy_params = {0};
+	cpy_params.kind = cudaMemcpyDeviceToDevice;
+	cpy_params.extent = extent;
+
+	cudaArray *image_array;
+	cudaMalloc3DArray(&image_array, &channelDesc, extent);
+	CHECK_FOR_CUDA_ERROR();
+
+	cpy_params.dstArray = image_array;
+	cpy_params.srcPtr = make_cudaPitchedPtr
+			((void*)image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
+	cudaMemcpy3D(&cpy_params);
+	CHECK_FOR_CUDA_ERROR();
+
+	cudaBindTextureToArray(image_tex, image_array, channelDesc);
+	CHECK_FOR_CUDA_ERROR();
+
+	// Allocate the angles, offsets and projections in device memory
+	//
+
+	thrust::device_vector<float> angles_devVec(angles);
+	thrust::device_vector<floatd2> offsets_devVec(offsets);
+
+	//
+	// Iterate over the batches
+	//
+
+	// Block/grid configuration
+	//
+
+	dim3 dimBlock, dimGrid;
+	setup_grid( projection_res_x*projection_res_y*num_projections, &dimBlock, &dimGrid );
+
+	// Launch kernel
+	//
+
+	floatd3 is_dims_in_pixels(matrix_size_x, matrix_size_y, matrix_size_z);
+	intd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
+
+	float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[0]);
+	floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
+
+	conebeam_forwards_projection_kernel<<< dimGrid, dimBlock >>>
+			( projections->get_data_ptr(), raw_angles, raw_offsets,
+					is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
+					num_projections, SDD, SAD, samples_per_pixel*float(matrix_size_x),accumulate );
+
+	// If not initial batch, start copying the old stuff
+	//
+
+
+	cudaFreeArray(image_array);
+
+	CHECK_FOR_CUDA_ERROR();
+
+}
+//
+// Forwards projection of a 3D volume onto a set of (binned) projections
+//
+
+void
+conebeam_forwards_projection( hoCuNDArray<float> *projections,
+		hoCuNDArray<float> *image,
+		std::vector<float> angles,
+		std::vector<floatd2> offsets,
+		std::vector<unsigned int> indices,
+		int projections_per_batch,
+		float samples_per_pixel,
+		floatd3 is_dims_in_mm,
+		floatd2 ps_dims_in_mm,
+		float SDD,
+		float SAD)
+{
+
+	//
+	// Validate the input
+	//
+
+	if( projections == 0x0 || image == 0x0 ){
+		throw std::runtime_error("Error: conebeam_forwards_projection: illegal array pointer provided");
+	}
+
+	if( projections->get_number_of_dimensions() != 3 ){
+		throw std::runtime_error("Error: conebeam_forwards_projection: projections array must be three-dimensional");
+	}
+
+	if( image->get_number_of_dimensions() != 3 ){
+		throw std::runtime_error("Error: conebeam_forwards_projection: image array must be three-dimensional");
+	}
+
+	if( projections->get_size(2) != angles.size() || projections->get_size(2) != offsets.size() ) {
+		throw std::runtime_error("Error: conebeam_forwards_projection: inconsistent sizes of input arrays/vectors");
+	}
+
+	if (indices.size() == 0){
+		return;
+	}
+
 	int projection_res_x = projections->get_size(0);
 	int projection_res_y = projections->get_size(1);
 
@@ -530,7 +660,6 @@ conebeam_forwards_projection( hoCuNDArray<float> *projections,
 	int matrix_size_z = image->get_size(2);
 
 	hoCuNDArray<float> *int_projections = projections;
-
 	if( projections_per_batch > num_projections_in_bin )
 		projections_per_batch = num_projections_in_bin;
 
@@ -624,7 +753,7 @@ conebeam_forwards_projection( hoCuNDArray<float> *projections,
 		conebeam_forwards_projection_kernel<<< dimGrid, dimBlock, 0, mainStream >>>
 				( projections_DevPtr, raw_angles, raw_offsets,
 						is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
-						projections_in_batch, SDD, SAD, samples_per_pixel*float(matrix_size_x) );
+						projections_in_batch, SDD, SAD, samples_per_pixel*float(matrix_size_x), false );
 
 		// If not initial batch, start copying the old stuff
 		//
@@ -672,7 +801,6 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 		floatd2 ps_dims_in_pixels,
 		floatd2 ps_dims_in_mm,
 		int num_projections_in_batch,
-		float num_projections_in_bin,
 		float SDD,
 		float SAD,
 		bool accumulate )
@@ -788,7 +916,7 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 		// Output normalized image
 		//
 
-		image[idx] = incoming + result / num_projections_in_bin;
+		image[idx] = incoming + result  ;
 	}
 }
 
@@ -796,6 +924,133 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 // Backprojection
 //
 
+void conebeam_backwards_projection( cuNDArray<float> *projections,
+		cuNDArray<float> *image,
+		std::vector<float> angles,
+		std::vector<floatd2> offsets,
+		intd3 is_dims_in_pixels,
+		floatd3 is_dims_in_mm,
+		floatd2 ps_dims_in_mm,
+		float SDD,
+		float SAD,
+		bool use_offset_correction,
+		bool accumulate
+)
+{
+	//
+	// Validate the input
+	//
+
+	if( projections == 0x0 || image == 0x0 ){
+		throw std::runtime_error("Error: conebeam_backwards_projection: illegal array pointer provided");
+	}
+
+	if( projections->get_number_of_dimensions() != 3 ){
+		throw std::runtime_error("Error: conebeam_backwards_projection: projections array must be three-dimensional");
+	}
+
+	if( image->get_number_of_dimensions() != 3 ){
+		throw std::runtime_error("Error: conebeam_backwards_projection: image array must be three-dimensional");
+	}
+
+	if( projections->get_size(2) != angles.size() || projections->get_size(2) != offsets.size() ) {
+		throw std::runtime_error("Error: conebeam_backwards_projection: inconsistent sizes of input arrays/vectors");
+	}
+
+	// Some utility variables
+	//
+
+	int matrix_size_x = image->get_size(0);
+	int matrix_size_y = image->get_size(1);
+	int matrix_size_z = image->get_size(2);
+
+	floatd3 is_dims(matrix_size_x, matrix_size_y, matrix_size_z);
+
+	int projection_res_x = projections->get_size(0);
+	int projection_res_y = projections->get_size(1);
+	int num_projections = projections->get_size(2);
+
+	floatd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
+
+	// Allocate device memory for the backprojection result
+	//
+	// Allocate the angles, offsets and projections in device memory
+	//
+
+	thrust::device_vector<float> angles_devVec(angles);
+	thrust::device_vector<floatd2> offsets_devVec(offsets);
+
+	std::vector<size_t> dims;
+	dims.push_back(projection_res_x);
+	dims.push_back(projection_res_y);
+	dims.push_back(num_projections);
+
+
+	//
+	// Iterate over batches
+	//
+
+	float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[0]);
+	floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
+
+
+	if (use_offset_correction)
+		offset_correct_sqrt( projections, raw_offsets, ps_dims_in_mm, SAD, SDD );
+
+	// Build array for input texture
+	//
+
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+	cudaExtent extent;
+	extent.width = projection_res_x;
+	extent.height = projection_res_y;
+	extent.depth = num_projections;
+
+	cudaArray *projections_array;
+	cudaMalloc3DArray( &projections_array, &channelDesc, extent, cudaArrayLayered );
+	CHECK_FOR_CUDA_ERROR();
+
+	cudaMemcpy3DParms cpy_params = {0};
+	cpy_params.extent = extent;
+	cpy_params.dstArray = projections_array;
+	cpy_params.kind = cudaMemcpyDeviceToDevice;
+	cpy_params.srcPtr =
+			make_cudaPitchedPtr( (void*)projections->get_data_ptr(), projection_res_x*sizeof(float),
+					projection_res_x, projection_res_y );
+	cudaMemcpy3D( &cpy_params );
+	CHECK_FOR_CUDA_ERROR();
+
+	cudaBindTextureToArray( projections_tex, projections_array, channelDesc );
+	CHECK_FOR_CUDA_ERROR();
+
+	// Upload projections for the next batch
+	// - to enable streaming
+	//
+	// Define dimensions of grid/blocks.
+	//
+
+	dim3 dimBlock, dimGrid;
+	setup_grid( matrix_size_x*matrix_size_y*matrix_size_z, &dimBlock, &dimGrid );
+
+	// Invoke kernel
+	//
+
+	cudaFuncSetCacheConfig(conebeam_backwards_projection_kernel<false>, cudaFuncCachePreferL1);
+
+	conebeam_backwards_projection_kernel<false	><<< dimGrid, dimBlock >>>
+			( image->get_data_ptr(), raw_angles, raw_offsets,
+					is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
+					num_projections,  SDD, SAD, accumulate );
+
+	CHECK_FOR_CUDA_ERROR();
+
+	// Cleanup
+	//
+
+	cudaUnbindTexture(projections_tex);
+	cudaFreeArray(projections_array);
+	CHECK_FOR_CUDA_ERROR();
+}
 template <bool FBP>
 void conebeam_backwards_projection( hoCuNDArray<float> *projections,
 		hoCuNDArray<float> *image,
@@ -837,6 +1092,15 @@ void conebeam_backwards_projection( hoCuNDArray<float> *projections,
 
 	if( FBP && !(cosine_weights && frequency_filter) ){
 		throw std::runtime_error("Error: conebeam_backwards_projection: for _filtered_ backprojection both cosine weights and a filter must be provided");
+	}
+
+	if (indices.size() == 0){
+		if (accumulate)
+			return;
+		else {
+			clear(image);
+			return;
+		}
 	}
 
 	// Some utility variables
@@ -1001,8 +1265,8 @@ void conebeam_backwards_projection( hoCuNDArray<float> *projections,
 			crop<float,3>( crop_offsets, padded_projections.get(), projections_batch );
 
 			// Apply offset correction
-					// - for half fan mode, sag correction etc.
-					//
+			// - for half fan mode, sag correction etc.
+			//
 			if (use_offset_correction)
 				offset_correct( projections_batch, raw_offsets, ps_dims_in_mm, SAD, SDD );
 
@@ -1104,7 +1368,7 @@ void conebeam_backwards_projection( hoCuNDArray<float> *projections,
 		conebeam_backwards_projection_kernel<FBP><<< dimGrid, dimBlock, 0, mainStream >>>
 				( image_device->get_data_ptr(), raw_angles, raw_offsets,
 						is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
-						projections_in_batch, num_projections_in_bin, SDD, SAD, (batch==0) ? accumulate : true );
+						projections_in_batch,  SDD, SAD, (batch==0) ? accumulate : true );
 
 		CHECK_FOR_CUDA_ERROR();
 

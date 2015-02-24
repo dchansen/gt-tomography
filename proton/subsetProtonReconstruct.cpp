@@ -11,6 +11,7 @@
 
 #include "cuNDArray.h"
 #include "cuNDArray_math.h"
+#include "cuNDArray_fileio.h"
 
 #include "protonSubsetOperator.h"
 #include "hoNDArray_fileio.h"
@@ -19,7 +20,6 @@
 #include "hoCuGPBBSolver.h"
 #include "hoCuPartialDerivativeOperator.h"
 #include "hoCuNDArray_blas.h"
-#include "hoCuNDArray_operators.h"
 
 
 #include "osSARTSolver.h"
@@ -69,7 +69,7 @@ int main( int argc, char** argv)
 	int iterations;
 	int device;
 	int subsets;
-	bool use_hull,use_weights;
+	bool use_hull,use_weights, use_non_negativity;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 			("help", "produce help message")
@@ -88,6 +88,7 @@ int main( int argc, char** argv)
 			("gamma",po::value<float>(&gamma)->default_value(0),"Relaxation Gamma")
 			("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
 			("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. ")
+			("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Use non-negativity constraint. ")
 	;
 
 	po::variables_map vm;
@@ -136,7 +137,7 @@ int main( int argc, char** argv)
 	//solver.set_beta(1.9f);
 	solver.set_beta(beta);
 	solver.set_gamma(gamma);
-  solver.set_non_negativity_constraint(true);
+  solver.set_non_negativity_constraint(use_non_negativity);
   solver.set_max_iterations(iterations);
 
   //solver.set_tc_tolerance(1e-10f);

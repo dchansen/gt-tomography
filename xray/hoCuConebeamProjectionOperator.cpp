@@ -136,9 +136,7 @@ void hoCuConebeamProjectionOperator
 	// Iterate over the temporal dimension.
 	// I.e. reconstruct one 3D volume at a time.
 	//
-
 	for( int b=0; b<binning_->get_number_of_bins(); b++ ) {
-
 		floatd2 ps_dims_in_pixels_float(projections->get_size(0), projections->get_size(1));
 		floatd2 ps_dims_in_mm = acquisition_->get_geometry()->get_FOV();
 		floatd2 ps_spacing_in_mm = ps_dims_in_mm / ps_dims_in_pixels_float;
@@ -229,6 +227,7 @@ void hoCuConebeamProjectionOperator
 
 		hoCuNDArray<float> image_3d(&dims_3d, image->get_data_ptr()+b*num_3d_elements);
 
+
 		if( use_fbp_ ){
 
 			if( !cosine_weights_.get() )
@@ -237,7 +236,7 @@ void hoCuConebeamProjectionOperator
 			if( !frequency_filter_.get() )
 				compute_default_frequency_filter();
 
-			conebeam_backwards_projection<true>
+				conebeam_backwards_projection<true>
 			( projections, &image_3d,
 					acquisition_->get_geometry()->get_angles(),
 					acquisition_->get_geometry()->get_offsets(),

@@ -39,9 +39,6 @@ public:
 				*out *= *weights;
 			}
 		}
-	virtual boost::shared_ptr< linearOperator<ARRAY_TYPE > > clone(){
-				return linearOperator<ARRAY_TYPE>::clone(this);
-			}
 protected:
 	boost::shared_ptr<ARRAY_TYPE> weights;
 };

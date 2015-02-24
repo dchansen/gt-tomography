@@ -16,9 +16,9 @@ cuda_add_executable(test_all
   )
 
 target_link_libraries(test_all 
-  cpucore 
-  cpucore_math
-  gpucore
+  gadgetron_toolbox_cpucore 
+  gadgetron_toolbox_cpucore_math
+  gadgetron_toolbox_gpucore
   tomography_operators
   ${BOOST_LIBRARIES}	
   ${GTEST_LIBRARIES} 

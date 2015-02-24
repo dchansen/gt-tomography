@@ -9,6 +9,7 @@
 #include <vector>
 #include <iostream>
 #include <numeric>
+#include <cmath>
 
 namespace Gadgetron{
 /** Nonlinear conjugate gradient solver.
@@ -452,7 +453,7 @@ protected:
 		int  k=0;
 
 		while (not wolfe){
-			alpha=alpha0*std::pow(rho,k);
+			alpha=alpha0*std::pow(rho,REAL(k));
 			if (f(alpha) <= old_norm-abs(alpha*delta*gd)) wolfe = true;//Strong Wolfe condition..
 			k++;
 			//if (alpha == 0) throw std::runtime_error("Wolfe line search failed");

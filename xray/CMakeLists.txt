@@ -22,33 +22,46 @@ include_directories(
 #endif(EIGEN_INCLUDE_DIR)
 
 cuda_add_library(Xray_kernels SHARED
-  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp 
+  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp FFTRebinning.cu FFTRebinning.cpp 
   ${EIGEN_RESAMPLER}
   )
 
-target_link_libraries(Xray_kernels gpucore gpunfft hostutils ${CUDA_LIBRARIES})
+target_link_libraries(Xray_kernels gadgetron_toolbox_gpucore gadgetron_toolbox_gpunfft gadgetron_toolbox_gpucore gadgetron_toolbox_gpufft ${CUDA_LIBRARIES})
 
 add_executable(FDK_reconstruct_3d FDK_reconstruct_3d.cpp)
-target_link_libraries(FDK_reconstruct_3d Xray_kernels cpucore cpucore_math cpureg gpucore hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(FDK_reconstruct_3d Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
 
 add_executable(FDK_reconstruct_4d FDK_reconstruct_4d.cpp)
-target_link_libraries(FDK_reconstruct_4d Xray_kernels cpucore cpucore_math cpureg gpucore hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(FDK_reconstruct_4d Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
+add_executable(FFTrebin FFTrebin.cpp)
+target_link_libraries(FFTrebin Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
 
 add_executable(CB_reconstruct CB_reconstruct.cpp)
-target_link_libraries(CB_reconstruct Xray_kernels cpucore cpucore_math gpucore cpureg gpuoperators hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CB_reconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
+add_executable(CBOS_reconstruct CBOS_reconstruct.cpp)
+target_link_libraries(CBOS_reconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
+add_executable(cuCBOS_reconstruct cuCBOS_reconstruct.cpp)
+target_link_libraries(cuCBOS_reconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
 
 add_executable(CB_SBreconstruct CB_SBreconstruct.cpp)
-target_link_libraries(CB_SBreconstruct Xray_kernels cpucore cpucore_math gpucore cpureg gpuoperators hostutils  ${HDF5_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CB_SBreconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 #add_executable(CB_CGreconstruct CB_CGreconstruct.cpp)
-#target_link_libraries(CB_CGreconstruct Xray_kernels cpucore cpucore_math gpucore cpureg gpuoperators hostutils  ${HDF5_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+#target_link_libraries(CB_CGreconstruct Xray_kernels cpucore cpucore_math gpucore cpureg gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 add_executable(CBCT_forwards_projection CBCT_forwards_projection.cpp)
-target_link_libraries(CBCT_forwards_projection Xray_kernels cpucore cpucore_math gpucore hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(CBCT_forwards_projection Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${Boost_LIBRARIES})
 
+add_executable(convolveTest convolveTest.cpp)
+target_link_libraries(convolveTest Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #if(EIGEN_INCLUDE_DIR)
 #  add_executable(CB_OF_reconstruct CB_OF_reconstruct.cpp)
-#  target_link_libraries(CB_OF_reconstruct Xray_kernels cpucore cpucore_math gpucore cpureg gpureg gpuoperators hostutils  ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+#  target_link_libraries(CB_OF_reconstruct Xray_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #endif(EIGEN_INCLUDE_DIR)
 
 #install(TARGETS Reconstruct DESTINATION bin)

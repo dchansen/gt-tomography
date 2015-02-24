@@ -173,7 +173,7 @@ template<template<class> class ARRAY> bool protonDataset<ARRAY>::has_weights(hid
 
 
 	for (size_t i = 0; i < groupnames.size(); i++){
-		hid_t group = H5Gopen(file_id,groupnames[i].c_str());
+		hid_t group = H5Gopen1(file_id,groupnames[i].c_str());
 		herr_t err=H5LTfind_dataset(group,"weights");
 		H5Gclose(group);
 		if (!err) return false;
@@ -250,7 +250,7 @@ for (int i = 0; i < groupnames.size(); i++){
 
 
 		float angle;
-		hid_t group = H5Gopen(file_id,groupnames[i].c_str());
+		hid_t group = H5Gopen1(file_id,groupnames[i].c_str());
 		err=H5LTfind_attribute(group,"angle");
 		if (err){
 			err = H5LTget_attribute_float(file_id,groupnames[i].c_str(),"angle",&angle);

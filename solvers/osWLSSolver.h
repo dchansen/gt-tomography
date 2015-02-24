@@ -7,19 +7,17 @@
 #include <boost/iterator/counting_iterator.hpp>
 
 namespace Gadgetron{
-template <class ARRAY_TYPE> class osSPSSolver : public solver< ARRAY_TYPE,ARRAY_TYPE> {
+template <class ARRAY_TYPE> class osWLSSolver : public solver< ARRAY_TYPE,ARRAY_TYPE> {
 	typedef typename ARRAY_TYPE::element_type ELEMENT_TYPE;
 	typedef typename realType<ELEMENT_TYPE>::Type REAL;
 public:
-	osSPSSolver() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
+	osWLSSolver() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 		_iterations=10;
 		_beta = REAL(1);
-		_alpha = 0.2;
 		_gamma = 0;
 		non_negativity_=false;
-		reg_steps=2;
 	}
-	virtual ~osSPSSolver(){};
+	virtual ~osWLSSolver(){};
 
 	void set_max_iterations(int i){_iterations=i;}
 	int get_max_iterations(){return _iterations;}
@@ -47,7 +45,8 @@ public:
 			return boost::shared_ptr<ARRAY_TYPE>();
 		}
 
-		ARRAY_TYPE * x = new ARRAY_TYPE(*image_dims);
+		ARRAY_TYPE * x = new ARRAY_TYPE;
+		x->create(image_dims.get());
 		if (this->x0_.get()){
 			*x = *(this->x0_.get());
 		} else  {
@@ -70,12 +69,11 @@ public:
 		ARRAY_TYPE tmp_image(image_dims.get());
 
 		if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
-			std::cout << "osSPS setup done, starting iterations:" << std::endl;
+			std::cout << "osWLS setup done, starting iterations:" << std::endl;
 		}
 
 		std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
 
-		REAL step_size;
 		for (int i =0; i < _iterations; i++){
 			for (int isubset = 0; isubset < this->encoding_operator_->get_number_of_subsets(); isubset++){
 				int subset = isubsets[isubset];
@@ -89,42 +87,21 @@ public:
 				this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 				tmp_image *= ones_image;
 				axpy(REAL(_beta/(1+_gamma*i)),&tmp_image,x);
-				if (i ==0 && isubset == 0)
-					step_size = _alpha*nrm2(x)/this->encoding_operator_->get_number_of_subsets();
-
 				//axpy(REAL(_beta),&tmp_image,x);
 				if (non_negativity_){
 					clamp_min(x,ELEMENT_TYPE(0));
 				}
 
-				for (auto op : regularization_operators){
-					for (auto i = 0u; i < reg_steps; i++){
-						op->gradient(x,&tmp_image);
-						tmp_image *= REAL(1)/nrm2(&tmp_image);
-						axpy(-step_size*op->get_weight(),&tmp_image,x);
-					}
-				}
-				//step_size *= 0.99;
-
 			}
-			//std::reverse(isubsets.begin(),isubsets.end());
+			std::reverse(isubsets.begin(),isubsets.end());
 			//std::random_shuffle(isubsets.begin(),isubsets.end());
-			/*
 			ARRAY_TYPE tmp_proj(*in);
 			clear(&tmp_proj);
 			this->encoding_operator_->mult_M(x,&tmp_proj,false);
 			tmp_proj -= *in;
-
-
-			std::stringstream ss;
-			ss << "osSPS-" << i << ".real";
-
-			write_nd_array<ELEMENT_TYPE>(x,ss.str().c_str());
-
 			//calc_regMultM(x,regEnc);
 			//REAL f = functionValue(&tmp_proj,regEnc,x);
 			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
-			 */
 		}
 
 
@@ -132,18 +109,13 @@ public:
 	}
 
 	void set_encoding_operator(boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator){ encoding_operator_ = encoding_operator; }
-	virtual void add_nonlinear_operator(boost::shared_ptr< generalOperator<ARRAY_TYPE> > op ){
-      regularization_operators.push_back(op);
-   }
 
 
 protected:
 	int _iterations;
-	REAL _beta, _gamma, _alpha;
+	REAL _beta, _gamma;
 	bool non_negativity_;
-	unsigned int reg_steps;
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;
-	std::vector<boost::shared_ptr<generalOperator<ARRAY_TYPE>>> regularization_operators;
 
 };
 }

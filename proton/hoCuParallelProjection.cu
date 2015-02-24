@@ -10,13 +10,81 @@
 #include "vector_td.h"
 #include "vector_td_operators.h"
 #include "setup_grid.h"
-
+#include <cuda_runtime_api.h>
+#include <math_constants.h>
 
 static texture<float, 3, cudaReadModeElementType>
 projection_tex( 1, cudaFilterModeLinear, cudaAddressModeBorder );
 
 using namespace Gadgetron;
 
+static __device__ float sinc(float x ){
+	if (x == 0)
+		return 1;
+
+	float x2 = CUDART_PI_F*x;
+	return sin(x2)/x2;
+}
+
+static __global__ void interpolate_projection(float * __restrict__ image, const float * __restrict__ mask, float * __restrict__ out_mask, intd3 image_size){
+
+	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
+	const int num_elements = prod(image_size);
+
+	if (idx < num_elements){
+
+		if (mask[idx] <= 0){
+
+			intd3 co = idx_to_co<3>(idx,image_size);
+/*
+			const int steps = 20;
+			int start = (co[0]-steps < 0) ? 0 : co[0]-steps;
+			int end = (co[0]+steps <= image_size[0]) ? co[0]+steps : image_size[0];
+
+			float mask_val = 0;
+			float val = 0;
+			float tot = 0;
+			for (int i = start; i < end; i++){
+				float weight = sinc(float(i));
+				tot += weight;
+				float loc_mask = mask[idx+i];
+				if (loc_mask > 0){
+					mask_val += weight*loc_mask;
+					val += weight*image[idx+i];
+				}
+			}
+			image[idx] = val;
+			out_mask[idx] = mask_val;
+*/
+
+			if (co[0] == 0){
+				image[idx] = image[idx+1];
+				out_mask[idx] = mask[idx+1];
+
+			} else if (co[0] == (image_size[0]-1)){
+				image[idx] = image[idx-1];
+				out_mask[idx] = mask[idx-1];
+			} else {
+
+
+			image[idx] = (image[idx-1]+image[idx+1])/2;
+			out_mask[idx] = (mask[idx-1]+mask[idx+1])/2;
+			}
+		}
+	}
+}
+
+
+void Gadgetron::interpolate_missing( cuNDArray<float>* image, cuNDArray<float>* mask){
+	dim3 dimBlock, dimGrid;
+	setup_grid( image->get_number_of_elements(), &dimBlock, &dimGrid );
+
+	cuNDArray<float> mask_copy(*mask);
+std::cout << "Interpolating missing data" << std::endl;
+	interpolate_projection<<<dimGrid,dimBlock>>>(image->get_data_ptr(),mask->get_data_ptr(),mask_copy.get_data_ptr(), intd3(from_std_vector<size_t,3>(*image->get_dimensions())));
+	*mask = mask_copy;
+
+}
 
 static __global__ void parallel_backprojection_kernel(float * __restrict__ image, floatd3 image_dims, intd3 image_size, floatd3 projection_dims, float angle){
 

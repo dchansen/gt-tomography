@@ -10,7 +10,7 @@
 #include <thrust/adjacent_difference.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
-
+#include <thrust/extrema.h>
 
 #include "histogram.h"
 

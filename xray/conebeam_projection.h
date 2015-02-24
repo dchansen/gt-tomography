@@ -3,6 +3,7 @@
 #include "hoCuNDArray.h"
 #include "cuNDArray.h"
 #include "vector_td.h"
+#include "gpuxray_export.h"
 
 namespace Gadgetron {
 
@@ -17,6 +18,7 @@ namespace Gadgetron {
  * @param SAD
  */
 void apply_offset_correct(hoCuNDArray<float>* projections,std::vector<floatd2>& offsets,		floatd2 ps_dims_in_mm, float SDD,	float SAD);
+void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& offsets,		floatd2 ps_dims_in_mm, float SDD,	float SAD);
 /**
  *
  * @param projections
@@ -35,10 +37,43 @@ void apply_offset_correct(hoCuNDArray<float>* projections,std::vector<floatd2>& 
   // Forwards projection of a 3D volume onto a set of projections.
   // - dependening on the provided binnning indices, just a subset of the projections can be targeted.
   //
+
+  EXPORTGPUXRAY void conebeam_forwards_projection
+    ( cuNDArray<float> *projections,
+				cuNDArray<float> *image,
+				std::vector<float> angles,
+				std::vector<floatd2> offsets,
+				float samples_per_pixel,
+				floatd3 is_dims_in_mm,
+				floatd2 ps_dims_in_mm,
+				float SDD,
+				float SAD,
+				bool accumulate
+  );
+
+  // Backprojection of a set of projections onto a 3D volume.
+  // - depending on the provided binnning indices, just a subset of the projections can be included
+  //
+
+  EXPORTGPUXRAY void conebeam_backwards_projection(
+        cuNDArray<float> *projections,
+        cuNDArray<float> *image,
+        std::vector<float> angles,
+        std::vector<floatd2> offsets,
+        intd3 is_dims_in_pixels,
+        floatd3 is_dims_in_mm,
+        floatd2 ps_dims_in_mm,
+        float SDD,
+        float SAD,
+        bool use_offset_correction,
+        bool accumulate
+  );
+  // Forwards projection of a 3D volume onto a set of projections.
+  // - dependening on the provided binnning indices, just a subset of the projections can be targeted.
+  //
   
-  void 
-  conebeam_forwards_projection( 
-        hoCuNDArray<float> *projections,
+  EXPORTGPUXRAY void conebeam_forwards_projection
+    ( hoCuNDArray<float> *projections,
 				hoCuNDArray<float> *image,
 				std::vector<float> angles, 
 				std::vector<floatd2> offsets, 
@@ -55,8 +90,7 @@ void apply_offset_correct(hoCuNDArray<float>* projections,std::vector<floatd2>& 
   // - depending on the provided binnning indices, just a subset of the projections can be included
   //
 
-  template <bool FBP>
-  void conebeam_backwards_projection( 
+  template <bool FBP> EXPORTGPUXRAY void conebeam_backwards_projection( 
         hoCuNDArray<float> *projections,
         hoCuNDArray<float> *image,
         std::vector<float> angles, 

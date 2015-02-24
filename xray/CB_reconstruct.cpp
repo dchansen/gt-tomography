@@ -8,7 +8,7 @@
 #include "hoCuConebeamProjectionOperator.h"
 #include "cuConvolutionOperator.h"
 #include "hoCuNDArray_blas.h"
-#include "hoCuNDArray_operators.h"
+#include "hoCuNDArray_elemwise.h"
 #include "hoCuNDArray_blas.h"
 #include "cgSolver.h"
 #include "CBCT_acquisition.h"

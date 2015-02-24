@@ -85,6 +85,8 @@ public:
 
 				protonBackprojection(&projection,cu_paths.get(),&cu_splines,physical_dims_proj,EPL.get());
 				protonBackprojection(&projection_nrm,&normalization,&cu_splines,physical_dims_proj,EPL.get());
+				if (min(&projection_nrm) <= 0)
+					interpolate_missing(&projection,&projection_nrm);
 				clamp(&projection_nrm,1e-6f,1e8f,1.0f,1.0f);
 				projection /= projection_nrm;
 				CHECK_FOR_CUDA_ERROR();
@@ -104,7 +106,7 @@ public:
 				cuNDFFT<double>::instance()->ifft(proj_complex.get(),0u);
 				//*proj_complex /= (float)ramp.get_size(0);
 				//*proj_complex /= (float)ramp.get_size(0);
-				*proj_complex *= 2*boost::math::constants::pi<double>()/(physical_dims_proj[0]*oversampling);
+				*proj_complex *= 2*boost::math::constants::pi<double>()*std::sqrt((double)ramp.get_size(0))/(physical_dims_proj[0]*oversampling);
 				//ramp *= physical_dims_proj[0];
 
 

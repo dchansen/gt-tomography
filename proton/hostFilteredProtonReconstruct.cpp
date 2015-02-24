@@ -17,7 +17,7 @@
 #include "hoCuGPBBSolver.h"
 #include "hoCuPartialDerivativeOperator.h"
 #include "hoCuNDArray_blas.h"
-#include "hoCuNDArray_operators.h"
+#include "hoCuNDArray_elemwise.h"
 
 #include "osSARTSolver.h"
 #include "hoOSGPBBSolver.h"

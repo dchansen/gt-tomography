@@ -13,6 +13,7 @@ private:
 public:
 
 	subsetOperator(int _number_of_subsets) : number_of_subsets(_number_of_subsets){};
+	subsetOperator() : number_of_subsets(1){};
 
 	virtual ~subsetOperator(){};
 	virtual void mult_M(ARRAY_TYPE* in, ARRAY_TYPE* out, int subset, bool accumulate)=0;

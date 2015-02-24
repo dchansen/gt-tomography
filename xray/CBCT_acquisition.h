@@ -5,7 +5,7 @@
 #pragma once
 
 #include "vector_td_io.h"
-#include "hoNDArray.h"
+#include "hoCuNDArray.h"
 #include "hoNDArray_utils.h"
 //#include "hoRegistration_utils.h"
 
@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
 
 namespace Gadgetron{
 
@@ -122,7 +123,7 @@ public:
 
 	CBCT_acquisition() {}
 
-	CBCT_acquisition( boost::shared_ptr< hoNDArray<float> > projections,
+	CBCT_acquisition( boost::shared_ptr< hoCuNDArray<float> > projections,
 			boost::shared_ptr<CBCT_geometry> geometry )
 	{
 		geometry_ = geometry;
@@ -138,18 +139,18 @@ public:
 	inline boost::shared_ptr<CBCT_geometry> get_geometry() {
 		return geometry_; }
 
-	inline void set_projections( boost::shared_ptr< hoNDArray<float> > projections ) {
+	inline void set_projections( boost::shared_ptr< hoCuNDArray<float> > projections ) {
 		projections_ = projections;
 	}
 
-	inline boost::shared_ptr< hoNDArray<float> > get_projections() {
+	inline boost::shared_ptr< hoCuNDArray<float> > get_projections() {
 		return projections_;
 	}
 
 	void downsample( unsigned int num_downsamples )
 	{
 		for (int k = 0; k < num_downsamples; k++)
-			projections_ = Gadgetron::downsample<float,2>(projections_.get());
+			projections_ = boost::make_shared<hoCuNDArray<float>>(*Gadgetron::downsample<float,2>(projections_.get()));
 	}
 
 	void load( std::string filename )
@@ -242,7 +243,7 @@ public:
 		dims.push_back(vec_dim[1]);
 		dims.push_back(vec_dim[0]);
 
-		projections_ = boost::shared_ptr<hoNDArray<float> >(new hoNDArray<float>(&dims));
+		projections_ = boost::shared_ptr<hoCuNDArray<float> >(new hoCuNDArray<float>(&dims));
 		errCode=H5LTread_dataset (file_id,"/projections", H5T_NATIVE_FLOAT, projections_->get_data_ptr());
 		if (errCode < 0) 	throw std::runtime_error("Error reading /projections from file.");
 
@@ -294,6 +295,6 @@ public:
 protected:
 
 	boost::shared_ptr<CBCT_geometry> geometry_;
-	boost::shared_ptr< hoNDArray<float> > projections_;
+	boost::shared_ptr< hoCuNDArray<float> > projections_;
 };
 }
