@@ -17,7 +17,8 @@ public:
 		_alpha = 0.2;
 		_gamma = 0;
 		non_negativity_=false;
-		reg_steps=2;
+		reg_steps_=2;
+		_kappa = REAL(1);
 	}
 	virtual ~osSPSSolver(){};
 
@@ -30,6 +31,10 @@ public:
 	 */
 	void set_beta(REAL beta){_beta = beta;}
 	void set_gamma(REAL gamma){_gamma = gamma;}
+	void set_kappa(REAL kappa){_kappa = kappa;}
+
+
+	void set_reg_steps(unsigned int reg_steps){ reg_steps_ = reg_steps;}
 
 	boost::shared_ptr<ARRAY_TYPE> solve(ARRAY_TYPE* in){
 		//boost::shared_ptr<ARRAY_TYPE> rhs = compute_rhs(in);
@@ -74,7 +79,7 @@ public:
 		}
 
 		std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
-
+		REAL kappa_int = _kappa;
 		REAL step_size;
 		for (int i =0; i < _iterations; i++){
 			for (int isubset = 0; isubset < this->encoding_operator_->get_number_of_subsets(); isubset++){
@@ -98,11 +103,30 @@ public:
 				}
 
 				for (auto op : regularization_operators){
-					for (auto i = 0u; i < reg_steps; i++){
+					/*
+					for (auto i = 0u; i < reg_steps_; i++){
 						op->gradient(x,&tmp_image);
 						tmp_image *= REAL(1)/nrm2(&tmp_image);
 						axpy(-step_size*op->get_weight(),&tmp_image,x);
 					}
+					*/
+					op->gradient(x,&tmp_image);
+					tmp_image /= nrm2(&tmp_image);
+					auto reg_val = op->magnitude(x);
+					std::cout << "Reg val: " << reg_val << std::endl;
+					ARRAY_TYPE y = *x;
+					axpy(-kappa_int,&tmp_image,&y);
+
+
+					while(op->magnitude(&y) > reg_val){
+
+						kappa_int /= 2;
+						axpy(kappa_int,&tmp_image,&y);
+						std::cout << "Kappa: " << kappa_int << std::endl;
+					}
+					reg_val = op->magnitude(&y);
+					*x = y;
+
 				}
 				//step_size *= 0.99;
 
@@ -139,9 +163,9 @@ public:
 
 protected:
 	int _iterations;
-	REAL _beta, _gamma, _alpha;
+	REAL _beta, _gamma, _alpha, _kappa;
 	bool non_negativity_;
-	unsigned int reg_steps;
+	unsigned int reg_steps_;
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;
 	std::vector<boost::shared_ptr<generalOperator<ARRAY_TYPE>>> regularization_operators;
 

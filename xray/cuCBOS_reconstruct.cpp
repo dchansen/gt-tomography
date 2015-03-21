@@ -24,6 +24,7 @@
 #include "hoNDArray_utils.h"
 #include "hoCuPartialDerivativeOperator.h"
 #include "cuTvOperator.h"
+#include "cuWTvOperator.h"
 #include "CBSubsetOperator.h"
 #include "osSPSSolver.h"
 #include <iostream>
@@ -167,16 +168,24 @@ int main(int argc, char** argv)
   // Define encoding matrix
   auto E = boost::make_shared<CBSubsetOperator<cuNDArray> >(subsets);
 
-  E->set_use_offset_correction(false);
+  //E->set_use_offset_correction(false);
   //E->setup(ps,binning,imageDimensions);
   E->setup(ps,binning,imageDimensions);
   E->set_domain_dimensions(&is_dims);
   E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
+  auto weight_array = boost::make_shared<cuNDArray<float>>(is_dims);
+  {
+  	boost::shared_ptr<linearOperator<cuNDArray<float>>> E2(E);
+  	cuNDArray<float> tmp_proj(*ps->get_projections()->get_dimensions());
+  	fill(&tmp_proj,1.0f);
+  	E2->mult_MH(&tmp_proj,weight_array.get(),false);
+  	clamp_min(weight_array.get(),1.0f);
+  	reciprocal_inplace(weight_array.get());
+  	//*weight_array *= *weight_array;
+  }
+  write_nd_array(weight_array.get(),"weights.real");
 
-
-
-  //hoCuGPBBSolver<float> solver;
   //hoCuCgDescentSolver<float> solver;
   osSPSSolver<cuNDArray<float>> solver;
   //osSPSSolver<hoNDArray<float>> solver;
@@ -188,24 +197,31 @@ int main(int argc, char** argv)
   solver.set_non_negativity_constraint(true);
   //solver.set_rho(rho);
 
+  solver.set_reg_steps(2);
   if (tv_weight > 0){
-  	auto total_variation = boost::make_shared<cuTvOperator<float,4>>();
+  	auto total_variation = boost::make_shared<cuWTvOperator<float,4>>();
   	total_variation->set_weight(tv_weight);
+  	total_variation->set_weight_array(weight_array);
   	solver.add_nonlinear_operator(total_variation);
-  	/*
-  	auto total_variation2 = boost::make_shared<cuTvOperator<float,4>>();
+  	solver.set_kappa(tv_weight);
+/*
+  	auto total_variation2 = boost::make_shared<cuWTvOperator<float,4>>();
   	total_variation2->set_step(2);
   	total_variation2->set_weight(tv_weight);
+  	total_variation2->set_weight_array(weight_array);
   	solver.add_nonlinear_operator(total_variation2);
-  	auto total_variation3 = boost::make_shared<cuTvOperator<float,4>>();
-  	total_variation3->set_step(4);
+  	auto total_variation3 = boost::make_shared<cuWTvOperator<float,4>>();
+  	total_variation3->set_step(3);
   	total_variation3->set_weight(tv_weight);
+  	total_variation3->set_weight_array(weight_array);
   	solver.add_nonlinear_operator(total_variation3);
 */
   }
 
   cuNDArray<float> projections(*ps->get_projections());
+  std::cout << "Projection norm:" << nrm2(&projections) << std::endl;
   E->offset_correct(&projections);
+  std::cout << "Projection norm:" << nrm2(&projections) << std::endl;
 /*
     boost::shared_ptr<hoCuNDArray<float> > prior;
 

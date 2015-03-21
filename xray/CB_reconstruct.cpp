@@ -179,11 +179,13 @@ int main(int argc, char** argv)
   solver.set_non_negativity_constraint(true);
   solver.set_rho(rho);
 
+
   hoCuNDArray<float> projections = *ps->get_projections();
-  
+  std::cout << "Projection nrm" << nrm2(&projections) << std::endl;
   if (E->get_use_offset_correction())
     	E->offset_correct(&projections);
 
+  std::cout << "Projection nrm" << nrm2(&projections) << std::endl;
   boost::shared_ptr<hoCuNDArray<float> > prior;
 
   if (vm.count("use_prior")) {
@@ -196,6 +198,16 @@ int main(int argc, char** argv)
     boost::shared_ptr<hoCuTvOperator<float,4> > tv(new hoCuTvOperator<float,4>);
     tv->set_weight(vm["TV"].as<float>());
     solver.add_nonlinear_operator(tv);
+    boost::shared_ptr<hoCuTvOperator<float,4> > tv2(new hoCuTvOperator<float,4>);
+    tv2->set_step(2);
+    tv2->set_weight(vm["TV"].as<float>());
+    solver.add_nonlinear_operator(tv2);
+    boost::shared_ptr<hoCuTvOperator<float,4> > tv3(new hoCuTvOperator<float,4>);
+    tv3->set_step(3);
+    tv3->set_weight(vm["TV"].as<float>());
+    solver.add_nonlinear_operator(tv3);
+
+
   }
 
   if (vm.count("PICS")){

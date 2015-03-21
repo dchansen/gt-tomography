@@ -245,6 +245,8 @@ void hoCuConebeamProjectionOperator
 					is_dims_in_pixels, is_dims_in_mm_, ps_dims_in_mm,
 					SDD, SAD, short_scan_, use_offset_correction_, accumulate,
 					cosine_weights_.get(), frequency_filter_.get() );
+
+				image_3d *= 2/float(binning_->get_bin(b).size());
 		}
 		else
 			conebeam_backwards_projection<false>
