@@ -18,10 +18,12 @@ template<unsigned int D> void saveNDArray2HDF5(hoNDArray<float>* input,std::stri
 	/* Create a new file using default properties. */
 	   hid_t file_id = H5Fcreate(filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
-	   hsize_t dims[D];
+	   size_t ndims = input->get_number_of_dimensions();
 
-	   for (int i = 0; i < D; i++) dims[i] = input->get_size(D-i-1);
-	   H5LTmake_dataset (file_id, "/image", D, dims, H5T_NATIVE_FLOAT, input->get_data_ptr());
+	   std::vector<hsize_t> dims(ndims);
+
+	   for (int i = 0; i < ndims; i++) dims[i] = input->get_size(ndims-i-1);
+	   H5LTmake_dataset (file_id, "/image", ndims, dims.data(), H5T_NATIVE_FLOAT, input->get_data_ptr());
 	   H5LTset_attribute_string(file_id,"/image","input",arguements.c_str());
 
 	   H5LTset_attribute_float(file_id,"/image","dimensions",dimensions.vec,D);
@@ -31,5 +33,11 @@ template<unsigned int D> void saveNDArray2HDF5(hoNDArray<float>* input,std::stri
 
 	   H5Fclose(file_id);
 }
+
+template<unsigned int D> void saveNDArray2HDF5(cuNDArray<float>* input,std::string filename,vector_td<float,D> dimensions, vector_td<float,D> origin, std::string arguements, unsigned int iterations){
+	boost::shared_ptr<hoNDArray<float> > tmp = input->to_host();
+	saveNDArray2HDF5(tmp.get(),filename,dimensions,origin,arguements,iterations);
+}
+
 }
 

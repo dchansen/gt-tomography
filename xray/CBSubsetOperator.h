@@ -39,12 +39,24 @@ public:
 
 
 	virtual boost::shared_ptr<std::vector<size_t>  > get_codomain_dimensions(int subset) override;
+
+	virtual void set_domain_dimensions(std::vector<size_t>* dims) override {
+		linearOperator<ARRAY<float>>::set_domain_dimensions(dims);
+		for (auto op : operators)
+			op->set_domain_dimensions(dims);
+	}
 	void setup(boost::shared_ptr<CBCT_acquisition> acq, boost::shared_ptr<CBCT_binning>, floatd3 is_dims_in_mm);
 	void setup(boost::shared_ptr<CBCT_acquisition> acq, floatd3 is_dims_in_mm);
+	boost::shared_ptr<ARRAY<bool>> calculate_mask(boost::shared_ptr<ARRAY<float> > projections, float limit);
 
 	void offset_correct(ARRAY<float>*);
 	void set_use_offset_correction(bool use){
 		for (auto op : operators) op->set_use_offset_correction(use);
+	}
+
+	void set_mask(boost::shared_ptr<ARRAY<bool> > mask){
+		for (auto op : operators)
+			op->set_mask(mask);
 	}
 
 
@@ -54,7 +66,8 @@ protected:
 	std::vector<boost::shared_ptr<typename conebeamProjectionOperator<ARRAY>::type>> operators;
 
 	std::vector<boost::shared_ptr<std::vector<size_t> > > projection_dims;
-
+	std::vector<std::vector<float> > angles;
+	std::vector<std::vector<floatd2> > offsets;
 };
 
 } /* namespace Gadgetron */

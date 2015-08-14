@@ -5,7 +5,7 @@
 #include "real_utilities.h"
 #include "complext.h"
 #include "cgPreconditioner.h"
-
+#include "solver_utils.h"
 #include <vector>
 #include <iostream>
 #include <numeric>
@@ -362,7 +362,6 @@ protected:
 	typedef typename std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE> > >::iterator  csIterator;
 	typedef typename std::vector< std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE> > > >::iterator csGroupIterator;
 
-	virtual void solver_non_negativity_filter(ARRAY_TYPE*,ARRAY_TYPE*)=0;
 	virtual void iteration_callback(ARRAY_TYPE*,int i,REAL){};
 
 

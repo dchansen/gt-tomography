@@ -147,10 +147,11 @@ public:
 			//REAL f = functionValue(&tmp_proj,regEnc,x);
 			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
 */
+			/*
 			std::stringstream ss;
 			ss << "protonDROP-" << i << ".real";
 			save_nd_array(x,ss.str());
-
+*/
 		}
 
 		return boost::shared_ptr<ARRAY<float> >(x);

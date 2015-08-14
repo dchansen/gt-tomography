@@ -25,7 +25,8 @@
 #include "hoNDArray_utils.h"
 #include "hoCuPartialDerivativeOperator.h"
 #include "CBSubsetOperator.h"
-#include "osSPSSolver.h"
+#include "osMOMSolverD.h"
+#include "cuSolverUtils.h"
 #include <iostream>
 #include <algorithm>
 #include <sstream>
@@ -48,10 +49,10 @@ public:
 	virtual void mult_MH(hoNDArray<float> *in, hoNDArray<float> *out,int subset, bool accumulate) override { op->mult_MH((hoCuNDArray<float>*)in,(hoCuNDArray<float>*) out, subset, accumulate);}
 	virtual void mult_MH_M(hoNDArray<float> *in, hoNDArray<float> *out,int subset, bool accumulate) override { op->mult_MH_M((hoCuNDArray<float>*)in,(hoCuNDArray<float>*) out, subset, accumulate);}
 
-  virtual boost::shared_ptr< std::vector<size_t> > get_codomain_dimensions(int i) { return op->get_codomain_dimensions(i);}
-  virtual boost::shared_ptr< std::vector<size_t> > get_domain_dimensions() { return op->get_domain_dimensions();}
-  virtual void set_domain_dimensions( std::vector<size_t> * dims) { return op->set_domain_dimensions(dims);}
-  virtual void set_codomain_dimensions( std::vector<size_t> * dims) { return op->set_codomain_dimensions(dims);}
+	virtual boost::shared_ptr< std::vector<size_t> > get_codomain_dimensions(int i) { return op->get_codomain_dimensions(i);}
+	virtual boost::shared_ptr< std::vector<size_t> > get_domain_dimensions() { return op->get_domain_dimensions();}
+	virtual void set_domain_dimensions( std::vector<size_t> * dims) { return op->set_domain_dimensions(dims);}
+	virtual void set_codomain_dimensions( std::vector<size_t> * dims) { return op->set_codomain_dimensions(dims);}
 
 
 
@@ -60,163 +61,207 @@ protected:
 };
 
 boost::shared_ptr<hoCuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binning>  binning,boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>& projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
-  std::cout << "Calculating FDK prior" << std::endl;
-	boost::shared_ptr<CBCT_binning> binning_pics( new CBCT_binning(binning->get_3d_binning()) );
-	    std::vector<size_t> is_dims3d = is_dims;
-	    is_dims3d.pop_back();
-	    boost::shared_ptr< hoCuConebeamProjectionOperator >
-	      Ep( new hoCuConebeamProjectionOperator() );
-	    Ep->setup(ps,binning_pics,imageDimensions);
-	    Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
-	    Ep->set_domain_dimensions(&is_dims3d);
-	      Ep->set_use_filtered_backprojection(true);
-	    boost::shared_ptr<hoCuNDArray<float> > prior3d(new hoCuNDArray<float>(&is_dims3d));
-	    Ep->mult_MH(&projections,prior3d.get());
+	std::cout << "Calculating FDK prior" << std::endl;
+	boost::shared_ptr<CBCT_binning> binning_pics=binning->get_3d_binning();
+	std::vector<size_t> is_dims3d = is_dims;
+	is_dims3d.pop_back();
+	boost::shared_ptr< hoCuConebeamProjectionOperator >
+	Ep( new hoCuConebeamProjectionOperator() );
+	Ep->setup(ps,binning_pics,imageDimensions);
+	Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+	Ep->set_domain_dimensions(&is_dims3d);
+	Ep->set_use_filtered_backprojection(true);
+	boost::shared_ptr<hoCuNDArray<float> > prior3d(new hoCuNDArray<float>(&is_dims3d));
+	Ep->mult_MH(&projections,prior3d.get());
 
-	    hoCuNDArray<float> tmp_proj(*ps->get_projections());
-	    Ep->mult_M(prior3d.get(),&tmp_proj);
-	    float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
-	    *prior3d *= s;
-	    boost::shared_ptr<hoCuNDArray<float> > prior(new hoCuNDArray<float>(*expand( prior3d.get(), is_dims.back() )));
-	    std::cout << "Prior complete" << std::endl;
-	    return prior;
+	hoCuNDArray<float> tmp_proj(*ps->get_projections());
+	Ep->mult_M(prior3d.get(),&tmp_proj);
+	float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
+	*prior3d *= s;
+	boost::shared_ptr<hoCuNDArray<float> > prior(new hoCuNDArray<float>(*expand( prior3d.get(), is_dims.back() )));
+	std::cout << "Prior complete" << std::endl;
+	return prior;
 }
 
 int main(int argc, char** argv)
 {
-  string acquisition_filename;
-  string outputFile;
-  uintd3 imageSize;
-  floatd3 voxelSize;
-  int device;
-  unsigned int downsamples;
-  unsigned int iterations;
-  unsigned int subsets;
-  float rho;
-  po::options_description desc("Allowed options");
+	string acquisition_filename;
+	string outputFile;
+	uintd3 imageSize;
+	floatd3 voxelSize;
+	int device;
+	unsigned int downsamples;
+	unsigned int iterations;
+	unsigned int subsets;
+	float rho;
+	float tv_weight;
+	po::options_description desc("Allowed options");
 
-  desc.add_options()
-    ("help", "produce help message")
-    ("acquisition,a", po::value<string>(&acquisition_filename)->default_value("acquisition.hdf5"), "Acquisition data")
-    ("samples,n",po::value<unsigned int>(),"Number of samples per ray")
-    ("output,f", po::value<string>(&outputFile)->default_value("reconstruction.real"), "Output filename")
-    ("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
-    ("binning,b",po::value<string>(),"Binning file for 4d reconstruction")
-    ("SAG","Use exact SAG correction if present")
-    ("voxelSize,v",po::value<floatd3>(&voxelSize)->default_value(floatd3(0.488f,0.488f,1.0f)),"Voxel size in mm")
-    ("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
-    ("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
-    ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    ("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
-    ("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
-    ("use_prior","Use an FDK prior")
-    ;
+	desc.add_options()
+    		("help", "produce help message")
+    		("acquisition,a", po::value<string>(&acquisition_filename)->default_value("acquisition.hdf5"), "Acquisition data")
+    		("samples,n",po::value<unsigned int>(),"Number of samples per ray")
+    		("output,f", po::value<string>(&outputFile)->default_value("reconstruction.real"), "Output filename")
+    		("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
+    		("binning,b",po::value<string>(),"Binning file for 4d reconstruction")
+    		("SAG","Use exact SAG correction if present")
+    		("voxelSize,v",po::value<floatd3>(&voxelSize)->default_value(floatd3(0.488f,0.488f,1.0f)),"Voxel size in mm")
+    		("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
+    		("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
+    		("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+    		("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+    		("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
+    		("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
+    		("use_prior","Use an FDK prior")
+    		("3D","Only use binning data to determine wrong projections")
+    		;
 
-  po::variables_map vm;
-  po::store(po::parse_command_line(argc, argv, desc), vm);
-  po::notify(vm);
+	po::variables_map vm;
+	po::store(po::parse_command_line(argc, argv, desc), vm);
+	po::notify(vm);
 
-  if (vm.count("help")) {
-    cout << desc << "\n";
-    return 1;
-  }
+	if (vm.count("help")) {
+		cout << desc << "\n";
+		return 1;
+	}
 
-  std::cout << "Command line options:" << std::endl;
-  for (po::variables_map::iterator it = vm.begin(); it != vm.end(); ++it){
-    boost::any a = it->second.value();
-    std::cout << it->first << ": ";
-    if (a.type() == typeid(std::string)) std::cout << it->second.as<std::string>();
-    else if (a.type() == typeid(int)) std::cout << it->second.as<int>();
-    else if (a.type() == typeid(unsigned int)) std::cout << it->second.as<unsigned int>();
-    else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
-    else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
-    else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
-    else if (a.type() == typeid(vector_td<unsigned int,3>)) std::cout << it->second.as<vector_td<unsigned int,3> >();
-    else std::cout << "Unknown type" << std::endl;
-    std::cout << std::endl;
-  }
+	std::cout << "Command line options:" << std::endl;
+	for (po::variables_map::iterator it = vm.begin(); it != vm.end(); ++it){
+		boost::any a = it->second.value();
+		std::cout << it->first << ": ";
+		if (a.type() == typeid(std::string)) std::cout << it->second.as<std::string>();
+		else if (a.type() == typeid(int)) std::cout << it->second.as<int>();
+		else if (a.type() == typeid(unsigned int)) std::cout << it->second.as<unsigned int>();
+		else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
+		else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
+		else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
+		else if (a.type() == typeid(vector_td<unsigned int,3>)) std::cout << it->second.as<vector_td<unsigned int,3> >();
+		else std::cout << "Unknown type" << std::endl;
+		std::cout << std::endl;
+	}
 
-  cudaSetDevice(device);
-  cudaDeviceReset();
+	cudaSetDevice(device);
+	cudaDeviceReset();
 
-  //Really weird stuff. Needed to initialize the device?? Should find real bug.
-  cudaDeviceManager::Instance()->lockHandle();
-  cudaDeviceManager::Instance()->unlockHandle();
+	//Really weird stuff. Needed to initialize the device?? Should find real bug.
+	cudaDeviceManager::Instance()->lockHandle();
+	cudaDeviceManager::Instance()->unlockHandle();
 
-  boost::shared_ptr<CBCT_acquisition> ps(new CBCT_acquisition());
-  ps->load(acquisition_filename);
-  ps->get_geometry()->print(std::cout);
+	boost::shared_ptr<CBCT_acquisition> ps(new CBCT_acquisition());
+	ps->load(acquisition_filename);
+	ps->get_geometry()->print(std::cout);
 	ps->downsample(downsamples);
 
-  float SDD = ps->get_geometry()->get_SDD();
-  float SAD = ps->get_geometry()->get_SAD();
+	float SDD = ps->get_geometry()->get_SDD();
+	float SAD = ps->get_geometry()->get_SAD();
 
-  boost::shared_ptr<CBCT_binning> binning(new CBCT_binning());
-  if (vm.count("binning")){
-    std::cout << "Loading binning data" << std::endl;
-    binning->load(vm["binning"].as<string>());
-  } else binning->set_as_default_3d_bin(ps->get_projections()->get_size(2));
-  binning->print(std::cout);
+	boost::shared_ptr<CBCT_binning> binning(new CBCT_binning());
+	if (vm.count("binning")){
+		std::cout << "Loading binning data" << std::endl;
+		binning->load(vm["binning"].as<string>());
+		if (vm.count("3D"))
+			binning = binning->get_3d_binning();
+	} else binning->set_as_default_3d_bin(ps->get_projections()->get_size(2));
+	binning->print(std::cout);
 
-  floatd3 imageDimensions;
-  if (vm.count("dimensions")){
-    imageDimensions = vm["dimensions"].as<floatd3>();
-    voxelSize = imageDimensions/imageSize;
+	floatd3 imageDimensions;
+	if (vm.count("dimensions")){
+		imageDimensions = vm["dimensions"].as<floatd3>();
+		voxelSize = imageDimensions/imageSize;
+	}
+	else imageDimensions = voxelSize*imageSize;
+
+	float lengthOfRay_in_mm = norm(imageDimensions);
+	unsigned int numSamplesPerPixel = 3;
+	float minSpacing = min(voxelSize)/numSamplesPerPixel;
+
+	unsigned int numSamplesPerRay;
+	if (vm.count("samples")) numSamplesPerRay = vm["samples"].as<unsigned int>();
+	else numSamplesPerRay = ceil( lengthOfRay_in_mm / minSpacing );
+
+	float step_size_in_mm = lengthOfRay_in_mm / numSamplesPerRay;
+	size_t numProjs = ps->get_projections()->get_size(2);
+	size_t needed_bytes = 2 * prod(imageSize) * sizeof(float);
+	std::vector<size_t> is_dims = to_std_vector((uint64d3)imageSize);
+
+	std::cout << "IS dimensions " << is_dims[0] << " " << is_dims[1] << " " << is_dims[2] << std::endl;
+	std::cout << "Image size " << imageDimensions << std::endl;
+
+	is_dims.push_back(binning->get_number_of_bins());
+
+	// Define encoding matrix
+	auto E = boost::make_shared<CBSubsetOperator<hoCuNDArray> >(subsets);
+
+	//E->setup(ps,binning,imageDimensions);
+	E->setup(ps,binning,imageDimensions);
+	E->set_domain_dimensions(&is_dims);
+	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+
+	auto E2 = boost::make_shared<hoCuConvertOperator>(E);
+
+	//hoCuGPBBSolver<float> solver;
+	//hoCuCgDescentSolver<float> solver;
+//	osSPSSolver<hoCuNDArray<float>> solver;
+	osMOMSolverD<hoCuNDArray<float>> solver;
+	//osSPSSolver<hoNDArray<float>> solver;
+	//hoCuNCGSolver<float> solver;
+	solver.set_encoding_operator(E);
+	//solver.set_domain_dimensions(&is_dims);
+	solver.set_max_iterations(iterations);
+	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
+	solver.set_non_negativity_constraint(true);
+	//solver.set_rho(rho);
+
+	hoCuNDArray<float> projections = *ps->get_projections();
+
+	boost::shared_ptr<hoCuNDArray<float> > prior;
+
+	if (vm.count("use_prior")) {
+		prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
+		solver.set_x0(prior);
+	}
+	/*
+	if (tv_weight > 0){
+		auto total_variation = boost::make_shared<hoCuTvOperator<float,4>>();
+		total_variation->set_weight(tv_weight);
+		//total_variation->set_weight_array(weight_array);
+		solver.add_nonlinear_operator(total_variation);
+		solver.set_kappa(tv_weight);
+}
+*/
+
+  if (tv_weight > 0){
+
+  	auto Dx = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(0);
+  	Dx->set_weight(tv_weight);
+  	Dx->set_domain_dimensions(&is_dims);
+  	Dx->set_codomain_dimensions(&is_dims);
+
+  	auto Dy = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(1);
+  	Dy->set_weight(tv_weight);
+  	Dy->set_domain_dimensions(&is_dims);
+  	Dy->set_codomain_dimensions(&is_dims);
+
+
+  	auto Dz = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(2);
+  	Dz->set_weight(tv_weight);
+  	Dz->set_domain_dimensions(&is_dims);
+  	Dz->set_codomain_dimensions(&is_dims);
+
+  	if (binning->get_number_of_bins() > 1){
+  	auto Dt = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(3);
+  	Dt->set_weight(tv_weight);
+  	Dt->set_domain_dimensions(&is_dims);
+  	Dt->set_codomain_dimensions(&is_dims);
+  	solver.add_regularization_group({Dx,Dy,Dz,Dt});
+  	} else
+  		solver.add_regularization_group({Dx,Dy,Dz});
   }
-  else imageDimensions = voxelSize*imageSize;
-
-  float lengthOfRay_in_mm = norm(imageDimensions);
-  unsigned int numSamplesPerPixel = 3;
-  float minSpacing = min(voxelSize)/numSamplesPerPixel;
-
-  unsigned int numSamplesPerRay;
-  if (vm.count("samples")) numSamplesPerRay = vm["samples"].as<unsigned int>();
-  else numSamplesPerRay = ceil( lengthOfRay_in_mm / minSpacing );
-
-  float step_size_in_mm = lengthOfRay_in_mm / numSamplesPerRay;
-  size_t numProjs = ps->get_projections()->get_size(2);
-  size_t needed_bytes = 2 * prod(imageSize) * sizeof(float);
-  std::vector<size_t> is_dims = to_std_vector((uint64d3)imageSize);
-
-  std::cout << "IS dimensions " << is_dims[0] << " " << is_dims[1] << " " << is_dims[2] << std::endl;
-  std::cout << "Image size " << imageDimensions << std::endl;
-
-  is_dims.push_back(binning->get_number_of_bins());
-
-  // Define encoding matrix
-  auto E = boost::make_shared<CBSubsetOperator<hoCuNDArray> >(subsets);
-
-  //E->setup(ps,binning,imageDimensions);
-  E->setup(ps,binning,imageDimensions);
-  E->set_domain_dimensions(&is_dims);
-  E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
-
-  auto E2 = boost::make_shared<hoCuConvertOperator>(E);
-
-  //hoCuGPBBSolver<float> solver;
-  //hoCuCgDescentSolver<float> solver;
-  osSPSSolver<hoCuNDArray<float>> solver;
-  //osSPSSolver<hoNDArray<float>> solver;
-  //hoCuNCGSolver<float> solver;
-  solver.set_encoding_operator(E);
-  //solver.set_domain_dimensions(&is_dims);
-  solver.set_max_iterations(iterations);
-  solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
-  solver.set_non_negativity_constraint(true);
-  //solver.set_rho(rho);
-
-  hoCuNDArray<float> projections = *ps->get_projections();
-
-    boost::shared_ptr<hoCuNDArray<float> > prior;
-
-  if (vm.count("use_prior")) {
-  	prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
-  	solver.set_x0(prior);
-  }
 
 
-  auto result = solver.solve(&projections);
 
-  write_nd_array<float>( result.get(), outputFile.c_str());
+	auto result = solver.solve(&projections);
+
+	write_nd_array<float>( result.get(), outputFile.c_str());
 }
 

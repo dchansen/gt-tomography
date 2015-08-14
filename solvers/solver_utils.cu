@@ -1,5 +1,6 @@
 #include "complext.h"
 #include "solver_utils.h"
+#include "setup_grid.h"
 #include <algorithm>
 #define MAX_THREADS_PER_BLOCK 512
 
@@ -23,12 +24,15 @@ template <class T> void Gadgetron::solver_non_negativity_filter(cuNDArray<T>* x 
 {
 	int elements = g->get_number_of_elements();
 
-	int threadsPerBlock = std::min(elements,MAX_THREADS_PER_BLOCK);
-	dim3 dimBlock( threadsPerBlock);
-	int totalBlocksPerGrid = std::max(1,elements/MAX_THREADS_PER_BLOCK);
-	dim3 dimGrid(totalBlocksPerGrid);
+	dim3 dimBlock;
+	dim3 dimGrid;
+	setup_grid(x->get_number_of_elements(),&dimBlock, &dimGrid);
+
+
+	CHECK_FOR_CUDA_ERROR();
 
 	filter_kernel<typename realType<T>::Type><<<dimGrid,dimBlock>>>(x->get_data_ptr(),g->get_data_ptr(),elements);
+
 }
 
 template <class T> void Gadgetron::solver_non_negativity_filter(hoCuNDArray<T>* x , hoCuNDArray<T>* g)
@@ -41,6 +45,23 @@ template <class T> void Gadgetron::solver_non_negativity_filter(hoCuNDArray<T>* 
 }
 
 
+template<class T> struct cuNDA_hardshrink : public thrust::unary_function<T,T> {
 
+	cuNDA_hardshrink(typename realType<T>::Type gamma_): gamma(gamma_) {};
+   __device__ T operator()(const T & x) {
+	   return abs(x) < gamma ? T(0) : x;
+   }
+   typename realType<T>::Type gamma;
+
+};
+
+template<class T> void Gadgetron::hard_shrink(cuNDArray<T>* in_out, typename realType<T>::Type gamma){
+	thrust::transform(in_out->begin(),in_out->end(), in_out->begin(),cuNDA_hardshrink<T>(gamma));
+		
+}
+
+
+
+template void Gadgetron::hard_shrink<float>(cuNDArray<float>*, float);
 template void Gadgetron::solver_non_negativity_filter<float>(cuNDArray<float>*, cuNDArray<float>*);
 template void Gadgetron::solver_non_negativity_filter<float>(hoCuNDArray<float>*, hoCuNDArray<float>*);

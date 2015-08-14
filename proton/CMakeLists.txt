@@ -23,6 +23,7 @@ add_executable(hostProtonReconstruct hostProtonReconstruct.cpp)
 
 #add_executable(hostSBProtonReconstruct hostSBProtonReconstruct.cpp)
 add_executable(hostFilteredProtonReconstruct hostFilteredProtonReconstruct.cpp)
+add_executable(FilteredProtonReconstruct FilteredProtonReconstruct.cpp)
 
 add_executable(hostSubsetProtonReconstruct hostSubsetProtonReconstruct.cpp)
 add_executable(subsetProtonReconstruct subsetProtonReconstruct.cpp)
@@ -37,8 +38,9 @@ target_link_libraries(hostProtonReconstruct proton_kernels gadgetron_toolbox_cpu
 #target_link_libraries(CGhostProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore   ${HDF5_LIBRARIES}   ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
 #target_link_libraries(hostSBProtonReconstruct proton_kernels cpucore cpucore_math gpuoperators gpucore   ${HDF5_LIBRARIES}  ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
 target_link_libraries(hostSubsetProtonReconstruct proton_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore   gadgetron_toolbox_gpuoperators gadgetron_toolbox_log ${HDF5_LIBRARIES}  ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
-target_link_libraries(subsetProtonReconstruct proton_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore   gadgetron_toolbox_log gadgetron_toolbox_gpuoperators ${HDF5_LIBRARIES}  ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
+target_link_libraries(subsetProtonReconstruct proton_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_gpusolvers  gadgetron_toolbox_log gadgetron_toolbox_gpuoperators ${HDF5_LIBRARIES}  ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
 target_link_libraries(hostFilteredProtonReconstruct proton_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore  gadgetron_toolbox_log  gadgetron_toolbox_gpuoperators gadgetron_toolbox_cpufft ${HDF5_LIBRARIES}  ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
+target_link_libraries(FilteredProtonReconstruct proton_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore  gadgetron_toolbox_log  gadgetron_toolbox_gpuoperators gadgetron_toolbox_cpufft ${HDF5_LIBRARIES}  ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
 #target_link_libraries(hostBufferedSubsetProtonReconstruct proton_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_log  gadgetron_toolbox_gpuoperators ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}   ${Boost_LIBRARIES})
 #target_link_libraries(LSQRTest proton_kernels gpucore  solvers operators ${CUDA_LIBRARIES}  )
 

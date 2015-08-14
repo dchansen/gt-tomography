@@ -88,7 +88,7 @@ namespace Gadgetron {
                                                      boost::counting_iterator<unsigned int>(num_projections) ));
     }
 
-    CBCT_binning get_3d_binning(){
+    boost::shared_ptr<CBCT_binning> get_3d_binning(){
     	std::vector<std::vector<unsigned int> > bin_3d;
     	std::set<unsigned int> uniques;
     	for (int i = 0; i < binning_.size(); i++){
@@ -96,7 +96,7 @@ namespace Gadgetron {
     	}
 
     	bin_3d.push_back(std::vector<unsigned int>(uniques.begin(),uniques.end()));
-    	return CBCT_binning(bin_3d);
+    	return boost::make_shared<CBCT_binning>(bin_3d);
     }
 
     void load( std::string filename )

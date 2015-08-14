@@ -17,7 +17,7 @@ static texture<float, 3, cudaReadModeElementType>
 projection_tex( 1, cudaFilterModeLinear, cudaAddressModeBorder );
 
 using namespace Gadgetron;
-
+/*
 static __device__ float sinc(float x ){
 	if (x == 0)
 		return 1;
@@ -25,7 +25,7 @@ static __device__ float sinc(float x ){
 	float x2 = CUDART_PI_F*x;
 	return sin(x2)/x2;
 }
-
+*/
 static __global__ void interpolate_projection(float * __restrict__ image, const float * __restrict__ mask, float * __restrict__ out_mask, intd3 image_size){
 
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;

@@ -28,6 +28,7 @@ public:
 		allow_offset_correction_override_ = true;
 	}
 
+	boost::shared_ptr<hoCuNDArray<bool>> calculate_mask( hoCuNDArray<float>* projections, float limit);
 	virtual ~hoCuConebeamProjectionOperator() {}
 
 	virtual void mult_M( hoCuNDArray<float> *in, hoCuNDArray<float> *out, bool accumulate = false );
@@ -131,6 +132,7 @@ public:
 	boost::shared_ptr<CBCT_binning> get_binning(){
 		return binning_;
 	}
+	void set_mask(boost::shared_ptr<hoCuNDArray<bool>> m){ mask_ = m;}
 
 protected:
 	virtual void compute_default_frequency_filter();
@@ -149,5 +151,6 @@ protected:
 	bool allow_offset_correction_override_;
 	boost::shared_ptr< cuNDArray<float> > cosine_weights_;
 	boost::shared_ptr< cuNDArray<float> > frequency_filter_;
+	boost::shared_ptr<hoCuNDArray<bool>> mask_;
 };
 }

@@ -13,39 +13,12 @@ find_package(Gadgetron REQUIRED)
 #/usr/local/gadgetron/cmake)
 
 #if (NOT GADGETRON_CMAKE_MODULES)
-#  MESSAGE(FATAL_ERROR "GADGETRON_CMAKE_MODULES cannot be found. 
+#  MESSAGE(FATAL_ERROR "GADGETRON_CMAKE_MODULES cannot be found.
 #   Try to set GADGETRON_HOME environment variable.")
 #endif(NOT GADGETRON_CMAKE_MODULES)
 
 
-include_directories(  "${GADGETRON_HOME}/include")
-
-LINK_DIRECTORIES(${GADGETRON_LIB_DIR})   
-find_package(Boost COMPONENTS program_options system thread REQUIRED)
-find_package(CUDA 4.0 REQUIRED)
-if (CUDA_FOUND)
-   MESSAGE("CUDA Found, GPU components will be compiled")
-   ADD_DEFINITIONS(-DGTCUDA_FOUND)
-   include_directories( ${CUDA_INCLUDE_DIRS})
-  # Compile kernels for shader models 2.0 for Cuda 4
-  # Add shader models 3.0 and 3.5 from Cuda 5 and up
-  set(CUDA_NVCC_FLAGS2 "-gencode arch=compute_20,code=sm_20")
-  set(CUDA_NVCC_FLAGS3 "-gencode arch=compute_30,code=sm_30") 
-  set(CUDA_NVCC_FLAGS4 "-gencode arch=compute_35,code=sm_35")   
-
-  if(${CUDA_VERSION} VERSION_GREATER "4.99")
-    set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS1} ${CUDA_NVCC_FLAGS2} ${CUDA_NVCC_FLAGS3} ${CUDA_NVCC_FLAGS4})    
-  else(${CUDA_VERSION} VERSION_GREATER "4.99")
-    set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS1} ${CUDA_NVCC_FLAGS2})    
-  endif(${CUDA_VERSION} VERSION_GREATER "4.99")
-  
-  
-  set(CUDA_PROPAGATE_HOST_FLAGS ON)
-  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} --std=c++11)
-  set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
-else (CUDA_FOUND)
-     MESSAGE("CUDA not found. CUDA components will not be compiled")
-endif (CUDA_FOUND)
+include_directories(  "${GADGETRON_HOME}/include/gadgetron")
 
 # build options for OpenMP support
 find_package(OpenMP)
@@ -57,11 +30,47 @@ if (OPENMP_FOUND)
 else (OPENMP_FOUND)
   message("OpenMP multithreading not supported")
 endif (OPENMP_FOUND)
-if(USE_OPENMP) 
+if(USE_OPENMP)
   ADD_DEFINITIONS(-DUSE_OMP)
-endif(USE_OPENMP) 
+endif(USE_OPENMP)
 
+find_package(DCMTK REQUIRED)
+
+FIND_PACKAGE(GDCM REQUIRED)
+    IF(GDCM_FOUND)
+        INCLUDE(${GDCM_USE_FILE})
+        SET(GDCM_LIBRARIES 
+            gdcmCommon
+            gdcmDICT
+            gdcmDSED
+            gdcmIOD
+            gdcmjpeg12
+            gdcmjpeg16
+            gdcmjpeg8
+            gdcmMEXD
+            gdcmMSFF
+            socketxx
+            )
+    ELSE(GDCM_FOUND)
+        MESSAGE(FATAL_ERROR "Cannot find GDCM, did you set GDCM_DIR?")
+    ENDIF(GDCM_FOUND)
+find_package(Boost COMPONENTS system thread program_options filesystem REQUIRED)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
+find_package(CUDA 4.0 REQUIRED)
+if (CUDA_FOUND)
+  set(CUDA_PROPAGATE_HOST_FLAGS OFF)
+  set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
+
+  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_52,code=sm_52")
+  #set(CUDA_VERBOSE_BUILD ON)
+
+  # Compile kernels for compute models 1.0 and 2.0 as default for Cuda 4.1
+  # Support compute model 3.0 from Cuda 4.2 and up
+  # Support compute model 3.5 from Cuda 5 and up
+
+  MESSAGE("Compiling with ${CUDA_NVCC_FLAGS}")
+endif (CUDA_FOUND)
+
 find_package(GTest)
 #Add support for the default ubuntu package of gtest (which is not compiled
 if (NOT GTEST_FOUND)
@@ -83,4 +92,3 @@ add_subdirectory(proton)
 add_subdirectory(xray)
 add_subdirectory(test)
 #add_subdirectory(mri)
-

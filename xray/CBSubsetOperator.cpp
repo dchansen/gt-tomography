@@ -11,6 +11,9 @@
 #include <utility>
 #include <thrust/sort.h>
 #include <thrust/iterator/counting_iterator.h>
+#include "cuNDArray_math.h"
+
+#include "conebeam_projection.h"
 using namespace Gadgetron;
 
 template<template<class> class ARRAY> Gadgetron::CBSubsetOperator<ARRAY>::CBSubsetOperator(int subsets): subsetOperator<ARRAY<float>>(subsets) {
@@ -23,8 +26,8 @@ template<template<class> class ARRAY> Gadgetron::CBSubsetOperator<ARRAY>::~CBSub
 
 template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::mult_M(ARRAY<float>* image,
 		ARRAY<float>* projections, int subset, bool accumulate) {
-	std::cout << "Subset " << subset << " of size " << get_codomain_dimensions(subset)->at(2) << std::endl;
 	operators[subset]->mult_M(image,projections,accumulate);
+
 }
 
 template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::mult_MH(ARRAY<float>* projections,
@@ -50,11 +53,11 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 		boost::shared_ptr<CBCT_acquisition> acq, boost::shared_ptr<CBCT_binning> binning, floatd3 is_dims_in_mm) {
 
 	auto geometry = acq->get_geometry();
-	auto angles = geometry->get_angles();
-	auto offsets = geometry->get_offsets();
+	auto all_angles = geometry->get_angles();
+	auto all_offsets = geometry->get_offsets();
 	//Set smallest angle to 0.
-	float min_value = *std::min_element(angles.begin(), angles.end() );
-	transform(angles.begin(), angles.end(), angles.begin(), bind2nd(std::minus<float>(), min_value));
+	float min_value = *std::min_element(all_angles.begin(),all_angles.end() );
+	transform(all_angles.begin(), all_angles.end(), all_angles.begin(), bind2nd(std::minus<float>(), min_value));
 	std::cout << "Min angle "<< min_value << std::endl;
 
 	std::vector<std::vector<float> > subset_angles(this->number_of_subsets);
@@ -70,7 +73,7 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 		for (auto proj : bin_vector[bin])
 			bins[proj] = bin;
 
-	for (int i = 0; i < angles.size(); i++){
+	for (int i = 0; i < all_angles.size(); i++){
 		if (bins.find(i) != bins.end()) //Check to make sure the projection is in the bins
 			subset_projections[i%this->number_of_subsets].push_back(i);
 	}
@@ -83,22 +86,31 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 	//Fill in corresponding angles and offsets
 	for (auto i = 0u; i < subset_projections.size(); i++){
 		for (auto proj : subset_projections[i]){
-			subset_angles[i].push_back(angles[proj]);
-			subset_offsets[i].push_back(offsets[proj]);
+			subset_angles[i].push_back(all_angles[proj]);
+			subset_offsets[i].push_back(all_offsets[proj]);
 		}
 	}
 
+
+
 	//Calculate the required permutation to order the actual projection array.
 	std::vector<unsigned int> permutations;
-		for (auto &subset : subset_projections){
-			for (auto proj : subset){
-				permutations.push_back(proj);
-			}
+	for (auto &subset : subset_projections){
+		for (auto proj : subset){
+			permutations.push_back(proj);
 		}
+	}
 
-		acq->set_projections(permute_projections(acq->get_projections(),permutations));
+	acq->set_projections(permute_projections(acq->get_projections(),permutations));
 
-
+	std::vector<floatd2> new_offsets;
+	std::vector<float> new_angles;
+	for (auto & i : permutations){
+		new_angles.push_back(all_angles[i]);
+		new_offsets.push_back(all_offsets[i]);
+	}
+	geometry->set_angles(new_angles);
+	geometry->set_offsets(new_offsets);
 
 
 	for (int subset = 0; subset < this->number_of_subsets; subset++){
@@ -121,6 +133,18 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 		operators[subset]->setup(subset_acquisistion,subset_binning,is_dims_in_mm,false);
 	}
 
+	angles = std::vector<std::vector<float>>();
+	offsets = std::vector<std::vector<floatd2>>();
+	for (int bin =0; bin < binning->get_number_of_bins(); bin++){
+		auto binvec = binning->get_bin(bin);
+		angles.push_back(std::vector<float>());
+		offsets.push_back(std::vector<floatd2>());
+		for (auto index : binvec){
+			angles.back().push_back(new_angles[index]);
+			offsets.back().push_back(new_offsets[index]);
+		}
+
+	}
 
 	uint64d2 proj_dim{ acq->get_projections()->get_size(0), acq->get_projections()->get_size(1)};
 	for (int i = 0; i < this->number_of_subsets; i++)
@@ -130,7 +154,6 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 
 
 }
-
 
 
 
@@ -151,6 +174,19 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 
 }
 
+template<template<class > class ARRAY>
+inline boost::shared_ptr<ARRAY<bool> > Gadgetron::CBSubsetOperator<ARRAY>::calculate_mask(
+		boost::shared_ptr<ARRAY<float> > projections, float limit) {
+
+	auto mask = boost::make_shared<ARRAY<bool>>(this->get_domain_dimensions());
+	fill(mask.get(),true);
+	auto proj_subs = this->projection_subsets(projections.get());
+	for (int i = 0; i < operators.size(); i++){
+		*mask &= *operators[i]->calculate_mask(proj_subs[i].get(),limit);
+	}
+	return mask;
+}
+
 template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float> > Gadgetron::CBSubsetOperator<ARRAY>::permute_projections(
 		boost::shared_ptr<hoCuNDArray<float> > projections,
 		std::vector<unsigned int>  & permutations) {
@@ -164,7 +200,7 @@ template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float> > Gad
 	float * proj_ptr = projections->get_data_ptr();
 
 	for (unsigned int i = 0; i < nproj; i++){
- 		cudaMemcpy(res_ptr+i*proj_size,proj_ptr+proj_size*permutations[i],proj_size*sizeof(float),cudaMemcpyHostToHost);
+		cudaMemcpy(res_ptr+i*proj_size,proj_ptr+proj_size*permutations[i],proj_size*sizeof(float),cudaMemcpyHostToHost);
 	}
 	return result;
 

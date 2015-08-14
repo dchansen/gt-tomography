@@ -1,3 +1,4 @@
+#pragma once
 #include "complext.h"
 #include "hoCuNDArray.h"
 #include "cuNDArray.h"
@@ -10,6 +11,7 @@ template<class T> void solver_non_negativity_filter(hoCuNDArray<T>* x , hoCuNDAr
 
 
 
+template<class T> void hard_shrink(cuNDArray<T>* in_out, typename realType<T>::Type gamma);
 template<class T> void save_nd_array(cuNDArray<T>* array, std::string s){
 	write_nd_array(array->to_host().get(),s.c_str());
 }

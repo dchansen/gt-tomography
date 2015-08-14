@@ -10,35 +10,46 @@
 #include "hoCuParallelProjection.h"
 #include "hoNDFFT.h"
 #include "cuNDFFT.h"
+#include "cuNDArray_math.h"
 
 #include "hoNDArray_fileio.h"
 
 #include <boost/math/constants/constants.hpp>
 
 #include "proton_utils.h"
+#include <boost/type_traits.hpp>
+#include <boost/make_shared.hpp>
 
 #define MAX_THREADS_PER_BLOCK 128
 #define BLOCKS_PER_GRID 65535
 #define MAX_BLOCKS 4096*4
 
 namespace Gadgetron{
-class hoCuFilteredProton {
+
+
+
+
+template<template<class>  class ARRAY> class FilteredProton {
 
 public:
-	hoCuFilteredProton() {
+	FilteredProton() {
 
 	}
 
 
 	//Terrible terrible name. Penguin_sauce would be as good...or better, 'cos penguin
-	boost::shared_ptr<hoCuNDArray<float> >  calculate(std::vector<size_t> dims,vector_td<float,3> physical_dims, boost::shared_ptr<protonDataset<hoCuNDArray> > data){
+	boost::shared_ptr<ARRAY<float> >  calculate(std::vector<size_t> dims,vector_td<float,3> physical_dims, boost::shared_ptr<protonDataset<ARRAY> > data, bool estimate_missing=true,float oversamplingWidth = 2.0f, float undersamplingDepth = 16.0f){
 
-		cuNDArray<float> image(dims);
-		clear(&image);
+		boost::shared_ptr<cuNDArray<float> > image(new cuNDArray<float>(dims));
+		clear(image.get());
 
-		std::vector<size_t> dims_proj;
+		std::vector<size_t> dims_proj = { size_t(dims[0]*oversamplingWidth),size_t(dims[1]/undersamplingDepth),dims[2]};
+		//std::vector<size_t> dims_proj;
 
 		vector_td<float,3> physical_dims_proj = physical_dims;
+		physical_dims_proj[0] *= std::sqrt(2.0f);
+		//physical_dims_proj[1] *= std::sqrt(2.0f);
+/*
 		for (int i  = 0; i < dims.size(); i++)
 		{
 			if (dims[i] == 1) dims_proj.push_back(1);
@@ -48,11 +59,12 @@ public:
 				physical_dims_proj[i] *= std::sqrt(2.0f);
 				//physical_dims_proj[i] *= 0.5;
 			}
-		}
+		}*/
+
 
 		unsigned int oversampling = 2;
 
-		cuNDArray<double_complext> ramp = *calc_filter(dims_proj[0]*oversampling,physical_dims[0]/(dims[0]));
+		auto ramp = *calc_filter<float>(dims_proj[0]*oversampling,physical_dims[0]/(dims[0]));
 		//ramp *= 2.0f*oversampling;
 		unsigned int ngroups = data->get_number_of_groups();
 
@@ -60,16 +72,16 @@ public:
 		if (data->get_hull()) hull = new cuNDArray<float>(*data->get_hull());
 		for (unsigned int group = 0; group < ngroups; group++){
 			//std::cout << "Penguin processing group " << group << std::endl;
-			boost::shared_ptr<cuNDArray<float> > cu_paths(new cuNDArray<float>(*data->get_projection_group(group)));
-			cuNDArray<floatd3>  cu_splines(*data->get_spline_group(group));
-			rotate_splines(&cu_splines, data->get_angle(group));
+			boost::shared_ptr<cuNDArray<float> > cu_paths = to_cundarray(data->get_projection_group(group));
+			boost::shared_ptr<cuNDArray<floatd3> >  cu_splines = to_cundarray(data->get_spline_group(group));
+			rotate_splines(cu_splines.get(), data->get_angle(group));
 			//std::cout << "Setup done " << std::endl;
 			cuNDArray<float> projection(dims_proj);
 			clear(&projection);
 
 			boost::shared_ptr< cuNDArray<float> > EPL;
 			if (data->get_EPL()){
-				EPL = boost::shared_ptr< cuNDArray<float> >(new cuNDArray<float>(*data->get_EPL_group(group)));
+				EPL = to_cundarray(data->get_EPL_group(group));
 			}
 
 			{
@@ -83,9 +95,9 @@ public:
 					fill(&normalization,1.0f);
 
 
-				protonBackprojection(&projection,cu_paths.get(),&cu_splines,physical_dims_proj,EPL.get());
-				protonBackprojection(&projection_nrm,&normalization,&cu_splines,physical_dims_proj,EPL.get());
-				if (min(&projection_nrm) <= 0)
+				protonBackprojection(&projection,cu_paths.get(),cu_splines.get(),physical_dims_proj,EPL.get());
+				protonBackprojection(&projection_nrm,&normalization,cu_splines.get(),physical_dims_proj,EPL.get());
+				if (min(&projection_nrm) <= 0 && estimate_missing)
 					interpolate_missing(&projection,&projection_nrm);
 				clamp(&projection_nrm,1e-6f,1e8f,1.0f,1.0f);
 				projection /= projection_nrm;
@@ -93,53 +105,52 @@ public:
 			}
 			std::vector<size_t> batch_dims = *projection.get_dimensions();
 			{
-				boost::shared_ptr<cuNDArray<double> > double_proj = convert_to<float,double>(&projection);
+				//boost::shared_ptr<cuNDArray<double> > double_proj = convert_to<float,double>(&projection);
 				uint64d3 pad_dims(batch_dims[0]*oversampling, batch_dims[1], batch_dims[2]);
-				boost::shared_ptr<cuNDArray<double_complext> > proj_complex;
+				boost::shared_ptr<cuNDArray<float_complext> > proj_complex;
 				{
-					boost::shared_ptr< cuNDArray<double> > padded_projection = pad<double,3>( pad_dims, double_proj.get() );
+					boost::shared_ptr< cuNDArray<float> > padded_projection = pad<float,3>( pad_dims, &projection );
 					//std::cout << "Spline projection done " << std::endl;
-					proj_complex = real_to_complex<double_complext>(padded_projection.get());
+					proj_complex = real_to_complex<float_complext>(padded_projection.get());
 				}
-				cuNDFFT<double>::instance()->fft(proj_complex.get(),0u);
+				cuNDFFT<float>::instance()->fft(proj_complex.get(),0u);
 				*proj_complex *= ramp;
-				cuNDFFT<double>::instance()->ifft(proj_complex.get(),0u);
+				cuNDFFT<float>::instance()->ifft(proj_complex.get(),0u);
 				//*proj_complex /= (float)ramp.get_size(0);
 				//*proj_complex /= (float)ramp.get_size(0);
-				*proj_complex *= 2*boost::math::constants::pi<double>()*std::sqrt((double)ramp.get_size(0))/(physical_dims_proj[0]*oversampling);
+				*proj_complex *= float(2*boost::math::constants::pi<float>()*std::sqrt((float)ramp.get_size(0))/(physical_dims_proj[0]*oversampling));
 				//ramp *= physical_dims_proj[0];
 
 
 				uint64d3 crop_offsets(batch_dims[0]*(oversampling-1)/2, 0, 0);
-				crop<double,3>( crop_offsets, real(proj_complex.get()).get(), double_proj.get());
-				convert_to<double,float>(double_proj.get(),&projection);
+				crop<float,3>( crop_offsets, real(proj_complex.get()).get(), &projection);
+				//convert_to<double,float>(double_proj.get(),&projection);
 			}
 			//projection = *real(proj_complex.get());
 			//write_nd_array(&projection,"projection.real");
 			//CHECK_FOR_CUDA_ERROR();
 			//std::cout << "Filtering done " << std::endl;
-			parallel_backprojection(&projection,&image,data->get_angle(group),physical_dims,physical_dims_proj);
+			parallel_backprojection(&projection,image.get(),data->get_angle(group),physical_dims,physical_dims_proj);
 			//CHECK_FOR_CUDA_ERROR();
 			//std::cout << "Backprojection done " << std::endl;
 
 		}
 		//if (hull) image *= *hull;
 		//image *= float(dims_proj[0])/(float(ngroups)*2*boost::math::constants::pi<float>());
-		image *= 1.0f/float(ngroups);
+		*image *= 1.0f/float(ngroups);
 
 		if (hull) delete hull;
 		//*out *= float(dims_proj[0]);
 		//*out *= 2*4*boost::math::constants::pi<float>()*boost::math::constants::pi<float>()/float(ngroups);
-		boost::shared_ptr<hoCuNDArray<float> > out(new hoCuNDArray<float>);
-		image.to_host(out.get());
+
 		//*out *= *data->get_hull();
-		return out;
+		return from_cundarray(image);
 
 	}
 
 protected:
 
-/*
+	/*
 	boost::shared_ptr<cuNDArray<double_complext> > calc_filter(size_t width,float spacing){
 		std::vector<size_t > filter_size;
 		filter_size.push_back(width);
@@ -171,19 +182,18 @@ protected:
 
 	}*/
 
-	boost::shared_ptr<cuNDArray<double_complext> > calc_filter(size_t width,float spacing){
+	template<class T> boost::shared_ptr<cuNDArray<complext<T> > > calc_filter(size_t width,float spacing){
 		std::vector<size_t > filter_size;
 		filter_size.push_back(width);
-		boost::shared_ptr< hoCuNDArray<double_complext> >  filter(new hoCuNDArray<double_complext>(filter_size));
+		boost::shared_ptr< hoCuNDArray<complext<T> > >  filter(new hoCuNDArray<complext<T> >(filter_size));
 
 		clear(filter.get());
-		double_complext* filter_ptr = filter->get_data_ptr();
+		complext<T>* filter_ptr = filter->get_data_ptr();
 
 		double pi2  = boost::math::constants::pi<double>()*boost::math::constants::pi<double>();
-		size_t i,j;
-		for ( i = 1, j = width-1; i < width/2; i+=2, j-=2){
-				filter_ptr[i+width/2] = double_complext(-1.0f/(float(i*i)*pi2));
-				filter_ptr[width/2-i] = double_complext(-1.0f/(float(i*i)*pi2));
+		for (size_t i = 1; i < width/2; i+=2){
+			filter_ptr[i+width/2] = complext<T>(-1.0f/(float(i*i)*pi2));
+			filter_ptr[width/2-i] = complext<T>(-1.0f/(float(i*i)*pi2));
 		}
 
 
@@ -194,14 +204,29 @@ protected:
 		std::cout << sum(filter.get()) << std::endl;
 
 		//float norm = width/asum(filter.get());
-	  //*filter /= spacing*spacing;
+		//*filter /= spacing*spacing;
 		//*filter /= spacing;
 
-	 *filter *= double(width);
+		*filter *= T(width);
 
 		//std::cout << "Filter scaling" << norm <<std::endl;
-		boost::shared_ptr< cuNDArray<double_complext> >  cufilter(new cuNDArray<double_complext>(*filter));
-		cuNDFFT<double>::instance()->fft(cufilter.get(),0u);
+		boost::shared_ptr< cuNDArray<complext<T> > >  cufilter(new cuNDArray<complext<T> >(*filter));
+		cuNDFFT<T>::instance()->fft(cufilter.get(),0u);
+		auto hofilter = cufilter->to_host();
+		auto data = hofilter->get_data_ptr();
+		size_t elements = hofilter->get_number_of_elements();
+		size_t ncut = width/2*0.5;
+		for ( size_t i = 1; i < ncut; i++){
+			data[i] *= 0.5*(1+std::cos(boost::math::constants::pi<T>()*T(i)/ncut));
+			data[width-i] *= 0.5*(1+std::cos(boost::math::constants::pi<T>()*T(i)/ncut));
+		}
+		for ( size_t i = ncut; i < width/2; i++){
+			data[i] = complext<T>(0);
+			data[width-i] = complext<T>(0);
+		}
+
+		*cufilter = cuNDArray<complext<T> >(*hofilter);
+
 
 		//float norm = asum(cufilter.get());
 		//*cufilter *= norm;
@@ -211,5 +236,22 @@ protected:
 
 	}
 
+
+	template<class T> typename boost::enable_if<boost::is_same<hoCuNDArray<T>,ARRAY<T> >, boost::shared_ptr<hoCuNDArray<T> > >::type from_cundarray(boost::shared_ptr<cuNDArray<T> >  in ){
+		boost::shared_ptr<hoCuNDArray<T> > res(new hoCuNDArray<T>);
+		in->to_host(res.get());
+		return res;
+	}
+	template<class T> typename boost::enable_if<boost::is_same<cuNDArray<T>,ARRAY<T> >, boost::shared_ptr<cuNDArray<T> > >::type from_cundarray(boost::shared_ptr<cuNDArray<T> >  in ){
+			return in;
+	}
+
+	template<class T> boost::shared_ptr<cuNDArray<T> > to_cundarray(boost::shared_ptr<cuNDArray<T> > in){
+		return in;
+	}
+	template<class T> boost::shared_ptr<cuNDArray<T> > to_cundarray(boost::shared_ptr<hoCuNDArray<T> > in){
+		return boost::make_shared<cuNDArray<T> >(*in);
+
+	}
 };
 }

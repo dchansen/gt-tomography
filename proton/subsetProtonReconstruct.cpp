@@ -34,6 +34,9 @@
 #include "cuNCGSolver.h"
 #include "hdf5_utils.h"
 #include "BILBSolver.h"
+#include "cuSolverUtils.h"
+#include "osLALMSolverD.h"
+#include "osMOMSolverD.h"
 
 #include "encodingOperatorContainer.h"
 #include "hoCuOperator.h"
@@ -66,10 +69,12 @@ int main( int argc, char** argv)
 	vector_td<float,3> physical_dims;
 	vector_td<float,3> origin;
 	float beta,gamma;
+	float huber;
 	int iterations;
 	int device;
 	int subsets;
 	bool use_hull,use_weights, use_non_negativity;
+	float tv_weight;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 			("help", "produce help message")
@@ -82,13 +87,15 @@ int main( int argc, char** argv)
 			("prior,P", po::value<std::string>(),"Prior image filename")
 			("prior-weight,k",po::value<float>(),"Weight of the prior image")
 			("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-			("TV,T",po::value<float>(),"TV Weight ")
+			("TV,T",po::value<float>(&tv_weight)->default_value(0),"TV Weight ")
 			("subsets,n", po::value<int>(&subsets)->default_value(10), "Number of subsets to use")
 			("beta",po::value<float>(&beta)->default_value(1),"Step size for SART")
-			("gamma",po::value<float>(&gamma)->default_value(0),"Relaxation Gamma")
+			("gamma",po::value<float>(&gamma)->default_value(1e-1),"Relaxation Gamma")
+			("huber",po::value<float>(&huber)->default_value(0),"Huber value")
 			("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
 			("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. ")
 			("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Use non-negativity constraint. ")
+
 	;
 
 	po::variables_map vm;
@@ -123,7 +130,7 @@ int main( int argc, char** argv)
 
   solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );*/
 	//osSARTSolver<cuNDArray<_real> > solver;
-	osSPSSolver<cuNDArray<_real> > solver;
+	//osSPSSolver<cuNDArray<_real> > solver;
 	//protonDROPSolver<cuNDArray > solver;
 	//BILBSolver<cuNDArray<float> > solver;
 	//osSPSSolver<cuNDArray<_real> > solver;
@@ -132,13 +139,22 @@ int main( int argc, char** argv)
 	//hoABIBBSolver<hoCuNDArray<_real> > solver;
 	//hoOSCGSolver<hoCuNDArray<_real> > solver;
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
+	osMOMSolverD<cuNDArray<float>> solver;
+	//osLALMSolverD<cuNDArray<float>> solver;
 
 	//solver.set_m(24);
 	//solver.set_beta(1.9f);
-	solver.set_beta(beta);
-	solver.set_gamma(gamma);
+	//solver.set_beta(beta);
+	//solver.set_gamma(gamma);
+
   solver.set_non_negativity_constraint(use_non_negativity);
   solver.set_max_iterations(iterations);
+  solver.set_huber(huber);
+  solver.set_reg_steps(5);
+  solver.set_dump(false);
+  //solver.set_tau(gamma);
+  //solver.set_regularization_iterations(1);
+  //solver.set_damping(beta);
 
   //solver.set_tc_tolerance(1e-10f);
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
@@ -155,6 +171,33 @@ int main( int argc, char** argv)
 
   E->set_domain_dimensions(&rhs_dims);
   E->set_codomain_dimensions(data->get_projections()->get_dimensions().get());
+
+  if (tv_weight > 0){
+
+  	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,2>>(0);
+  	Dx->set_weight(tv_weight);
+  	Dx->set_domain_dimensions(&rhs_dims);
+  	Dx->set_codomain_dimensions(&rhs_dims);
+
+  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,2>>(1);
+  	Dy->set_weight(tv_weight);
+  	Dy->set_domain_dimensions(&rhs_dims);
+  	Dy->set_codomain_dimensions(&rhs_dims);
+
+  	//solver.add_regularization_operator(Dx);
+  	//solver.add_regularization_operator(Dy);
+  	solver.add_regularization_group({Dx,Dy});
+  }
+
+
+/*
+  auto precon = boost::make_shared<cuNDArray<float>>(rhs_dims);
+  fill(precon.get(),1.0f);
+
+  solver.set_preconditioning_image(precon);
+  solver.set_tau(0.001);
+  solver.set_damping(1e-4);
+  */
 /*
   boost::shared_ptr<hoCuNDArray<_real > > prior;
   if (vm.count("prior")){
@@ -204,11 +247,45 @@ int main( int argc, char** argv)
 	//hoCuNDA_clear(projections.get());
 	//CHECK_FOR_CUDA_ERROR();
 
+/*
+  {
+  	cuNDArray<float> precon(rhs_dims);
+  	fill(&precon,1.0f);
+  	linearOperator<cuNDArray<float>>* E2 = E.get();
+  	E2->mult_MH_M(&precon,&precon);
+  	clamp_min(&precon,1e-6);
+  	reciprocal_inplace(&precon);
+
+
+  	auto old = boost::make_shared<cuNDArray<float>>(rhs_dims);
+  	fill(old.get(),1.0f);
+
+  	auto eigen_vec = boost::make_shared<cuNDArray<float>>(rhs_dims);
+  	for (int i = 0; i < 20; i ++){
+  		E2->mult_MH_M(old.get(),eigen_vec.get());
+  		//*eigen_vec *= precon;
+
+  		std::cout << "Val: " << dot(old.get(),eigen_vec.get()) << std::endl;
+  		*eigen_vec /= nrm2(eigen_vec.get());
+  		std::swap(eigen_vec,old);
+
+  	}
+
+  }
+*/
+  auto precon = boost::make_shared<cuNDArray<float>>(rhs_dims);
+  fill(precon.get(),1.0f);
+  //solver.set_preconditioning_image(precon);
 
 	//float res = dot(projections.get(),projections.get());
 
   if (data->get_weights()) *data->get_projections() *= *data->get_weights();
-	boost::shared_ptr< cuNDArray<_real> > result = solver.solve(data->get_projections().get());
+
+  boost::shared_ptr<cuNDArray<float> > result;
+  {
+  	  GPUTimer timer("Reconstruction time");
+	result = solver.solve(data->get_projections().get());
+  }
 
 
 	boost::shared_ptr< hoNDArray<float> > host_result = result->to_host();

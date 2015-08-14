@@ -5,10 +5,8 @@
 #include "vector_td_utilities.h"
 #include "setup_grid.h"
 
+#include "cudaDeviceManager.h"
 
-#define MAX_THREADS_PER_BLOCK 512
-#define BLOCKS_PER_GRID 65535
-#define MAX_BLOCKS 4096*4
 
 namespace Gadgetron {
 static size_t calculate_batch_size(size_t floats_per_proton = 14){
@@ -24,10 +22,11 @@ static size_t calculate_batch_size(size_t floats_per_proton = 14){
 void rotate_splines(cuNDArray<floatd3> * splines,float angle){
 
 	unsigned int elements = splines->get_number_of_elements()/4;
-	unsigned int threadsPerBlock =std::min(elements,(unsigned int) MAX_THREADS_PER_BLOCK);
+
+	unsigned int threadsPerBlock =std::min(elements,(unsigned int) cudaDeviceManager::Instance()->max_blockdim());
 	dim3 dimBlock( threadsPerBlock);
 	int totalBlocksPerGrid = (elements+threadsPerBlock-1)/threadsPerBlock;
-	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	dim3 dimGrid(std::min(totalBlocksPerGrid,cudaDeviceManager::Instance()->max_griddim()));
 
 
 	// Invoke kernel
@@ -114,10 +113,10 @@ template<class T, unsigned int D>
 template<> void protonProjection<cuNDArray>(cuNDArray<float>* image, cuNDArray<float>* projections, cuNDArray<floatd3>* splines, floatd3 phys_dims, cuNDArray<float>* exterior_path_lengths){
 	int dims =  projections->get_number_of_elements();
 
-	int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
+	int threadsPerBlock =std::min(dims,cudaDeviceManager::Instance()->max_blockdim());
 	dim3 dimBlock( threadsPerBlock);
 	int totalBlocksPerGrid = (dims+threadsPerBlock-1)/threadsPerBlock;
-	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	dim3 dimGrid(std::min(totalBlocksPerGrid,cudaDeviceManager::Instance()->max_griddim()));
 	uint64d3 _dims = from_std_vector<size_t,3>( *(image->get_dimensions()) );
 
 	// Invoke kernel
@@ -142,10 +141,10 @@ template<> void protonProjection<cuNDArray>(cuNDArray<float>* image, cuNDArray<f
 template<> void protonPathNorm<cuNDArray>(std::vector<size_t> img_dims, cuNDArray<float>* projections, cuNDArray<floatd3>* splines, floatd3 phys_dims, cuNDArray<float>* exterior_path_lengths){
 	int dims =  projections->get_number_of_elements();
 
-	int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
+	int threadsPerBlock =std::min(dims,cudaDeviceManager::Instance()->max_blockdim());
 	dim3 dimBlock( threadsPerBlock);
 	int totalBlocksPerGrid = (dims+threadsPerBlock-1)/threadsPerBlock;
-	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	dim3 dimGrid(std::min(totalBlocksPerGrid,cudaDeviceManager::Instance()->max_griddim()));
 	uint64d3 _dims = from_std_vector<size_t,3>( img_dims );
 
 	// Invoke kernel
@@ -203,10 +202,10 @@ template<> void protonProjection<hoCuNDArray>(hoCuNDArray<float> * image,hoCuNDA
 
 template<> void protonBackprojection<cuNDArray>(cuNDArray<float> * image, cuNDArray<float> * projections, cuNDArray<floatd3>* splines, floatd3 phys_dims, cuNDArray<float>* exterior_path_lengths){
 	int dims =  projections->get_number_of_elements();
-	int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
+	int threadsPerBlock =std::min(dims,cudaDeviceManager::Instance()->max_blockdim());
 	dim3 dimBlock( threadsPerBlock);
 	int totalBlocksPerGrid = (dims+threadsPerBlock-1)/threadsPerBlock;
-	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	dim3 dimGrid(std::min(totalBlocksPerGrid,cudaDeviceManager::Instance()->max_griddim()));
 	uint64d3 _dims = from_std_vector<size_t,3>( *(image->get_dimensions().get()) );
 
 	// Invoke kernel
@@ -229,10 +228,10 @@ template<> void protonBackprojection<cuNDArray>(cuNDArray<float> * image, cuNDAr
 
 template<> void countProtonsPerVoxel<cuNDArray>(cuNDArray<float> * image, cuNDArray<floatd3>* splines, floatd3 phys_dims, cuNDArray<float>* exterior_path_lengths){
 	int dims =  splines->get_number_of_elements()/4;
-	int threadsPerBlock =std::min(dims,MAX_THREADS_PER_BLOCK);
+	int threadsPerBlock =std::min(dims,cudaDeviceManager::Instance()->max_blockdim());
 	dim3 dimBlock( threadsPerBlock);
 	int totalBlocksPerGrid = (dims+threadsPerBlock-1)/threadsPerBlock;
-	dim3 dimGrid(std::min(totalBlocksPerGrid,MAX_BLOCKS));
+	dim3 dimGrid(std::min(totalBlocksPerGrid,cudaDeviceManager::Instance()->max_griddim()));
 	uint64d3 _dims = from_std_vector<size_t,3>( *(image->get_dimensions().get()) );
 
 	// Invoke kernel

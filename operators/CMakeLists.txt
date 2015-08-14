@@ -6,10 +6,16 @@ endif (WIN32)
 cuda_add_library( tomography_operators SHARED
   cuHaarWaveletOperator.cu
   cuGaussianFilterOperator.cu
+  cuATrousWavelet.cu
+  cuEdgeWavelet.cu
+  cuDCT.cu
 )
 
 install(FILES 	
 	hoCuPartialDerivativeOperator.h
 	cuGaussianFilterOperator.h
 	subsetOperator.h
+	cuATrousWavelet.h
+	invertibleOperator.h
+	cuDCT.h
 DESTINATION include)

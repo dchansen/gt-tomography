@@ -8,14 +8,15 @@
 #include "cuConebeamProjectionOperator.h"
 #include "conebeam_projection.h"
 #include <boost/math/constants/constants.hpp>
+#include "hoNDArray_math.h"
 using boost::math::constants::pi;
 namespace Gadgetron {
 
 cuConebeamProjectionOperator::cuConebeamProjectionOperator() {
 	// TODO Auto-generated constructor stub
 
-		samples_per_pixel_ = 1.5f;
-		allow_offset_correction_override_=true;
+	samples_per_pixel_ = 1.5f;
+	allow_offset_correction_override_=true;
 
 }
 void cuConebeamProjectionOperator
@@ -53,6 +54,7 @@ void cuConebeamProjectionOperator::mult_M(cuNDArray<float>* input,
 		auto output_view2 = output_view;
 		if (use_offset_correction_ && accumulate){
 			output_view2 = boost::make_shared<cuNDArray<float>>(outbindims);
+			clear(output_view2.get());
 		}
 
 		conebeam_forwards_projection(output_view2.get(),&input_view,angles[bin],offsets[bin],samples_per_pixel_,is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),accumulate);
@@ -61,7 +63,6 @@ void cuConebeamProjectionOperator::mult_M(cuNDArray<float>* input,
 			apply_offset_correct(output_view2.get(),offsets[bin],acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD());
 			if (accumulate)
 				*output_view += *output_view2;
-
 		}
 
 		input_ptr += input_view.get_number_of_elements();
@@ -69,7 +70,6 @@ void cuConebeamProjectionOperator::mult_M(cuNDArray<float>* input,
 
 
 	}
-	std::cout << "Image" << nrm2(input) << std::endl;
 
 }
 
@@ -82,7 +82,7 @@ void cuConebeamProjectionOperator::mult_MH(cuNDArray<float>* input,
 	float* input_ptr = input->get_data_ptr();
 	float* output_ptr = output->get_data_ptr();
 	for (int bin = 0; bin < binning_->get_number_of_bins(); bin++){
-//Check for empty bins
+		//Check for empty bins
 		if (binning_->get_bin(bin).size() == 0)
 			continue;
 
@@ -102,8 +102,41 @@ void cuConebeamProjectionOperator::mult_MH(cuNDArray<float>* input,
 
 	}
 
+	if (mask)
+		apply_mask(output,mask.get());
+
 }
 
+boost::shared_ptr<cuNDArray<bool>> cuConebeamProjectionOperator::calculate_mask( cuNDArray<float>* projections,float limit)
+{
+	auto dims = *this->get_domain_dimensions();
+	std::vector<size_t> dims3d(dims.begin(),dims.end()-1);
+	auto indims = *projections->get_dimensions();
+	std::vector<size_t> inbindims(indims);
+	float* input_ptr = projections->get_data_ptr();
+	auto mask = boost::make_shared<cuNDArray<bool>>(dims);
+	bool* mask_ptr = mask->get_data_ptr();
+	for (int bin = 0; bin < binning_->get_number_of_bins(); bin++){
+		//Check for empty bins
+		if (binning_->get_bin(bin).size() == 0)
+			continue;
+
+		cuNDArray<bool> mask_view(dims3d,mask_ptr);
+		inbindims.back() = angles[bin].size();
+		auto input_view = boost::make_shared<cuNDArray<float>>(inbindims,input_ptr);
+
+		vector_td<int,3> is_dims_in_pixels{dims3d[0], dims3d[1],dims3d[2]};
+
+		conebeam_spacecarver(input_view.get(),&mask_view, angles[bin],offsets[bin],is_dims_in_pixels, is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),limit);
+
+		input_ptr += input_view->get_number_of_elements();
+		mask_ptr += mask_view.get_number_of_elements();
+
+	}
+
+	return mask;
+
+}
 void Gadgetron::cuConebeamProjectionOperator::setup( boost::shared_ptr<CBCT_acquisition> acquisition,
 		floatd3 is_dims_in_mm, bool transform_angles )
 {
@@ -154,11 +187,13 @@ void Gadgetron::cuConebeamProjectionOperator::setup( boost::shared_ptr<CBCT_acqu
 		for (auto index : binvec){
 			angles.back().push_back(all_angles[index]);
 			offsets.back().push_back(all_offsets[index]);
-
 		}
 
 	}
-
+	auto permutations = new_order(binning_->get_bins());
+	auto proj = acquisition->get_projections();
+	if (proj)
+		*proj =	*permute_projections(proj,permutations);
 
 }
 
@@ -169,6 +204,36 @@ void Gadgetron::cuConebeamProjectionOperator::setup( boost::shared_ptr<CBCT_acqu
 
 	binning_ = binning;
 	setup( acquisition, is_dims_in_mm,transform_angles );
+}
+
+std::vector<unsigned int> Gadgetron::cuConebeamProjectionOperator::new_order(std::vector<std::vector<unsigned int>> bins){
+	std::vector<unsigned int> result;
+	for (auto & b : bins)
+		for (auto p : b)
+			result.push_back(p);
+	return result;
+}
+
+boost::shared_ptr<hoCuNDArray<float> > Gadgetron::cuConebeamProjectionOperator::permute_projections(
+		boost::shared_ptr<hoCuNDArray<float> > projections,
+		std::vector<unsigned int>  & permutations) {
+
+	std::vector<size_t> new_proj_dims = {projections->get_size(0),projections->get_size(1),permutations.size()};
+
+	auto result = boost::make_shared<hoCuNDArray<float>>(new_proj_dims);
+
+	size_t nproj = permutations.size();
+	size_t proj_size = projections->get_size(0)*projections->get_size(1);
+
+	float * res_ptr = result->get_data_ptr();
+	float * proj_ptr = projections->get_data_ptr();
+
+	for (unsigned int i = 0; i < nproj; i++){
+		cudaMemcpy(res_ptr+i*proj_size,proj_ptr+proj_size*permutations[i],proj_size*sizeof(float),cudaMemcpyHostToHost);
+	}
+	return result;
+
+
 }
 
 

@@ -43,14 +43,17 @@ void hoCuConebeamProjectionOperator
 	hoCuNDArray<float> host_weights(&dims);
 	float* data = host_weights.get_data_ptr();
 
-	const float A2 = dims[0]*dims[0];
+	const float A2 =0.2*dims[0]*dims[0];
 
 #ifdef USE_OMP
 #pragma omp parallel for
 #endif    
 	for( int i=0; i<dims[0]; i++ ) {
 		float k = float(i);
-		data[i] = k*A2/(A2-k*k)*std::exp(-A2/(A2-k*k)); // From Guo et al, Journal of X-Ray Science and Technology 2011, doi: 10.3233/XST-2011-0294
+		if (k*k < A2)
+			data[i] = k*A2/(A2-k*k)*std::exp(-A2/(A2-k*k)); // From Guo et al, Journal of X-Ray Science and Technology 2011, doi: 10.3233/XST-2011-0294
+		else
+			data[i] = 0;
 	}
 
 	frequency_filter_ = boost::shared_ptr< cuNDArray<float> >(new cuNDArray<float>(&host_weights));
@@ -132,7 +135,7 @@ void hoCuConebeamProjectionOperator
 
 	hoCuNDArray<float> *projections2 = projections;
 	if (accumulate)
-	  projections2 = new hoCuNDArray<float>(projections->get_dimensions());
+		projections2 = new hoCuNDArray<float>(projections->get_dimensions());
 	// Iterate over the temporal dimension.
 	// I.e. reconstruct one 3D volume at a time.
 	//
@@ -159,14 +162,14 @@ void hoCuConebeamProjectionOperator
 				binning_->get_bin(b),
 				projections_per_batch_, samples_per_pixel_,
 				is_dims_in_mm_, ps_dims_in_mm,
-					      SDD, SAD);
+				SDD, SAD);
 	}
 
 	if (use_offset_correction_ && !use_fbp_)
-	  this->offset_correct(projections2);
+		this->offset_correct(projections2);
 	if (accumulate){
-	  *projections += *projections2;
-	  delete projections2;
+		*projections += *projections2;
+		delete projections2;
 	}
 
 
@@ -236,7 +239,7 @@ void hoCuConebeamProjectionOperator
 			if( !frequency_filter_.get() )
 				compute_default_frequency_filter();
 
-				conebeam_backwards_projection<true>
+			conebeam_backwards_projection<true>
 			( projections, &image_3d,
 					acquisition_->get_geometry()->get_angles(),
 					acquisition_->get_geometry()->get_offsets(),
@@ -246,7 +249,7 @@ void hoCuConebeamProjectionOperator
 					SDD, SAD, short_scan_, use_offset_correction_, accumulate,
 					cosine_weights_.get(), frequency_filter_.get() );
 
-				image_3d *= 2/float(binning_->get_bin(b).size());
+			image_3d *= 2/float(binning_->get_bin(b).size());
 		}
 		else
 			conebeam_backwards_projection<false>
@@ -258,5 +261,48 @@ void hoCuConebeamProjectionOperator
 				is_dims_in_pixels, is_dims_in_mm_, ps_dims_in_mm,
 				SDD, SAD, short_scan_, use_offset_correction_, accumulate );
 	}
+}
+
+
+boost::shared_ptr<hoCuNDArray<bool>> Gadgetron::hoCuConebeamProjectionOperator::calculate_mask(
+		hoCuNDArray<float>* projections, float limit) {
+	auto dims = *this->get_domain_dimensions();
+	std::vector<size_t> dims3d(dims.begin(),dims.end()-1);
+	auto indims = *projections->get_dimensions();
+	std::vector<size_t> inbindims(indims);
+	auto mask = boost::make_shared<hoCuNDArray<bool>>(dims);
+	auto cu_mask = cuNDArray<bool>(dims);
+	bool* mask_ptr = cu_mask.get_data_ptr();
+	cuNDArray<float> cu_proj(*projections);
+	float* input_ptr = cu_proj.get_data_ptr();
+	auto angles = acquisition_->get_geometry()->get_angles();
+	auto offsets = acquisition_->get_geometry()->get_offsets();
+	for (int bin = 0; bin < binning_->get_number_of_bins(); bin++){
+		//Check for empty bins
+		if (binning_->get_bin(bin).size() == 0)
+			continue;
+
+		cuNDArray<bool> mask_view(dims3d,mask_ptr);
+		auto bin_vector = binning_->get_bin(bin);
+		inbindims.back() = bin_vector.size();
+		std::vector<float> bin_angles;
+		std::vector<floatd2> bin_offsets;
+		for (auto b : bin_vector){
+			bin_angles.push_back(angles[b]);
+			bin_offsets.push_back(offsets[b]);
+		}
+		auto input_view = boost::make_shared<cuNDArray<float>>(inbindims,input_ptr);
+
+		vector_td<int,3> is_dims_in_pixels{dims3d[0], dims3d[1],dims3d[2]};
+
+		conebeam_spacecarver(input_view.get(),&mask_view, bin_angles,bin_offsets,is_dims_in_pixels, is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),limit);
+
+		input_ptr += input_view->get_number_of_elements();
+		mask_ptr += mask_view.get_number_of_elements();
+
+	}
+
+	cu_mask.to_host(mask.get());
+	return mask;
 }
 }

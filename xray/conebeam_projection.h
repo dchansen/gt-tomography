@@ -68,6 +68,26 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
         bool use_offset_correction,
         bool accumulate
   );
+    // Calculates the mask on the image
+  // - depending on the provided binnning indices, just a subset of the projections can be included
+  //
+
+  EXPORTGPUXRAY void conebeam_spacecarver(
+        cuNDArray<float> *projections,
+        cuNDArray<bool> *image,
+        std::vector<float> angles,
+        std::vector<floatd2> offsets,
+        intd3 is_dims_in_pixels,
+        floatd3 is_dims_in_mm,
+        floatd2 ps_dims_in_mm,
+        float SDD,
+        float SAD,
+        float limit
+  );
+
+
+
+
   // Forwards projection of a 3D volume onto a set of projections.
   // - dependening on the provided binnning indices, just a subset of the projections can be targeted.
   //
@@ -108,4 +128,6 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
         cuNDArray<float> *cosine_weights = 0x0,
         cuNDArray<float> *frequency_filter = 0x0
   );
+
+void apply_mask(cuNDArray<float>* image, cuNDArray<bool>* mask);
 }

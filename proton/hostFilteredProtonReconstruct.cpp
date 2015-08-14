@@ -37,7 +37,7 @@
 #include "hoCuTvPicsOperator.h"
 #include "projectionSpaceOperator.h"
 #include "hoCuNCGSolver.h"
-#include "hoCuFilteredProton.h"
+#include "FilteredProton.h"
 
 using namespace std;
 using namespace Gadgetron;
@@ -61,7 +61,7 @@ int main( int argc, char** argv)
 	int iterations;
 	int device;
 	int subsets;
-	bool use_hull,use_weights;
+	bool use_hull,use_weights, estimate_missing;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 					("help", "produce help message")
@@ -73,6 +73,7 @@ int main( int argc, char** argv)
 					("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
 					("use_hull",po::value<bool>(&use_hull)->default_value(true),"Use hull estimate")
 					("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. Always true if variance is set")
+					("estimate_missing",po::value<bool>(&estimate_missing)->default_value(true),"Estimate missing voxels in projection")
 					;
 
 	po::variables_map vm;
@@ -108,7 +109,7 @@ int main( int argc, char** argv)
 		floatd3 physical_dims2 = physical_dims*sqrt(2.0f);
 		data->preprocess(rhs_dims,physical_dims2,use_hull,background);
 	}
-	hoCuFilteredProton E;
+	FilteredProton<hoCuNDArray> E;
 
 
 	if (data->get_weights())
@@ -117,10 +118,10 @@ int main( int argc, char** argv)
 	boost::shared_ptr< hoCuNDArray<_real> > result;
 	{
 		GPUTimer tim("Reconstruction time:");
-		result = E.calculate(rhs_dims,physical_dims,data);
+		result = E.calculate(rhs_dims,physical_dims,data,estimate_missing);
 	}
 
-
+/*
 	splineBackprojectionOperator<hoCuNDArray> op(data,physical_dims);
 
 	hoCuNDArray<float> tmp(*data->get_projections());
@@ -128,7 +129,7 @@ int main( int argc, char** argv)
 	tmp -= *data->get_projections();
 
 	std::cout << "Residual: " << dot(&tmp,&tmp) << std::endl;
-
+*/
 	//Calculate correct scaling factor because someone cannot be bother to calculate it by hand...
 	//float s = dot(data->get_projections().get(),&tmp)/dot(&tmp,&tmp);
 	//*result *= s;

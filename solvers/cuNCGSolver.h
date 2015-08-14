@@ -1,5 +1,6 @@
 #pragma once
 
+#include "solver_utils.h"
 #include "ncgSolver.h"
 #include "cuNDArray_operators.h"
 #include "cuNDArray_elemwise.h"
@@ -24,7 +25,6 @@ namespace Gadgetron{
     cuNCGSolver() : ncgSolver<cuNDArray<T> >() {}
     virtual ~cuNCGSolver() {}
     
-    virtual void solver_non_negativity_filter(cuNDArray<T> *x,cuNDArray<T> *g);
 
     virtual void iteration_callback(cuNDArray<T>* x ,int iteration,typename realType<T>::Type value){
      	  if (iteration == 0){

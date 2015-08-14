@@ -37,7 +37,7 @@ namespace po = boost::program_options;
 
 boost::shared_ptr<hoCuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binning>  binning,boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>& projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
   std::cout << "Calculating FDK prior" << std::endl;
-	boost::shared_ptr<CBCT_binning> binning_pics( new CBCT_binning(binning->get_3d_binning()) );
+	boost::shared_ptr<CBCT_binning> binning_pics =binning->get_3d_binning();
 	    std::vector<size_t> is_dims3d = is_dims;
 	    is_dims3d.pop_back();
 	    boost::shared_ptr< hoCuConebeamProjectionOperator >
@@ -125,8 +125,6 @@ int main(int argc, char** argv)
   ps->get_geometry()->print(std::cout);
 	ps->downsample(downsamples);
 
-  float SDD = ps->get_geometry()->get_SDD();
-  float SAD = ps->get_geometry()->get_SAD();
 
   boost::shared_ptr<CBCT_binning> binning(new CBCT_binning());
   if (vm.count("binning")){
@@ -198,6 +196,7 @@ int main(int argc, char** argv)
     boost::shared_ptr<hoCuTvOperator<float,4> > tv(new hoCuTvOperator<float,4>);
     tv->set_weight(vm["TV"].as<float>());
     solver.add_nonlinear_operator(tv);
+    /*
     boost::shared_ptr<hoCuTvOperator<float,4> > tv2(new hoCuTvOperator<float,4>);
     tv2->set_step(2);
     tv2->set_weight(vm["TV"].as<float>());
@@ -206,7 +205,7 @@ int main(int argc, char** argv)
     tv3->set_step(3);
     tv3->set_weight(vm["TV"].as<float>());
     solver.add_nonlinear_operator(tv3);
-
+*/
 
   }
 

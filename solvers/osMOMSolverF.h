@@ -1,3 +1,10 @@
+/*
+ * osMOMSolver.h
+ *
+ *  Created on: Mar 23, 2015
+ *      Author: u051747
+ */
+//Based on Donghwan Kim; Ramani, S.; Fessler, J.A., "Combining Ordered Subsets and Momentum for Accelerated X-Ray CT Image Reconstruction,"
 #pragma once
 #include "subsetOperator.h"
 #include "solver.h"
@@ -6,22 +13,26 @@
 #include <functional>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
+#include "invertibleOperator.h"
 
 namespace Gadgetron{
-template <class ARRAY_TYPE> class osSPSSolver : public solver< ARRAY_TYPE,ARRAY_TYPE> {
+template <class ARRAY_TYPE> class osMOMSolverF : public solver< ARRAY_TYPE,ARRAY_TYPE> {
 	typedef typename ARRAY_TYPE::element_type ELEMENT_TYPE;
 	typedef typename realType<ELEMENT_TYPE>::Type REAL;
 public:
-	osSPSSolver() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
+	osMOMSolverF() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 		_iterations=10;
 		_beta = REAL(1);
 		_alpha = 0.2;
 		_gamma = 0;
 		non_negativity_=false;
-		reg_steps_=2;
+		reg_steps_=1;
 		_kappa = REAL(1);
+		tau0=1e-3;
+		denoise_alpha=0;
+		dump=true;
 	}
-	virtual ~osSPSSolver(){};
+	virtual ~osMOMSolverF(){};
 
 	void set_max_iterations(int i){_iterations=i;}
 	int get_max_iterations(){return _iterations;}
@@ -33,6 +44,21 @@ public:
 	void set_beta(REAL beta){_beta = beta;}
 	void set_gamma(REAL gamma){_gamma = gamma;}
 	void set_kappa(REAL kappa){_kappa = kappa;}
+
+	void set_dump(bool d){dump = d;}
+	virtual void add_regularization_operator(boost::shared_ptr<invertibleOperator<ARRAY_TYPE>> op){
+		regularization_operators.push_back(op);
+	}
+
+
+
+	virtual void set_tau(REAL tau){
+		tau0 = tau;
+	}
+
+	virtual void set_huber(REAL hub){
+		denoise_alpha=hub;
+	}
 
 	/**
 	 * Sets the preconditioning image. In most cases this is not needed, and the preconditioning is calculated based on the system transform
@@ -61,12 +87,15 @@ public:
 			return boost::shared_ptr<ARRAY_TYPE>();
 		}
 
-		ARRAY_TYPE * x = new ARRAY_TYPE(*image_dims);
+		ARRAY_TYPE * z = new ARRAY_TYPE(*image_dims);
 		if (this->x0_.get()){
-			*x = *(this->x0_.get());
+			*z = *(this->x0_.get());
 		} else  {
-			clear(x);
+			clear(z);
 		}
+
+		ARRAY_TYPE * x = new ARRAY_TYPE(*z);
+		ARRAY_TYPE * xold = new ARRAY_TYPE(*z);
 
 		std::vector<boost::shared_ptr<ARRAY_TYPE> > subsets = this->encoding_operator_->projection_subsets(in);
 
@@ -85,10 +114,12 @@ public:
 			reciprocal_inplace(precon_image.get());
 			//ones_image *= (ELEMENT_TYPE) this->encoding_operator_->get_number_of_subsets();
 		}
-		ARRAY_TYPE tmp_image(image_dims.get());
 
+
+		REAL t = 1;
+		REAL told = 1;
 		if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
-			std::cout << "osSPS setup done, starting iterations:" << std::endl;
+			std::cout << "osMOM setup done, starting iterations:" << std::endl;
 		}
 
 		std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
@@ -96,33 +127,39 @@ public:
 		REAL step_size;
 		for (int i =0; i < _iterations; i++){
 			for (int isubset = 0; isubset < this->encoding_operator_->get_number_of_subsets(); isubset++){
+
+				t = 0.5*(1+std::sqrt(1+4*t*t));
 				int subset = isubsets[isubset];
-				this->encoding_operator_->mult_M(x,tmp_projections[subset].get(),subset,false);
+				this->encoding_operator_->mult_M(z,tmp_projections[subset].get(),subset,false);
+				//this->encoding_operator_->mult_M(x,tmp_projections[subset].get(),subset,false);
 				*tmp_projections[subset] -= *subsets[subset];
 				*tmp_projections[subset] *= ELEMENT_TYPE(-1);
 				if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 					std::cout << "Iteration " <<i << " Subset " << subset << " Update norm: " << nrm2(tmp_projections[subset].get()) << std::endl;
 				}
 
-				this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
-				tmp_image *= *precon_image;
-				axpy(REAL(_beta/(1+_gamma*i))*this->encoding_operator_->get_number_of_subsets(),&tmp_image,x);
-				if (i ==0 && isubset == 0)
-					step_size = _alpha*nrm2(x)/this->encoding_operator_->get_number_of_subsets();
+				{
+					ARRAY_TYPE tmp_image(image_dims.get());
+					this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
+					tmp_image *= *precon_image;
+					axpy(REAL(_beta/(1+_gamma*i))*this->encoding_operator_->get_number_of_subsets(),&tmp_image,z);
+				}
+
+
+
+				//denoise(*x,*z,*precon_image,1.0);
+				//*x =*z;
 
 				//axpy(REAL(_beta),&tmp_image,x);
 				if (non_negativity_){
-					clamp_min(x,ELEMENT_TYPE(0));
+					//clamp_min(x,ELEMENT_TYPE(0));
+					clamp_min(z,ELEMENT_TYPE(0));
 				}
 
+			denoise(*z);
+				/*
 				for (auto op : regularization_operators){
-					/*
-					for (auto i = 0u; i < reg_steps_; i++){
-						op->gradient(x,&tmp_image);
-						tmp_image *= REAL(1)/nrm2(&tmp_image);
-						axpy(-step_size*op->get_weight(),&tmp_image,x);
-					}
-					 */
+
 					op->gradient(x,&tmp_image);
 					tmp_image /= nrm2(&tmp_image);
 					auto reg_val = op->magnitude(x);
@@ -141,6 +178,15 @@ public:
 					*x = y;
 
 				}
+			*/
+
+				//*z = *x;
+				*x = *z;
+				*z *= 1+(told-1)/t;
+				axpy(-(told-1)/t,xold,z);
+				std::swap(x,xold);
+				told = t;
+
 				//step_size *= 0.99;
 
 			}
@@ -151,36 +197,60 @@ public:
 			clear(&tmp_proj);
 			this->encoding_operator_->mult_M(x,&tmp_proj,false);
 			tmp_proj -= *in;
+			 */
 
+			if (dump){
+				std::stringstream ss;
+				ss << "osMOM-" << i << ".real";
 
-			std::stringstream ss;
-			ss << "osSPS-" << i << ".real";
-
-			write_nd_array<ELEMENT_TYPE>(x,ss.str().c_str());
-
+				write_nd_array<ELEMENT_TYPE>(z,ss.str().c_str());
+			}
+			/*
 			//calc_regMultM(x,regEnc);
 			//REAL f = functionValue(&tmp_proj,regEnc,x);
 			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
 			 */
 		}
+		//delete x,xold;
 
 
-		return boost::shared_ptr<ARRAY_TYPE>(x);
+		return boost::shared_ptr<ARRAY_TYPE>(z);
 	}
 
 	void set_encoding_operator(boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator){ encoding_operator_ = encoding_operator; }
-	virtual void add_nonlinear_operator(boost::shared_ptr< generalOperator<ARRAY_TYPE> > op ){
-		regularization_operators.push_back(op);
-	}
 
 
 protected:
+	void denoise(ARRAY_TYPE& x  ){
+
+		if (regularization_operators.empty()){
+			return;
+		}
+
+
+		for (size_t i = 0; i < reg_steps_; i++){
+			for (auto & reg_op : regularization_operators){
+				ARRAY_TYPE reg_space(reg_op->get_codomain_dimensions());
+				reg_op->mult_M(&x, &reg_space,false);
+				//hard_shrink(&reg_space,reg_op->get_weight());
+				shrink1(&reg_space,reg_op->get_weight());
+				std::cout << "Reg " << asum(&reg_space) << std::endl;
+				reg_op->inverse(&reg_space,&x,false);
+			}
+
+		}
+
+
+
+	}
+
+	std::vector<boost::shared_ptr<invertibleOperator<ARRAY_TYPE> >> regularization_operators;
+
 	int _iterations;
-	REAL _beta, _gamma, _alpha, _kappa;
-	bool non_negativity_;
+	REAL _beta, _gamma, _alpha, _kappa,tau0, denoise_alpha;
+	bool non_negativity_, dump;
 	unsigned int reg_steps_;
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;
-	std::vector<boost::shared_ptr<generalOperator<ARRAY_TYPE>>> regularization_operators;
 	boost::shared_ptr<ARRAY_TYPE> preconditioning_image_;
 
 };

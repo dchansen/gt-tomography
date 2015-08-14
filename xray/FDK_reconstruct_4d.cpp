@@ -95,7 +95,7 @@ int main(int argc, char** argv)
 	// Load the binning data
 		//
 
-		boost::shared_ptr<CBCT_binning> binning( new CBCT_binning(ps_bd4d->get_3d_binning()) );
+		boost::shared_ptr<CBCT_binning> binning=ps_bd4d->get_3d_binning() ;
 
 	// Allocate array to hold the result
 	//
