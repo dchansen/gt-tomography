@@ -48,6 +48,9 @@ public:
 		ELEMENT_TYPE* curPtr = projections->get_data_ptr();
 		for (int subset = 0; subset < number_of_subsets; subset++){
 			std::vector<size_t> subset_dim = *get_codomain_dimensions(subset);
+			std::cout << "Bin " << subset;
+			for (auto v : subset_dim ) std::cout << v << " ";
+			std::cout << std::endl;
 			res.push_back(boost::shared_ptr<ARRAY_TYPE>(new ARRAY_TYPE(&subset_dim,curPtr)));
 			curPtr += std::accumulate(subset_dim.begin(),subset_dim.end(),1,std::multiplies<unsigned int>());
 		}

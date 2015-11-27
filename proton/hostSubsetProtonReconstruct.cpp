@@ -29,6 +29,8 @@
 //#include "hoABIBBSolver.h"
 #include "protonDROPSolver.h"
 #include "hoCuNCGSolver.h"
+#include "cuSolverUtils.h"
+#include "osMOMSolverD.h"
 #include "hdf5_utils.h"
 
 #include "encodingOperatorContainer.h"
@@ -41,6 +43,7 @@
 #include "hoCuTvOperator.h"
 #include "hoCuTvPicsOperator.h"
 #include "projectionSpaceOperator.h"
+#include "hdf5.h"
 
 using namespace std;
 using namespace Gadgetron;
@@ -64,6 +67,10 @@ int main( int argc, char** argv)
 	int iterations;
 	int device;
 	int subsets;
+	bool use_hull,use_weights, use_non_negativity;
+	float beta,gamma;
+	float huber;
+	float tv_weight;
 	po::options_description desc("Allowed options");
 	desc.add_options()
 			("help", "produce help message")
@@ -76,8 +83,14 @@ int main( int argc, char** argv)
 			("prior,P", po::value<std::string>(),"Prior image filename")
 			("prior-weight,k",po::value<float>(),"Weight of the prior image")
 			("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-			("TV,T",po::value<float>(),"TV Weight ")
+			("TV,T",po::value<float>(&tv_weight)->default_value(0),"TV Weight ")
 			("subsets,n", po::value<int>(&subsets)->default_value(10), "Number of subsets to use")
+			("beta",po::value<float>(&beta)->default_value(1),"Step size for SART")
+			("gamma",po::value<float>(&gamma)->default_value(1e-1),"Relaxation Gamma")
+			("huber",po::value<float>(&huber)->default_value(0),"Huber value")
+			("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
+			("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. ")
+			("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Use non-negativity constraint. ")
 	;
 
 	po::variables_map vm;
@@ -97,6 +110,7 @@ int main( int argc, char** argv)
 		else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
 		else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
 		else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
+		else if (a.type() == typeid(bool)) std::cout << it->second.as<bool>();
 		else std::cout << "Unknown type" << std::endl;
 		std::cout << std::endl;
 	}
@@ -116,18 +130,26 @@ int main( int argc, char** argv)
 	//hoABIBBSolver<hoCuNDArray<_real> > solver;
 	//hoOSCGSolver<hoCuNDArray<_real> > solver;
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
-	protonDROPSolver<hoCuNDArray > solver;
+	//protonDROPSolver<hoCuNDArray > solver;
+
+	osMOMSolverD<hoCuNDArray<float>> solver;
+
+  solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );
+	  solver.set_non_negativity_constraint(use_non_negativity);
+	  solver.set_max_iterations(iterations);
+	  solver.set_huber(huber);
+	  solver.set_reg_steps(5);
+	  solver.set_dump(false);
 	//solver.set_m(subsets);
-	solver.set_beta(1.9f);
 	//solver.set_gamma(1.0f/15);
-  solver.set_non_negativity_constraint(false);
+  solver.set_non_negativity_constraint(use_non_negativity);
   solver.set_max_iterations(iterations);
 
-
+  H5Eset_auto1(0,0);//Disable hdf5 error reporting
   std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
-
-  boost::shared_ptr<protonDataset<hoCuNDArray> >  data(new protonDataset<hoCuNDArray>(dataName,false));
-
+std::cout << "Loading data" << std::endl;
+  boost::shared_ptr<protonDataset<hoCuNDArray> >  data(new protonDataset<hoCuNDArray>(dataName,use_weights));
+std::cout << "Done" << std::endl;
   data = protonDataset<hoCuNDArray>::shuffle_dataset(data,subsets);
 
   data->preprocess(rhs_dims,physical_dims,false);
@@ -170,6 +192,28 @@ int main( int argc, char** argv)
 		solver.set_x0(prior);
   }
   */
+
+  if (tv_weight > 0){
+
+  	auto Dx = boost::make_shared<hoCuPartialDerivativeOperator<float,3>>(0);
+  	Dx->set_weight(tv_weight);
+  	Dx->set_domain_dimensions(&rhs_dims);
+  	Dx->set_codomain_dimensions(&rhs_dims);
+
+  	auto Dy = boost::make_shared<hoCuPartialDerivativeOperator<float,3>>(1);
+  	Dy->set_weight(tv_weight);
+  	Dy->set_domain_dimensions(&rhs_dims);
+  	Dy->set_codomain_dimensions(&rhs_dims);
+
+  	auto Dz = boost::make_shared<hoCuPartialDerivativeOperator<float,3>>(1);
+  	Dz->set_weight(tv_weight);
+  	Dz->set_domain_dimensions(&rhs_dims);
+  	Dz->set_codomain_dimensions(&rhs_dims);
+
+  	//solver.add_regularization_operator(Dx);
+  	//solver.add_regularization_operator(Dy);
+  	solver.add_regularization_group({Dx,Dy,Dz});
+  }
   /*
   if (vm.count("TV")){
 	  std::cout << "Total variation regularization in use" << std::endl;

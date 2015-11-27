@@ -39,7 +39,9 @@ void cuConebeamProjectionOperator::mult_M(cuNDArray<float>* input,
 		cuNDArray<float>* output, bool accumulate) {
 
 	auto dims = *input->get_dimensions();
-	std::vector<size_t> dims3d(dims.begin(),dims.end()-1);
+	std::vector<size_t> dims3d(dims);
+
+	if (dims3d.size() ==4) dims3d.pop_back();
 	auto outdims = *output->get_dimensions();
 	std::vector<size_t> outbindims(outdims);
 	float* input_ptr = input->get_data_ptr();
@@ -76,7 +78,9 @@ void cuConebeamProjectionOperator::mult_M(cuNDArray<float>* input,
 void cuConebeamProjectionOperator::mult_MH(cuNDArray<float>* input,
 		cuNDArray<float>* output, bool accumulate) {
 	auto dims = *output->get_dimensions();
-	std::vector<size_t> dims3d(dims.begin(),dims.end()-1);
+	std::vector<size_t> dims3d = dims;
+	if (dims3d.size() ==4) dims3d.pop_back();
+
 	auto indims = *input->get_dimensions();
 	std::vector<size_t> inbindims(indims);
 	float* input_ptr = input->get_data_ptr();

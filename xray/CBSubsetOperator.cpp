@@ -73,9 +73,12 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 		for (auto proj : bin_vector[bin])
 			bins[proj] = bin;
 
+	int k = 0;
 	for (int i = 0; i < all_angles.size(); i++){
-		if (bins.find(i) != bins.end()) //Check to make sure the projection is in the bins
-			subset_projections[i%this->number_of_subsets].push_back(i);
+		if (bins.find(i) != bins.end()){ //Check to make sure the projection is in the bins
+			subset_projections[k%this->number_of_subsets].push_back(i);
+			k++;
+		}
 	}
 
 
@@ -191,7 +194,9 @@ template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float> > Gad
 		boost::shared_ptr<hoCuNDArray<float> > projections,
 		std::vector<unsigned int>  & permutations) {
 
-	auto result = boost::make_shared<hoCuNDArray<float>>(projections->get_dimensions());
+	auto dims = *projections->get_dimensions();
+	dims.back() = permutations.size();
+	auto result = boost::make_shared<hoCuNDArray<float>>(dims);
 
 	size_t nproj = permutations.size();
 	size_t proj_size = projections->get_size(0)*projections->get_size(1);

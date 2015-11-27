@@ -7,43 +7,66 @@
 #include "vector_td_utilities.h"
 #include "GPUTimer.h"
 
+#include <boost/program_options.hpp>
+#include "dicomWriter.h"
 #include <iostream>
 #include <algorithm>
 #include <sstream>
 
 using namespace Gadgetron;
 using namespace std;
+namespace po = boost::program_options;
 
 int main(int argc, char** argv) 
 { 
-	// Parse command line
-	//
+  std::string acquisition_filename;
+  std::string image_filename;
+	unsigned int downsamples;
+	uintd3 imageSize;
+	floatd3 is_dims_in_mm;
+	int device;
+	std::string binning_filename;
+ // Parse command line
+  //
+po::options_description desc("Allowed options");
+ desc.add_options()
+    ("help", "produce help message")
+    ("acquisition,a", po::value<string>(&acquisition_filename)->default_value("acquisition.hdf5"), "Acquisition data")
+    ("samples,n",po::value<unsigned int>(),"Number of samples per ray")
+    ("output,f", po::value<string>(&image_filename)->default_value("fdk.real"), "Output filename")
+    ("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
+    ("binning,b",po::value<string>(&binning_filename)->default_value("binning.hdf5"),"Binning file for 3d reconstruction (used to exclude projections)")
+    ("SAG","Use exact SAG correction if present")
+    ("dimensions,d",po::value<floatd3>(&is_dims_in_mm)->default_value(floatd3(256,256,256)),"Image dimensions in mm. Overwrites voxelSize.")
+    ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+    ("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+    ;
 
-	ParameterParser parms(1024);
-	parms.add_parameter( 'd', COMMAND_LINE_STRING, 1, "Input acquisition filename (.hdf5)", true );
-	parms.add_parameter( 'b', COMMAND_LINE_STRING, 1, "Binning filename (.hdf5) - 4D FDK only", false );
-	parms.add_parameter( 'r', COMMAND_LINE_STRING, 1, "Output image filename (.real)", true, "reconstruction_FDK.real" );
-	parms.add_parameter( 'm', COMMAND_LINE_INT, 3, "Matrix size (3d)", true, "256, 256, 144" );
-	parms.add_parameter( 'f', COMMAND_LINE_FLOAT, 3, "FOV in mm (3d)", true, "448, 448, 252" );
-	parms.add_parameter( 'F', COMMAND_LINE_INT, 1, "Use filtered backprojection (fbp)", true, "1" );
-	parms.add_parameter( 'O', COMMAND_LINE_INT, 1, "Use oversampling in fbp", true, "0" );
-	parms.add_parameter( 'H', COMMAND_LINE_FLOAT, 1, "Half-scan mode maximum angle", true, "0" );
-	parms.add_parameter( 'P', COMMAND_LINE_INT, 1, "Projections per batch", true, "50" );
-  parms.add_parameter( 'D', COMMAND_LINE_INT, 1, "Number of downsamples of projection plate", true, "0" );
+  po::variables_map vm;
+  po::store(po::parse_command_line(argc, argv, desc), vm);
+  po::notify(vm);
 
-	parms.parse_parameter_list(argc, argv);
-	if( parms.all_required_parameters_set() ) {
-		parms.print_parameter_list();
-	}
-	else{
-		parms.print_parameter_list();
-		parms.print_usage();
-		return 1;
-	}
+  if (vm.count("help")) {
+    cout << desc << "\n";
+    return 1;
+  }
 
-	std::string acquisition_filename = (char*)parms.get_parameter('d')->get_string_value();
-	std::string binning_filename = (char*)parms.get_parameter('b')->get_string_value();
-	std::string image_filename = (char*)parms.get_parameter('r')->get_string_value();
+  std::cout << "Command line options:" << std::endl;
+  for (po::variables_map::iterator it = vm.begin(); it != vm.end(); ++it){
+    boost::any a = it->second.value();
+    std::cout << it->first << ": ";
+    if (a.type() == typeid(std::string)) std::cout << it->second.as<std::string>();
+    else if (a.type() == typeid(int)) std::cout << it->second.as<int>();
+    else if (a.type() == typeid(unsigned int)) std::cout << it->second.as<unsigned int>();
+    else if (a.type() == typeid(float)) std::cout << it->second.as<float>();
+    else if (a.type() == typeid(vector_td<float,3>)) std::cout << it->second.as<vector_td<float,3> >();
+    else if (a.type() == typeid(vector_td<int,3>)) std::cout << it->second.as<vector_td<int,3> >();
+    else if (a.type() == typeid(vector_td<unsigned int,3>)) std::cout << it->second.as<vector_td<unsigned int,3> >();
+    else std::cout << "Unknown type" << std::endl;
+    std::cout << std::endl;
+  }
+
+
 
 	// Load acquisition data
 	//
@@ -56,8 +79,7 @@ int main(int argc, char** argv)
 
 	{
 		GPUTimer timer("Downsampling projections");
-		unsigned int num_downsamples = parms.get_parameter('D')->get_int_value();    
-		acquisition->downsample(num_downsamples);
+		acquisition->downsample(downsamples);
 	}
 
 
@@ -74,21 +96,11 @@ int main(int argc, char** argv)
 	float SDD = acquisition->get_geometry()->get_SDD();
 	float SAD = acquisition->get_geometry()->get_SAD();
 
-	uintd3 is_dims_in_pixels( parms.get_parameter('m')->get_int_value(0),
-			parms.get_parameter('m')->get_int_value(1),
-			parms.get_parameter('m')->get_int_value(2) );
 
-	floatd3 is_dims_in_mm( parms.get_parameter('f')->get_float_value(0),
-			parms.get_parameter('f')->get_float_value(1),
-			parms.get_parameter('f')->get_float_value(2) );
 
-	bool use_fbp = parms.get_parameter('F')->get_int_value();
-	bool use_fbp_os = parms.get_parameter('O')->get_int_value();
-	float half_scan_max_angle = parms.get_parameter('H')->get_float_value();
-	unsigned int projections_per_batch = parms.get_parameter('P')->get_int_value();
+
 	boost::shared_ptr<CBCT_binning> ps_bd4d(  new CBCT_binning());
 
-	std::cout << "binning data file: " << binning_filename << std::endl;
 	ps_bd4d->load(binning_filename);
 	ps_bd4d->print(std::cout);
 
@@ -100,11 +112,7 @@ int main(int argc, char** argv)
 	// Allocate array to hold the result
 	//
 
-	std::vector<size_t> is_dims;
-	is_dims.push_back(is_dims_in_pixels[0]);
-	is_dims.push_back(is_dims_in_pixels[1]);
-	is_dims.push_back(is_dims_in_pixels[2]);
-
+	std::vector<size_t> is_dims{imageSize[0],imageSize[1],imageSize[2]};
 
 	hoCuNDArray<float> fdk_3d(&is_dims);
 
@@ -123,6 +131,7 @@ int main(int argc, char** argv)
 		GPUTimer timer("Running 3D FDK reconstruction");
 		E->mult_MH( &projections, &fdk_3d );
 	}
+
 
 	write_nd_array<float>( &fdk_3d, "fdk.real" );
 
@@ -156,8 +165,10 @@ int main(int argc, char** argv)
 	hoCuNDArray<float> result(&is_dims);
 	E4D->mult_MH(&projections,&result);
 	//result *= 10.0f;
+	//axpy(scaler,&fdk,&result);
 	result += fdk;
 
-	write_nd_array<float>( &result, image_filename.c_str() );
+	//write_nd_array<float>( &result, image_filename.c_str() );
+	write_dicom(&result,"",is_dims_in_mm);
 	return 0;
 }

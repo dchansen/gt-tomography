@@ -23,8 +23,8 @@ public:
 	cuConebeamProjectionOperator();
 	virtual ~cuConebeamProjectionOperator();
 
-	virtual void mult_M(cuNDArray<float>* input, cuNDArray<float>* output, bool accumulate);
-	virtual void mult_MH(cuNDArray<float>* input, cuNDArray<float>* output, bool accumulate);
+	virtual void mult_M(cuNDArray<float>* input, cuNDArray<float>* output, bool accumulate=false);
+	virtual void mult_MH(cuNDArray<float>* input, cuNDArray<float>* output, bool accumulate=false);
 
 	boost::shared_ptr<cuNDArray<bool>> calculate_mask( cuNDArray<float>* projections, float limit);
 	void setup(boost::shared_ptr<CBCT_acquisition> acquisition, floatd3 is_dims_in_mm, bool transform_angles = true);
