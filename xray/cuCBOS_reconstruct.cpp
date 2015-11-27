@@ -31,8 +31,10 @@
 #include "osMOMSolver.h"
 #include "osMOMSolverD.h"
 #include "osMOMSolverD2.h"
+#include "hoCuNCGSolver.h"
 #include "osMOMSolverD3.h"
 #include "osMOMSolverF.h"
+#include "osAHZCSolver.h"
 #include "ADMMSolver.h"
 #include <iostream>
 #include <algorithm>
@@ -51,6 +53,9 @@
 #include "cuDCTDerivativeOperator.h"
 #include "dicomWriter.h"
 #include "conebeam_projection.h"
+#include "weightingOperator.h"
+#include "hoNDArray_math.h"
+#include "cuNCGSolver.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -79,6 +84,58 @@ boost::shared_ptr<cuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binn
 	std::cout << "Prior complete" << std::endl;
 	return prior;
 }
+
+
+boost::shared_ptr<cuNDArray<float>> calculate_weightImage(boost::shared_ptr<CBCT_binning>  binning,boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>& ho_projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
+
+	cuNDArray<float> projections(ho_projections);
+	boost::shared_ptr<CBCT_binning> binning_pics=binning->get_3d_binning();
+	std::vector<size_t> is_dims3d = is_dims;
+	is_dims3d.pop_back();
+	auto Ep = boost::make_shared<cuConebeamProjectionOperator>();
+	auto ps2 = boost::make_shared<CBCT_acquisition>(boost::shared_ptr<hoCuNDArray<float>>(),ps->get_geometry());
+	Ep->setup(ps2,binning_pics,imageDimensions);
+	Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+	Ep->set_domain_dimensions(&is_dims3d);
+	//Ep->set_use_filtered_backprojection(true);
+	Ep->offset_correct(&projections);
+	//Ep->mult_MH(&projections,prior3d.get());
+	//cgSolver<hoCuNDArray<float>> solv;
+	cuNCGSolver<float> solv;
+	solv.set_non_negativity_constraint(true);
+	solv.set_encoding_operator(Ep);
+	solv.set_max_iterations(10);
+	auto prior3d = solv.solve(&projections);
+	//auto prior3d = boost::make_shared<cuNDArray<float>>(is_dims3d);
+	write_nd_array(prior3d.get(),"fdk.real");
+	cuNDArray<float> tmp_proj(projections);
+	clear(&tmp_proj);
+	Ep->mult_M(prior3d.get(),&tmp_proj);
+	//float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
+	//std::cout << "Scaling " << s << std::endl;
+
+	 //Ep->offset_correct(&tmp_proj);
+	//tmp_proj *= s;
+	write_nd_array(&tmp_proj,"projtmp.real");
+	tmp_proj -= projections;
+	tmp_proj *= float(-1);
+	abs_inplace(&tmp_proj);
+
+	write_nd_array(ps->get_projections().get(),"proj.real");
+	write_nd_array(&tmp_proj,"projdiff.real");
+	std::cout << "Proj size ";
+	auto pdims = *tmp_proj.get_dimensions();
+	for (auto p : pdims ) std::cout << p << " ";
+	std::cout << std::endl;
+	//Ep->set_use_filtered_backprojection(false);
+	//Ep->mult_MH(&tmp_proj,prior3d.get());
+	//solv.set_non_negativity_constraint(false);
+	prior3d = solv.solve(&tmp_proj);
+	//abs_inplace(prior.get());
+	std::cout << "Prior complete" << std::endl;
+	return prior3d;
+}
+
 
 int main(int argc, char** argv)
 {
@@ -196,14 +253,16 @@ int main(int argc, char** argv)
 
 	//osLALMSolver<cuNDArray<float>> solver;
 	osMOMSolverD3<cuNDArray<float>> solver;
+	//osAHZCSolver<cuNDArray<float>> solver;
 	//osMOMSolverF<cuNDArray<float>> solver;
 	//ADMMSolver<cuNDArray<float>> solver;
 	solver.set_dump(false);
 
 
-	if (vm.count("use_prior")) {
-		auto projections = ps->get_projections();
-		auto prior = calculate_prior(binning,ps,*projections,is_dims,imageDimensions);
+	boost::shared_ptr<cuNDArray<float>> prior;
+	if (vm.count("use_prior") || pics_weight > 0) {
+		auto projections = *ps->get_projections();
+		prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
 		solver.set_x0(prior);
 	}
 	//osPDSolver<cuNDArray<float>> solver;
@@ -258,14 +317,6 @@ int main(int argc, char** argv)
 	 */
 
 	// Define encoding matrix
-	auto E = boost::make_shared<CBSubsetOperator<cuNDArray> >(subsets);
-
-
-	//E->setup(ps,binning,imageDimensions);
-	E->setup(ps,binning,imageDimensions);
-	E->set_domain_dimensions(&is_dims);
-	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
-
 
 
 	/*auto weight_array = boost::make_shared<cuNDArray<float>>(is_dims);
@@ -286,7 +337,6 @@ int main(int argc, char** argv)
 
 	//osSPSSolver<hoNDArray<float>> solver;
 	//hoCuNCGSolver<float> solver;
-	solver.set_encoding_operator(E);
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
@@ -294,7 +344,7 @@ int main(int argc, char** argv)
 	solver.set_non_negativity_constraint(true);
 	solver.set_huber(huber);
 
-	solver.set_reg_steps(1);
+	//solver.set_reg_steps(1);
 	//solver.set_rho(rho);
 
   if (tv_weight > 0){
@@ -315,14 +365,65 @@ int main(int argc, char** argv)
   	Dz->set_domain_dimensions(&is_dims);
   	Dz->set_codomain_dimensions(&is_dims);
 
+  	solver.add_regularization_group({Dx,Dy,Dz});
+
   	auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
   	Dt->set_weight(tv_weight);
   	Dt->set_domain_dimensions(&is_dims);
   	Dt->set_codomain_dimensions(&is_dims);
-  	solver.add_regularization_group({Dx,Dy,Dz,Dt});
+
+
+
+
+	auto projections = *ps->get_projections();
+  	auto prior_weight = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
+  	//sqrt_inplace(prior_weight.get());
+  	std::cout << "Prior min " << min(prior_weight.get()) << std::endl;
+  	//*prior_weight -= min(prior_weight.get());
+  	*prior_weight /= asum(prior_weight.get())/prior_weight->get_number_of_elements();
+  	clamp_min(prior_weight.get(),float(1));
+  	reciprocal_inplace(prior_weight.get());
+
+
+  	write_nd_array(prior_weight.get(),"prior.real");
+  	auto tmp = prior_weight->to_host();
+  	prior_weight.reset();
+  	//cudaDeviceReset();
+  	prior_weight = boost::make_shared<cuNDArray<float>>(*tmp);
+  	auto Wt = boost::make_shared<weightingOperator<cuNDArray<float>>>(prior_weight,Dt);
+	Wt->set_weight(tv_weight);
+  	Wt->set_domain_dimensions(&is_dims);
+  	Wt->set_codomain_dimensions(&is_dims);
+
+  	solver.add_regularization_operator(Wt);
+
+
 
 
   }
+  /*
+  if (pics_weight > 0){
+
+  	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
+  	Dx->set_weight(pics_weight);
+  	Dx->set_domain_dimensions(&is_dims);
+  	Dx->set_codomain_dimensions(&is_dims);
+
+  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
+  	Dy->set_weight(pics_weight);
+  	Dy->set_domain_dimensions(&is_dims);
+  	Dy->set_codomain_dimensions(&is_dims);
+
+
+  	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
+  	Dz->set_weight(pics_weight);
+  	Dz->set_domain_dimensions(&is_dims);
+  	Dz->set_codomain_dimensions(&is_dims);
+
+  	solver.add_regularization_group({Dx,Dy,Dz},prior);
+
+
+  }*/
 
 /*
 	if (tv_weight > 0){
@@ -359,13 +460,23 @@ int main(int argc, char** argv)
 		solver.add_regularization_operator(dctOp);
 	}
 
+	auto E = boost::make_shared<CBSubsetOperator<cuNDArray> >(subsets);
+
+
+	//E->setup(ps,binning,imageDimensions);
+	E->setup(ps,binning,imageDimensions);
+	E->set_domain_dimensions(&is_dims);
+	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+
+	solver.set_encoding_operator(E);
+
 	auto projections = boost::make_shared<cuNDArray<float>>(*ps->get_projections());
 	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
 	//E->set_use_offset_correction(false);
 
 	//boost::shared_ptr<cuNDArray<bool>> mask;
 	//mask = E->calculate_mask(projections,0.03f);
-	ps->set_projections(boost::shared_ptr<hoCuNDArray<float>>()); //Clear projections from host memory.
+	//ps->set_projections(boost::shared_ptr<hoCuNDArray<float>>()); //Clear projections from host memory.
 
 	E->offset_correct(projections.get());
 	//E->set_mask(mask);
@@ -436,7 +547,8 @@ int main(int argc, char** argv)
 		result = solverF.solve(projections.get());
 
 	}
-	write_dicom(result.get(),command_line_string.str(),imageDimensions);
+	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
+	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
 	/*
   cuNDArray<float> tmp(W->get_codomain_dimensions());
 
