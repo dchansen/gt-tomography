@@ -68,8 +68,8 @@ target_link_libraries(denoise_TV gadgetron_toolbox_log gadgetron_toolbox_cpucore
 add_executable(CBCT_forwards_projection CBCT_forwards_projection.cpp)
 target_link_libraries(CBCT_forwards_projection Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${Boost_LIBRARIES})
 
-add_executable(convolveTest convolveTest.cpp)
-target_link_libraries(convolveTest Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+#add_executable(convolveTest convolveTest.cpp)
+#target_link_libraries(convolveTest Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore  gadgetron_toolbox_hostutils ${HDF4_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #if(EIGEN_INCLUDE_DIR)
 #  add_executable(CB_OF_reconstruct CB_OF_reconstruct.cpp)
 #  target_link_libraries(CB_OF_reconstruct Xray_kernels gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
