@@ -19,7 +19,7 @@ find_package(Gadgetron REQUIRED)
 
 
 include_directories(  "${GADGETRON_HOME}/include/gadgetron")
-
+link_directories("${GADGETRON_LIB_DIR}/")
 # build options for OpenMP support
 find_package(OpenMP)
 if (OPENMP_FOUND)
