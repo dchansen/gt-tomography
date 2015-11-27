@@ -13,6 +13,7 @@
 #include <functional>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
+#include <tuple>
 
 namespace Gadgetron{
 template <class ARRAY_TYPE> class osMOMSolverD3 : public solver< ARRAY_TYPE,ARRAY_TYPE> {
@@ -45,16 +46,16 @@ public:
 	void set_kappa(REAL kappa){_kappa = kappa;}
 
 	void set_dump(bool d){dump = d;}
-	virtual void add_regularization_operator(boost::shared_ptr<linearOperator<ARRAY_TYPE>> op){
-		regularization_operators.push_back(op);
+	virtual void add_regularization_operator(boost::shared_ptr<linearOperator<ARRAY_TYPE>> op, boost::shared_ptr<ARRAY_TYPE> prior = boost::shared_ptr<ARRAY_TYPE>()){
+		regularization_operators.push_back(std::make_tuple(op,prior));
 	}
 
-	virtual void add_regularization_group(std::initializer_list<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops){
-		regularization_groups.push_back(std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>>(ops));
+	virtual void add_regularization_group(std::initializer_list<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops, boost::shared_ptr<ARRAY_TYPE> prior = boost::shared_ptr<ARRAY_TYPE>()){
+		regularization_groups.push_back(std::make_tuple(std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>>(ops),prior));
 	}
 
-	virtual void add_regularization_group(std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops){
-		regularization_groups.push_back(ops);
+	virtual void add_regularization_group(std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops, boost::shared_ptr<ARRAY_TYPE> prior = boost::shared_ptr<ARRAY_TYPE>()){
+		regularization_groups.push_back(std::make_tuple(ops,prior));
 	}
 
 
@@ -241,19 +242,22 @@ protected:
 	REAL calc_avg_lambda(){
 		REAL result = 0;
 		auto num = 0u;
-		for (auto op : regularization_operators){
+		for (auto op_pair : regularization_operators){
+			auto op = std::get<0>(op_pair);
 			auto w = op->get_weight();
 			result += w;
 			num++;
 		}
 
-		for (auto & group : regularization_groups)
+		for (auto & group_pair : regularization_groups){
+			auto group = std::get<0>(group_pair);
 			for (auto op : group){
 				auto w = op->get_weight();
 				std::cout << "Weight " << w << std::endl;
 				result += w;
 				num++;
 			}
+		}
 
 		result /= num;
 
@@ -274,9 +278,13 @@ protected:
 
 		for (auto it = 0u; it < reg_steps_; it++){
 			clear(&g);
-			for (auto reg_op : regularization_operators){
+			for (auto reg_op_pair : regularization_operators){
+				auto reg_op = std::get<0>(reg_op_pair);
+				auto prior = std::get<1>(reg_op_pair);
 				ARRAY_TYPE data(reg_op->get_codomain_dimensions());
+				if (prior) x -= *prior;
 				reg_op->mult_M(&x,&data);
+				if (prior) x += *prior;
 				data *= sigma*reg_op->get_weight()/avg_lambda;
 				//updateF is the resolvent operator on the regularization
 				updateF(data, denoise_alpha, sigma);
@@ -285,16 +293,21 @@ protected:
 				reg_op->mult_MH(&data,&g,true);
 			}
 
-			for (auto & reg_group : regularization_groups){
+			for (auto & reg_group_pair : regularization_groups){
+				auto reg_group = std::get<0>(reg_group_pair);
+				auto prior = std::get<1>(reg_group_pair);
 				std::vector<ARRAY_TYPE> datas(reg_group.size());
 				REAL val = 0;
 				REAL reg_val = 0;
+				if (prior) std::cout << "PENGUION!" << std::endl;
+				if (prior) x -= *prior;
 				for (auto i = 0u; i < reg_group.size(); i++){
 					datas[i] = ARRAY_TYPE(reg_group[i]->get_codomain_dimensions());
 					reg_group[i]->mult_M(&x,&datas[i]);
 					reg_val += asum(&datas[i])*reg_group[i]->get_weight();
 					datas[i] *= sigma*reg_group[i]->get_weight()/avg_lambda;
 				}
+				if (prior) x += *prior;
 
 				std::cout << "Reg val: " << reg_val << " Scaling " << scaling*avg_lambda  << std::endl;
 				//updateFgroup is the resolvent operators on the group
@@ -328,8 +341,9 @@ protected:
 		}
 	}
 
-	std::vector<std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>>> regularization_groups;
-	std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE> >> regularization_operators;
+	std::vector<std::tuple< std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>>,boost::shared_ptr<ARRAY_TYPE> >> regularization_groups;
+
+	std::vector<std::tuple<boost::shared_ptr<linearOperator<ARRAY_TYPE> >, boost::shared_ptr<ARRAY_TYPE>>> regularization_operators;
 
 	int _iterations;
 	REAL _beta, _gamma, _alpha, _kappa,tau0, denoise_alpha;
