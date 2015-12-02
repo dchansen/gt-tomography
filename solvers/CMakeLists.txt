@@ -14,6 +14,5 @@ install(FILES
 	cuMLSolver.h
 	cuSARTSolver.h
 	sartSolver.h
-	nonLinearCGSolver.h
 	hoGPBBSolver.h
 DESTINATION include)
