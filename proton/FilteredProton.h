@@ -65,6 +65,7 @@ public:
 		unsigned int oversampling = 2;
 
 		auto ramp = *calc_filter<float>(dims_proj[0]*oversampling,physical_dims[0]/(dims[0]));
+		//fill(&ramp,complext<float>(1.0f,0));
 		//ramp *= 2.0f*oversampling;
 		unsigned int ngroups = data->get_number_of_groups();
 
@@ -215,7 +216,8 @@ protected:
 		auto hofilter = cufilter->to_host();
 		auto data = hofilter->get_data_ptr();
 		size_t elements = hofilter->get_number_of_elements();
-		size_t ncut = width/2*0.5;
+		//size_t ncut = width/2*0.5;
+		size_t ncut = width/2*0.8;
 		for ( size_t i = 1; i < ncut; i++){
 			data[i] *= 0.5*(1+std::cos(boost::math::constants::pi<T>()*T(i)/ncut));
 			data[width-i] *= 0.5*(1+std::cos(boost::math::constants::pi<T>()*T(i)/ncut));

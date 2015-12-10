@@ -103,20 +103,20 @@ int main( int argc, char** argv)
 
 	std::vector<size_t> rhs_dims(&dimensions[0],&dimensions[3]); //Quick and dirty vector_td to vector
 
-	boost::shared_ptr< protonDataset<cuNDArray> > data(new protonDataset<cuNDArray>(dataName,use_weights) );
+	auto  data = boost::make_shared<protonDataset<hoCuNDArray>>(dataName,use_weights);
 	if (use_hull) //If we don't estimate the hull, we should use a larger volume
 		data->preprocess(rhs_dims,physical_dims,use_hull,background);
 	else {
 		floatd3 physical_dims2 = physical_dims*sqrt(2.0f);
 		data->preprocess(rhs_dims,physical_dims2,use_hull,background);
 	}
-	FilteredProton<cuNDArray> E;
+	FilteredProton<hoCuNDArray> E;
 
 
 	if (data->get_weights())
 		*data->get_projections() *= *data->get_weights(); //Have to scale projection data by weights before handing it to the solver. Write up the cost function and see why.
 
-	boost::shared_ptr< cuNDArray<_real> > result;
+	boost::shared_ptr< hoCuNDArray<_real> > result;
 	{
 		GPUTimer tim("Reconstruction time:");
 		result = E.calculate(rhs_dims,physical_dims,data,estimate_missing);

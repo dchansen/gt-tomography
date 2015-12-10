@@ -26,6 +26,7 @@ namespace Gadgetron{
     virtual ~cuNCGSolver() {}
     
 
+    /*
     virtual void iteration_callback(cuNDArray<T>* x ,int iteration,typename realType<T>::Type value){
      	  if (iteration == 0){
      		  std::ofstream textFile("residual.txt",std::ios::trunc);
@@ -41,5 +42,6 @@ namespace Gadgetron{
 
 
        };
+       */
   };
 }

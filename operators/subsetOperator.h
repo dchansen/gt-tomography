@@ -18,7 +18,14 @@ public:
 	virtual ~subsetOperator(){};
 	virtual void mult_M(ARRAY_TYPE* in, ARRAY_TYPE* out, int subset, bool accumulate)=0;
 	virtual void mult_MH(ARRAY_TYPE* in, ARRAY_TYPE* out, int subset, bool accumulate)=0;
-	virtual void mult_MH_M(ARRAY_TYPE* in, ARRAY_TYPE* out, int subset, bool accumulate)=0;
+	virtual void mult_MH_M(ARRAY_TYPE* in, ARRAY_TYPE* out, int subset, bool accumulate){
+		auto dims = this->get_codomain_dimensions(subset);
+		ARRAY_TYPE tmp(dims);
+		this->mult_M(in,&tmp,false);
+		this->mult_MH(&tmp,out,accumulate);
+	}
+
+
 
 	virtual void mult_M(ARRAY_TYPE* in, ARRAY_TYPE* out,bool accumulate){
 		if (!accumulate) clear(out);

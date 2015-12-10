@@ -1,0 +1,12 @@
+include_directories(
+  ${CUDA_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIR}
+  ${GADGETRON_INCLUDE_DIR}
+  ${CMAKE_SOURCE_DIR}/solvers
+  ${CMAKE_SOURCE_DIR}/operators
+  ${CMAKE_SOURCE_DIR}/proton
+)
+
+
+add_executable(split_denoise split_denoise.cpp)
+target_link_libraries(split_denoise tomography_operators tomography_solvers gadgetron_toolbox_gpusolvers gadgetron_toolbox_gpuoperators gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})

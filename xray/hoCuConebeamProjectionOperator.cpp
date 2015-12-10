@@ -204,6 +204,7 @@ void hoCuConebeamProjectionOperator
 
 	if( projections->get_size(2) != acquisition_->get_geometry()->get_angles().size() ||
 			projections->get_size(2) != acquisition_->get_geometry()->get_offsets().size() ){
+		std::cout << "Projection size " << projections->get_size(2) << " Angles " << acquisition_->get_geometry()->get_angles().size() << " Offset size " << acquisition_->get_geometry()->get_offsets().size() << std::endl;
 		throw std::runtime_error("Error: hoCuConebeamProjectionOperator::mult_MH: inconsistent sizes of input arrays/vectors");
 	}
 

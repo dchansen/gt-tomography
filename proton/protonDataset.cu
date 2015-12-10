@@ -115,7 +115,7 @@ template<> void protonDataset<cuNDArray>::crop_splines(std::vector<size_t> & img
 }
 
 template<> void protonDataset<hoCuNDArray>::crop_splines(std::vector<size_t> & img_dims, floatd3 physical_dims, float background){
-	size_t max_batch_size = calculate_batch_size();
+	size_t max_batch_size = calculate_batch_size()/2;
 
 
 	size_t elements = spline_data->get_number_of_elements()/4;
@@ -123,6 +123,7 @@ template<> void protonDataset<hoCuNDArray>::crop_splines(std::vector<size_t> & i
 
 
 	for (size_t n = 0; n < (elements-1)/max_batch_size+1; n++){
+		std::cout << "Cropping spline batch " << n << std::endl;
 
 		size_t batch_size = std::min(max_batch_size,elements-offset);
 		std::vector<size_t> batch_dim;

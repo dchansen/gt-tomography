@@ -118,7 +118,7 @@ int main( int argc, char** argv)
 	boost::shared_ptr< hoCuNDArray<_real> > result;
 	{
 		GPUTimer tim("Reconstruction time:");
-		result = E.calculate(rhs_dims,physical_dims,data,estimate_missing);
+		result = E.calculate(rhs_dims,physical_dims,data,estimate_missing,2,1);
 	}
 
 /*

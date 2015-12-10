@@ -14,6 +14,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
 #include <tuple>
+#include "linearToSubsetOperator.h"
 
 namespace Gadgetron{
 template <class ARRAY_TYPE> class osMOMSolverD3 : public solver< ARRAY_TYPE,ARRAY_TYPE> {
@@ -253,7 +254,6 @@ protected:
 			auto group = std::get<0>(group_pair);
 			for (auto op : group){
 				auto w = op->get_weight();
-				std::cout << "Weight " << w << std::endl;
 				result += w;
 				num++;
 			}
@@ -274,7 +274,6 @@ protected:
 			x = s;
 			return;
 		}
-
 
 		for (auto it = 0u; it < reg_steps_; it++){
 			clear(&g);
@@ -299,11 +298,13 @@ protected:
 				std::vector<ARRAY_TYPE> datas(reg_group.size());
 				REAL val = 0;
 				REAL reg_val = 0;
-				if (prior) std::cout << "PENGUION!" << std::endl;
 				if (prior) x -= *prior;
 				for (auto i = 0u; i < reg_group.size(); i++){
 					datas[i] = ARRAY_TYPE(reg_group[i]->get_codomain_dimensions());
+
 					reg_group[i]->mult_M(&x,&datas[i]);
+
+					auto tmp_dims = *datas[i].get_dimensions();
 					reg_val += asum(&datas[i])*reg_group[i]->get_weight();
 					datas[i] *= sigma*reg_group[i]->get_weight()/avg_lambda;
 				}

@@ -31,6 +31,7 @@
 #include "hoCuNCGSolver.h"
 #include "cuSolverUtils.h"
 #include "osMOMSolverD.h"
+#include "osMOMSolverD3.h"
 #include "hdf5_utils.h"
 
 #include "encodingOperatorContainer.h"
@@ -132,7 +133,7 @@ int main( int argc, char** argv)
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
 	//protonDROPSolver<hoCuNDArray > solver;
 
-	osMOMSolverD<hoCuNDArray<float>> solver;
+	osMOMSolverD3<hoCuNDArray<float>> solver;
 
   solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );
 	  solver.set_non_negativity_constraint(use_non_negativity);
@@ -205,7 +206,7 @@ std::cout << "Done" << std::endl;
   	Dy->set_domain_dimensions(&rhs_dims);
   	Dy->set_codomain_dimensions(&rhs_dims);
 
-  	auto Dz = boost::make_shared<hoCuPartialDerivativeOperator<float,3>>(1);
+  	auto Dz = boost::make_shared<hoCuPartialDerivativeOperator<float,3>>(2);
   	Dz->set_weight(tv_weight);
   	Dz->set_domain_dimensions(&rhs_dims);
   	Dz->set_codomain_dimensions(&rhs_dims);

@@ -56,6 +56,9 @@
 #include "weightingOperator.h"
 #include "hoNDArray_math.h"
 #include "cuNCGSolver.h"
+#include "subsetAccumulateOperator.h"
+#include "accumulateOperator.h"
+#include "subselectionOperator.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -252,6 +255,9 @@ int main(int argc, char** argv)
 
 	is_dims.push_back(binning->get_number_of_bins());
 
+	std::vector<size_t> double_dims = is_dims;
+	double_dims.push_back(2);
+
 	//osLALMSolver<cuNDArray<float>> solver;
 	osMOMSolverD3<cuNDArray<float>> solver;
 	//osAHZCSolver<cuNDArray<float>> solver;
@@ -353,28 +359,56 @@ int main(int argc, char** argv)
 
   	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
   	Dx->set_weight(tv_weight);
+
   	Dx->set_domain_dimensions(&is_dims);
   	Dx->set_codomain_dimensions(&is_dims);
-
+/*
+  	Dx->set_domain_dimensions(&double_dims);
+  	Dx->set_codomain_dimensions(&double_dims);
+*/
   	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
   	Dy->set_weight(tv_weight);
   	Dy->set_domain_dimensions(&is_dims);
   	Dy->set_codomain_dimensions(&is_dims);
+  	/*
+  	Dy->set_domain_dimensions(&double_dims);
+  	Dy->set_codomain_dimensions(&double_dims);
+*/
 
 
   	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
   	Dz->set_weight(tv_weight);
   	Dz->set_domain_dimensions(&is_dims);
   	Dz->set_codomain_dimensions(&is_dims);
+  	/*
+  	Dz->set_domain_dimensions(&double_dims);
+  	Dz->set_codomain_dimensions(&double_dims);
+*/
 
-  	solver.add_regularization_group({Dx,Dy,Dz});
 
+  	auto Dx1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(Dx,0);
+  	Dx1->set_domain_dimensions(&double_dims);
+  	Dx1->set_codomain_dimensions(&is_dims);
+  	auto Dy1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(Dy,0);
+  	Dy1->set_domain_dimensions(&double_dims);
+  	Dy1->set_codomain_dimensions(&is_dims);
+  	auto Dz1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(Dz,0);
+	Dz1->set_domain_dimensions(&double_dims);
+  	Dz1->set_codomain_dimensions(&is_dims);
+
+  	Dx1->set_weight(tv_weight);
+  	Dy1->set_weight(tv_weight);
+  	Dz1->set_weight(tv_weight);
+
+  	//solver.add_regularization_group({Dx,Dy,Dz});
+  	solver.add_regularization_group({Dx1,Dy1,Dz1});
+/*
 auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 	Dt->set_weight(tv_weight);
 	Dt->set_domain_dimensions(&is_dims);
 	Dt->set_codomain_dimensions(&is_dims);
 	solver.add_regularization_operator(Dt);
-
+*/
 /*
 	auto projections = *ps->get_projections();
   	auto prior_weight = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
@@ -454,10 +488,34 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 */
 
 	if (dct_weight > 0){
-		auto dctOp = boost::make_shared<cuDCTOperator<float>>();
+		auto dctOp = boost::make_shared<identityOperator<cuNDArray<float>>>();
+		//auto dctOp = boost::make_shared<cuDCTOperator<float>>();
 		dctOp->set_domain_dimensions(&is_dims);
+		dctOp->set_codomain_dimensions(&is_dims);
 		dctOp->set_weight(dct_weight);
-		solver.add_regularization_operator(dctOp);
+
+		auto dctOp1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(dctOp,1);
+		dctOp1->set_domain_dimensions(&double_dims);
+		dctOp1->set_codomain_dimensions(dctOp->get_codomain_dimensions().get());
+		dctOp1->set_weight(dct_weight);
+		solver.add_regularization_operator(dctOp1);
+		/*
+		auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
+		Dt->set_weight(dct_weight);
+		Dt->set_domain_dimensions(&is_dims);
+		Dt->set_codomain_dimensions(&is_dims);
+		auto Dt1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(Dt,1);
+		Dt1->set_domain_dimensions(&double_dims);
+		Dt1->set_codomain_dimensions(&is_dims);
+
+		solver.add_regularization_operator(Dt1);
+		*/
+		auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
+		Dt->set_weight(tv_weight);
+		Dt->set_domain_dimensions(&double_dims);
+		Dt->set_codomain_dimensions(&double_dims);
+		solver.add_regularization_operator(Dt);
+
 	}
 
 	auto E = boost::make_shared<CBSubsetOperator<cuNDArray> >(subsets);
@@ -468,7 +526,12 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 	E->set_domain_dimensions(&is_dims);
 	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
-	solver.set_encoding_operator(E);
+	auto B = boost::make_shared<subsetAccumulateOperator<cuNDArray<float>>>(E);
+	B->set_domain_dimensions(&double_dims);
+	B->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
+
+
+	solver.set_encoding_operator(B);
 
 
 
@@ -549,7 +612,10 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 		result = solverF.solve(projections.get());
 
 	}
-	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
+
+	auto result2 = sum(result.get(),4);
+	saveNDArray2HDF5(result.get(),"seperate.hdf5",imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
+	saveNDArray2HDF5(result2.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
 	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
 	/*
   cuNDArray<float> tmp(W->get_codomain_dimensions());

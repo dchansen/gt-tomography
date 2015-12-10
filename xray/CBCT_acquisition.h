@@ -122,6 +122,10 @@ class CBCT_acquisition {
 public:
 
 	CBCT_acquisition() {}
+	CBCT_acquisition(const CBCT_acquisition& other) {
+		projections_ = boost::make_shared<hoCuNDArray<float>>(*other.projections_);
+		geometry_ = boost::make_shared<CBCT_geometry>(*other.geometry_);
+	}
 
 	CBCT_acquisition( boost::shared_ptr< hoCuNDArray<float> > projections,
 			boost::shared_ptr<CBCT_geometry> geometry )

@@ -21,6 +21,10 @@ namespace Gadgetron {
   public:
     
     CBCT_binning() {}
+
+    CBCT_binning(const CBCT_binning& other) {
+    	this->binning_ = other.binning_;
+    }
     CBCT_binning( std::vector< std::vector<unsigned int> > binning ) : binning_(binning) {}
 
     ~CBCT_binning() {}
