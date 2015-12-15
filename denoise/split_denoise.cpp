@@ -115,7 +115,9 @@ int main(int argc, char** argv){
 	solver.set_output_mode(cuSbCgSolver<float>::OUTPUT_VERBOSE);
 */
 	osMOMSolverD3<cuNDArray<float>> solver;
+	solver.set_tau(1e-1);
 	solver.set_max_iterations(iterations);
+	solver.set_reg_steps(1);
 
  if (tv_weight > 0){
 

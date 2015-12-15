@@ -61,7 +61,7 @@ if (CUDA_FOUND)
   set(CUDA_PROPAGATE_HOST_FLAGS OFF)
   set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
 
-  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_52,code=sm_52")
+  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_30,code=sm_30")
   #set(CUDA_VERBOSE_BUILD ON)
 
   # Compile kernels for compute models 1.0 and 2.0 as default for Cuda 4.1

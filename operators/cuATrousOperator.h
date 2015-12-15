@@ -6,6 +6,7 @@
 #include "cuNDArray_math.h"
 #include "cuNDArray_fileio.h"
 #include <initializer_list>
+#include <boost/make_shared.hpp>
 
 namespace Gadgetron {
 template<class T> class cuATrousOperator : public invertibleOperator<cuNDArray<T> > {

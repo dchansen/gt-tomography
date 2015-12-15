@@ -14,7 +14,6 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
 #include <tuple>
-#include "linearToSubsetOperator.h"
 
 namespace Gadgetron{
 template <class ARRAY_TYPE> class osMOMSolverD3 : public solver< ARRAY_TYPE,ARRAY_TYPE> {
@@ -31,7 +30,7 @@ public:
 		_kappa = REAL(1);
 		tau0=1e-3;
 		denoise_alpha=0;
-		dump=true;
+		dump=false;
 	}
 	virtual ~osMOMSolverD3(){};
 
@@ -152,7 +151,7 @@ public:
 
 				this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 				tmp_image *= -REAL(this->encoding_operator_->get_number_of_subsets());
-				axpy(-_beta,&d,&tmp_image);
+				axpy(+_beta,&d,&tmp_image);
 
 
 				tmp_image *= *precon_image;
@@ -198,11 +197,11 @@ public:
 			*/
 
 				*z = *x;
+
 				*z *= 1+(told-1)/t;
 				axpy(-(told-1)/t,xold,z);
 				std::swap(x,xold);
 				*x = *z;
-
 				told = t;
 
 				//step_size *= 0.99;
