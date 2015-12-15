@@ -59,6 +59,7 @@
 #include "subsetAccumulateOperator.h"
 #include "accumulateOperator.h"
 #include "subselectionOperator.h"
+#include "osMOMSolverDual.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -259,7 +260,7 @@ int main(int argc, char** argv)
 	double_dims.push_back(2);
 
 	//osLALMSolver<cuNDArray<float>> solver;
-	osMOMSolverD3<cuNDArray<float>> solver;
+	osMOMSolverDual<cuNDArray<float>> solver;
 	//osAHZCSolver<cuNDArray<float>> solver;
 	//osMOMSolverF<cuNDArray<float>> solver;
 	//ADMMSolver<cuNDArray<float>> solver;
@@ -348,11 +349,11 @@ int main(int argc, char** argv)
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
-	solver.set_tau(1e-5);
+	solver.set_tau(1e-4);
 	solver.set_non_negativity_constraint(true);
 	solver.set_huber(huber);
 
-	solver.set_reg_steps(5);
+	solver.set_reg_steps(1);
 	//solver.set_rho(rho);
 
   if (tv_weight > 0){
@@ -526,12 +527,7 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 	E->set_domain_dimensions(&is_dims);
 	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
-	auto B = boost::make_shared<subsetAccumulateOperator<cuNDArray<float>>>(E);
-	B->set_domain_dimensions(&double_dims);
-	B->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
-
-
-	solver.set_encoding_operator(B);
+	solver.set_encoding_operator(E);
 
 
 
