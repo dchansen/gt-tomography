@@ -19,6 +19,7 @@ public:
 		_kappa = REAL(1);
 		_gamma = 0;
 		non_negativity_=false;
+		_dump = false;
 	}
 	virtual ~protonDROPSolver(){};
 
@@ -31,6 +32,7 @@ public:
 	 */
 	void set_beta(REAL beta){_beta = beta;}
 	void set_gamma(REAL gamma){_gamma = gamma;}
+	void set_dump(bool dump){_dump = dump;}
 
 	boost::shared_ptr<ARRAY<float> > solve(ARRAY<float>* in){
 		//boost::shared_ptr<ARRAY> rhs = compute_rhs(in);
@@ -131,29 +133,19 @@ public:
 						std::cout << "Kappa: " << kappa_int << std::endl;
 					}
 					reg_val = reg_op->magnitude(&y);
+					std::cout << "Reg val new: " << reg_val << std::endl;
+
 					*x = y;
 
- 				}
+				}
 
 			}
-			//std::reverse(isubsets.begin(),isubsets.end());
-			//std::random_shuffle(isubsets.begin(),isubsets.end());
-			/*
-			ARRAY<float> tmp_proj(*in);
-			clear(&tmp_proj);
-			this->encoding_operator_->mult_M(x,&tmp_proj,false);
-			tmp_proj -= *in;
-			//calc_regMultM(x,regEnc);
-			//REAL f = functionValue(&tmp_proj,regEnc,x);
-			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
-*/
-			/*
-			std::stringstream ss;
-			ss << "protonDROP-" << i << ".real";
-			save_nd_array(x,ss.str());
-*/
+			if (_dump){
+				std::stringstream ss;
+				ss << "protonDROP-" << i << ".real";
+				write_nd_array(x,ss.str().c_str());
+			}
 		}
-
 		return boost::shared_ptr<ARRAY<float> >(x);
 	}
 
@@ -164,6 +156,7 @@ protected:
 	int _iterations;
 	REAL _beta, _gamma, _kappa;
 	bool non_negativity_;
+	bool _dump;
 	boost::shared_ptr< generalOperator<ARRAY<float>  > > reg_op;
 	boost::shared_ptr<protonSubsetOperator<ARRAY> > encoding_operator_;
 

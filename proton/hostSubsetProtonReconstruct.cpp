@@ -14,35 +14,34 @@
 #include "hoNDArray_fileio.h"
 #include "check_CUDA.h"
 
-#include "hoCuGPBBSolver.h"
+//#include "hoCuGPBBSolver.h"
 #include "hoCuPartialDerivativeOperator.h"
-#include "hoCuNDArray_blas.h"
+//#include "hoCuNDArray_blas.h"
 #include "hoCuNDArray_elemwise.h"
 
 #include "cuNDArray_math.h"
 
 #include "osSARTSolver.h"
-#include "hoOSGPBBSolver.h"
-#include "hoOSCGSolver.h"
-#include "hoOSCGPBBSolver.h"
-#include "hoCuBILBSolver.h"
+//#include "hoOSGPBBSolver.h"
+//#include "hoOSCGSolver.h"
+//#include "hoOSCGPBBSolver.h"
+//#include "hoCuBILBSolver.h"
 //#include "hoABIBBSolver.h"
 #include "protonDROPSolver.h"
-#include "hoCuNCGSolver.h"
 #include "cuSolverUtils.h"
 #include "osMOMSolverD.h"
 #include "osMOMSolverD3.h"
 #include "hdf5_utils.h"
 
 #include "encodingOperatorContainer.h"
-#include "hoCuOperator.h"
+//#include "hoCuOperator.h"
 #include "hoImageOperator.h"
 #include "identityOperator.h"
 #include <boost/program_options.hpp>
 #include "vector_td_io.h"
 
-#include "hoCuTvOperator.h"
-#include "hoCuTvPicsOperator.h"
+//#include "hoCuTvOperator.h"
+//#include "hoCuTvPicsOperator.h"
 #include "projectionSpaceOperator.h"
 #include "hdf5.h"
 
@@ -133,14 +132,15 @@ int main( int argc, char** argv)
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
 	//protonDROPSolver<hoCuNDArray > solver;
 
-	osMOMSolverD3<hoCuNDArray<float>> solver;
+	osMOMSolverD<hoCuNDArray<float>> solver;
 
-  solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );
+  //solver.set_output_mode( hoCuGPBBSolver< _real>::OUTPUT_VERBOSE );
 	  solver.set_non_negativity_constraint(use_non_negativity);
 	  solver.set_max_iterations(iterations);
 	  solver.set_huber(huber);
 	  solver.set_reg_steps(5);
 	  solver.set_dump(false);
+	  solver.set_tau(1e-4);
 	//solver.set_m(subsets);
 	//solver.set_gamma(1.0f/15);
   solver.set_non_negativity_constraint(use_non_negativity);
@@ -236,12 +236,7 @@ std::cout << "Done" << std::endl;
   	GPUTimer timer("Time to solve");
   	result = solver.solve(data->get_projections().get());
   }
-	hoCuNDArray<_real> tmp_proj(data->get_projections()->get_dimensions());
-	E->mult_M(result.get(),&tmp_proj,false);
-	tmp_proj -= *data->get_projections();
 
-	std::cout << "L2 norm of residual: " << dot(&tmp_proj,&tmp_proj) << std::endl;
-	//write_nd_array<_real>(result.get(), (char*)parms.get_parameter('f')->get_string_value());
 	std::stringstream ss;
 	for (int i = 0; i < argc; i++){
 		ss << argv[i] << " ";

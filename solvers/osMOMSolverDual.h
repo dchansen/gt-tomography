@@ -14,13 +14,13 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
 #include <tuple>
-
+#include "subsetAccumulateOperator.h"
 namespace Gadgetron{
 template <class ARRAY_TYPE> class osMOMSolverDual : public solver< ARRAY_TYPE,ARRAY_TYPE> {
 	typedef typename ARRAY_TYPE::element_type ELEMENT_TYPE;
 	typedef typename realType<ELEMENT_TYPE>::Type REAL;
 public:
-	osMOMSolverDual() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
+	osMOMSolverDual() :solver< ARRAY_TYPE,ARRAY_TYPE>() , splits(2) {
 		_iterations=10;
 		_beta = REAL(1);
 		_alpha = 0.2;
@@ -31,14 +31,12 @@ public:
 		tau0=1e-3;
 		denoise_alpha=0;
 		dump=false;
-		splits=2;
 	}
 	virtual ~osMOMSolverDual(){};
 
 	void set_max_iterations(int i){_iterations=i;}
 	int get_max_iterations(){return _iterations;}
 	void set_non_negativity_constraint(bool neg=true){non_negativity_=neg;}
-	void set_splits(unsigned int splits_ ){splits = splits_;}
 	/**
 	 * @brief Sets the weight of each step in the SART iteration
 	 * @param beta
@@ -109,9 +107,10 @@ public:
 		ARRAY_TYPE * x = new ARRAY_TYPE(*z);
 		ARRAY_TYPE * xold = new ARRAY_TYPE(*z);
 
-		auto B = boost::make_shared<subsetAccumulateOperator<ARRAY_TYPE>>(this->encoding_operator_);
-		B->set_domain_dimensions(&split_dims);
-		B->set_codomain_dimensions(in->get_dimensions().get());
+		auto B = boost::make_shared<subsetAccumulateOperator<ARRAY_TYPE>>(this->encoding_operator_,splits);
+
+
+		//auto B = this->encoding_operator_;
 
 		std::vector<boost::shared_ptr<ARRAY_TYPE> > subsets = this->encoding_operator_->projection_subsets(in);
 
@@ -122,11 +121,12 @@ public:
 		if (preconditioning_image_)
 			precon_image = preconditioning_image_;
 		else {
+			auto B_all = boost::shared_ptr<linearOperator<ARRAY_TYPE>>(B);
 			precon_image = boost::make_shared<ARRAY_TYPE>(split_dims);
 			fill(precon_image.get(),ELEMENT_TYPE(1));
-			B->mult_M(precon_image.get(),&tmp_projection,false);
-			B->mult_MH(&tmp_projection,precon_image.get(),false);
-			*precon_image += _beta;
+			B_all->mult_M(precon_image.get(),&tmp_projection,false);
+			B_all->mult_MH(&tmp_projection,precon_image.get(),false);
+			//*precon_image += _beta;
 			clamp_min(precon_image.get(),ELEMENT_TYPE(1e-6));
 			reciprocal_inplace(precon_image.get());
 			//ones_image *= (ELEMENT_TYPE) B->get_number_of_subsets();
@@ -160,7 +160,7 @@ public:
 
 				B->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 				tmp_image *= -REAL(B->get_number_of_subsets());
-				axpy(+_beta,&d,&tmp_image);
+				//axpy(+_beta,&d,&tmp_image);
 
 
 				tmp_image *= *precon_image;
@@ -170,42 +170,24 @@ public:
 
 				{
 
-					ARRAY_TYPE s(z);
-					s -= d;
+					//ARRAY_TYPE s(z);
+					//s -= d;
 					*x = *z;
-					denoise(*x,s,*precon_image,1.0,avg_lambda);
+					denoise(*x,*z,*precon_image,1.0,avg_lambda);
 				}
 				//axpy(REAL(_beta),&tmp_image,x);
 				if (non_negativity_){
 
-					auto images = split_image_array(x);
-					clamp_min(images[0].get(),ELEMENT_TYPE(0));
+					auto comb = sum(x,x->get_number_of_dimensions()-1);
+					clamp_max(comb.get(),ELEMENT_TYPE(0));
+					*comb /= ELEMENT_TYPE(splits);
+					*x -= *comb;
+
+					//clamp_min(x,ELEMENT_TYPE(0));
 				}
 				d += *x;
 				d -= *z;
 
-				/*
-				for (auto op : regularization_operators){
-
-					op->gradient(x,&tmp_image);
-					tmp_image /= nrm2(&tmp_image);
-					auto reg_val = op->magnitude(x);
-					std::cout << "Reg val: " << reg_val << std::endl;
-					ARRAY_TYPE y = *x;
-					axpy(-kappa_int,&tmp_image,&y);
-
-
-					while(op->magnitude(&y) > reg_val){
-
-						kappa_int /= 2;
-						axpy(kappa_int,&tmp_image,&y);
-						std::cout << "Kappa: " << kappa_int << std::endl;
-					}
-					reg_val = op->magnitude(&y);
-					*x = y;
-
-				}
-			*/
 
 				*z = *x;
 
@@ -218,14 +200,7 @@ public:
 				//step_size *= 0.99;
 
 			}
-			//std::reverse(isubsets.begin(),isubsets.end());
-			//std::random_shuffle(isubsets.begin(),isubsets.end());
-			/*
-			ARRAY_TYPE tmp_proj(*in);
-			clear(&tmp_proj);
-			B->mult_M(x,&tmp_proj,false);
-			tmp_proj -= *in;
-			 */
+
 
 			if (dump){
 				std::stringstream ss;
@@ -250,17 +225,15 @@ public:
 
 protected:
 
-	std::vector<boost::shared_ptr<ARRAY_TYPE>> split_image_array(ARRAY_TYPE* image){
+	std::pair<boost::shared_ptr<ARRAY_TYPE>,boost::shared_ptr<ARRAY_TYPE>> split_image_array(ARRAY_TYPE* image){
 		std::vector<boost::shared_ptr<ARRAY_TYPE>> result;
 		auto dims = *image->get_dimensions();
 		dims.pop_back();
 		auto ptr = image->get_data_ptr();
-		for (int  i = 0; i < splits; i++){
-			auto tmp = boost::make_shared<ARRAY_TYPE>(dims,ptr);
-			ptr += tmp->get_number_of_elements();
-			result.push_back(tmp);
-		}
-		return result;
+
+		auto tmp1 = boost::make_shared<ARRAY_TYPE>(dims,ptr);
+		auto tmp2 = boost::make_shared<ARRAY_TYPE>(dims,ptr+tmp1->get_number_of_elements());
+		return std::make_pair(tmp1,tmp2);
 	}
 
 	REAL calc_avg_lambda(){
@@ -292,71 +265,86 @@ protected:
 		REAL L = 4; //Hmm.. this seems a little..well... guessy?
 		REAL tau = tau0;
 		REAL sigma = 1/(tau*L*L);
-		ARRAY_TYPE g(x.get_dimensions());
 		if (regularization_groups.empty() && regularization_operators.empty()){
 			x = s;
 			return;
 		}
 
+		boost::shared_ptr<ARRAY_TYPE> s1,s2;
+		std::tie(s1,s2) = split_image_array(&s);
+
 		for (auto it = 0u; it < reg_steps_; it++){
-			clear(&g);
-			for (auto reg_op_pair : regularization_operators){
-				auto reg_op = std::get<0>(reg_op_pair);
-				auto prior = std::get<1>(reg_op_pair);
-				ARRAY_TYPE data(reg_op->get_codomain_dimensions());
-				if (prior) x -= *prior;
-				reg_op->mult_M(&x,&data);
-				if (prior) x += *prior;
-				data *= sigma*reg_op->get_weight()/avg_lambda;
-				//updateF is the resolvent operator on the regularization
-				updateF(data, denoise_alpha, sigma);
-				data *= reg_op->get_weight()/avg_lambda;
-				std::cout << "Reg val: " << asum(&data) << std::endl;
-				reg_op->mult_MH(&data,&g,true);
-			}
-
-			for (auto & reg_group_pair : regularization_groups){
-				auto reg_group = std::get<0>(reg_group_pair);
-				auto prior = std::get<1>(reg_group_pair);
-				std::vector<ARRAY_TYPE> datas(reg_group.size());
-				REAL val = 0;
-				REAL reg_val = 0;
-				if (prior) x -= *prior;
-				for (auto i = 0u; i < reg_group.size(); i++){
-					datas[i] = ARRAY_TYPE(reg_group[i]->get_codomain_dimensions());
-
-					reg_group[i]->mult_M(&x,&datas[i]);
-
-					auto tmp_dims = *datas[i].get_dimensions();
-					reg_val += asum(&datas[i])*reg_group[i]->get_weight();
-					datas[i] *= sigma*reg_group[i]->get_weight()/avg_lambda;
-				}
-				if (prior) x += *prior;
-
-				std::cout << "Reg val: " << reg_val << " Scaling " << scaling*avg_lambda  << std::endl;
-				//updateFgroup is the resolvent operators on the group
-				updateFgroup(datas,denoise_alpha,sigma);
-
-				for (auto i = 0u; i < reg_group.size(); i++){
-					datas[i] *= reg_group[i]->get_weight()/avg_lambda;
-					reg_group[i]->mult_MH(&datas[i],&g,true);
-
+			{
+				ARRAY_TYPE g(x.get_dimensions());
+				clear(&g);
+				for (auto reg_op_pair : regularization_operators){
+					auto reg_op = std::get<0>(reg_op_pair);
+					auto prior = std::get<1>(reg_op_pair);
+					ARRAY_TYPE data(reg_op->get_codomain_dimensions());
+					if (prior) x -= *prior;
+					reg_op->mult_M(&x,&data);
+					if (prior) x += *prior;
+					data *= sigma*reg_op->get_weight()/avg_lambda;
+					//updateF is the resolvent operator on the regularization
+					updateF(data, denoise_alpha, sigma);
+					data *= reg_op->get_weight()/avg_lambda;
+					std::cout << "Reg val: " << asum(&data) << std::endl;
+					reg_op->mult_MH(&data,&g,true);
 				}
 
+				for (auto & reg_group_pair : regularization_groups){
+					auto reg_group = std::get<0>(reg_group_pair);
+					auto prior = std::get<1>(reg_group_pair);
+					std::vector<ARRAY_TYPE> datas(reg_group.size());
+					REAL val = 0;
+					REAL reg_val = 0;
+					if (prior) x -= *prior;
+					for (auto i = 0u; i < reg_group.size(); i++){
+						datas[i] = ARRAY_TYPE(reg_group[i]->get_codomain_dimensions());
+
+						reg_group[i]->mult_M(&x,&datas[i]);
+
+						auto tmp_dims = *datas[i].get_dimensions();
+						reg_val += asum(&datas[i])*reg_group[i]->get_weight();
+						datas[i] *= sigma*reg_group[i]->get_weight()/avg_lambda;
+					}
+					if (prior) x += *prior;
+
+					std::cout << "Reg val: " << reg_val << " Scaling " << scaling*avg_lambda  << std::endl;
+					//updateFgroup is the resolvent operators on the group
+					updateFgroup(datas,denoise_alpha,sigma);
+
+					for (auto i = 0u; i < reg_group.size(); i++){
+						datas[i] *= reg_group[i]->get_weight()/avg_lambda;
+						reg_group[i]->mult_MH(&datas[i],&g,true);
+
+					}
+
+				}
+				//updateG is the resolvent operator on the |x-s| part of the optimization
+				axpy(-tau,&g,&x);
 			}
-			//updateG is the resolvent operator on the |x-s| part of the optimization
-			axpy(-tau*_beta,&g,&x);
-			g = s;
-			g /= precon;
 
-			axpy(tau*_beta/(scaling*avg_lambda),&g,&x);
+			boost::shared_ptr<ARRAY_TYPE> x1,x2;
+			std::tie(x1,x2) = split_image_array(&x);
 
-			g = precon;
+			ARRAY_TYPE x1copy = *x1;
 
-			reciprocal_inplace(&g);
-			g *= tau*_beta/(scaling*avg_lambda);
-			g += REAL(1);
-			x /= g;
+			*x1 *= (1+L*tau);
+			axpy(L*tau,s1.get(),x1.get());
+			axpy(L*tau,s2.get(),x1.get());
+			axpy(-L*tau,x2.get(),x1.get());
+
+			*x2 *= (1+L*tau);
+
+			axpy(L*tau,s1.get(),x2.get());
+			axpy(L*tau,s2.get(),x2.get());
+			axpy(-L*tau,&x1copy,x2.get());
+
+			x *= 1.0f/(2*L*tau+1);
+
+
+
 			//x *= 1/(1+tau/(scaling*avg_lambda));
 			REAL theta = 1/std::sqrt(1+2*gam*tau);
 			tau *= theta;
@@ -372,7 +360,8 @@ protected:
 	int _iterations;
 	REAL _beta, _gamma, _alpha, _kappa,tau0, denoise_alpha;
 	bool non_negativity_, dump;
-	unsigned int reg_steps_, splits;
+	unsigned int reg_steps_;
+	const unsigned int splits;
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;
 	boost::shared_ptr<ARRAY_TYPE> preconditioning_image_;
 

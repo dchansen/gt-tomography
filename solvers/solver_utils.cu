@@ -60,8 +60,27 @@ template<class T> void Gadgetron::hard_shrink(cuNDArray<T>* in_out, typename rea
 		
 }
 
+template<class T> struct cuNDA_shrink_diff : public thrust::binary_function<T,T,T> {
+
+	cuNDA_shrink_diff(typename realType<T>::Type gamma_): gamma(gamma_) {};
+   __device__ T operator()(const T & x, const T & y) {
+	   T z = x-y;
+	   if (z > gamma) return x-gamma;
+	   if (z < -gamma) return x+gamma;
+	   return y;
+   }
+   typename realType<T>::Type gamma;
+
+};
+
+
+
+template<class T> void Gadgetron::shrink_diff(cuNDArray<T>* in_out, cuNDArray<T> * diff, typename realType<T>::Type gamma){
+	thrust::transform(in_out->begin(),in_out->end(),diff->begin(),in_out->begin(),cuNDA_shrink_diff<T>(gamma));
+}
 
 
 template void Gadgetron::hard_shrink<float>(cuNDArray<float>*, float);
+template void Gadgetron::shrink_diff<float>(cuNDArray<float>*,cuNDArray<float>*, float);
 template void Gadgetron::solver_non_negativity_filter<float>(cuNDArray<float>*, cuNDArray<float>*);
 template void Gadgetron::solver_non_negativity_filter<float>(hoCuNDArray<float>*, hoCuNDArray<float>*);

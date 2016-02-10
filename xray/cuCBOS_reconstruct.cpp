@@ -33,6 +33,7 @@
 #include "osMOMSolverD2.h"
 #include "hoCuNCGSolver.h"
 #include "osMOMSolverD3.h"
+#include "osMOMSolverL1.h"
 #include "osMOMSolverF.h"
 #include "osAHZCSolver.h"
 #include "ADMMSolver.h"
@@ -254,6 +255,7 @@ int main(int argc, char** argv)
 
 	//osLALMSolver<cuNDArray<float>> solver;
 	osMOMSolverD3<cuNDArray<float>> solver;
+	//osMOMSolverL1<cuNDArray<float>> solver;
 	//osAHZCSolver<cuNDArray<float>> solver;
 	//osMOMSolverF<cuNDArray<float>> solver;
 	//ADMMSolver<cuNDArray<float>> solver;
@@ -550,6 +552,7 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 
 	}
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
+	write_nd_array(result.get(),"reconstruction.real");
 	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
 	/*
   cuNDArray<float> tmp(W->get_codomain_dimensions());
@@ -559,21 +562,6 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
   write_nd_array(&tmp,"test.real");
 	 */
 	//E->set_use_offset_correction(false);
-	/*
-  linearOperator<cuNDArray<float>> * E_all = E.get();
-  auto tmp_proj = projections;
-  clear(&tmp_proj);
 
-  E_all->mult_M(result.get(),&tmp_proj);
-  tmp_proj -= projections;
-  write_nd_array(&tmp_proj,"projection_diffs.real");
-
-  std::cout <<"Projection dimensions ";
-  auto pdims = *projections.get_dimensions();
-  for (auto d : pdims)
-  	std::cout << d << " ";
-  std::cout << std::endl;
-
-	 */
 
 }

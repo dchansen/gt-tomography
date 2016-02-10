@@ -13,12 +13,12 @@
 set(_check_list)
 
 # Search for the header file.
-find_path(GADGETRON_HOME include/GadgetronTimer.h
-  HINTS $ENV{GADGETRON_HOME} /usr/local/gadgetron /usr/gadgetron)
+find_path(GADGETRON_HOME include/gadgetron/Gadget.h
+    HINTS $ENV{GADGETRON_HOME} /usr/local/gadgetron /usr/gadgetron)
 mark_as_advanced(GADGETRON_HOME)
 list(APPEND _check_list GADGETRON_HOME)
 
-SET(GADGETRON_INCLUDE_DIR ${GADGETRON_HOME}/include)
+SET(GADGETRON_INCLUDE_DIR ${GADGETRON_HOME}/include/gadgetron)
 mark_as_advanced(GADGETRON_INCLUDE_DIR)
 list(APPEND _check_list GADGETRON_INCLUDE_DIR)
 
@@ -30,3 +30,11 @@ list(APPEND _check_list GADGETRON_LIB_DIR)
 # all listed variables are TRUE
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Gadgetron DEFAULT_MSG ${_check_list})
+
+# If Cuda is detected on the system some header files will be needed
+# -- whether Cuda is used or not --
+
+find_package(CUDA)
+if (CUDA_FOUND)
+  include_directories( ${CUDA_INCLUDE_DIRS} )
+endif (CUDA_FOUND)

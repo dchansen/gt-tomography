@@ -120,7 +120,6 @@ public:
 			reciprocal_inplace(precon_image.get());
 			//ones_image *= (ELEMENT_TYPE) this->encoding_operator_->get_number_of_subsets();
 		}
-		ARRAY_TYPE tmp_image(image_dims.get());
 
 
 		REAL avg_lambda = calc_avg_lambda();
@@ -145,15 +144,18 @@ public:
 					std::cout << "Iteration " <<i << " Subset " << subset << " Update norm: " << nrm2(tmp_projections[subset].get()) << std::endl;
 				}
 
-				this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
-				tmp_image *= *precon_image;
-				axpy(REAL(_beta/(1+_gamma*i))*this->encoding_operator_->get_number_of_subsets(),&tmp_image,z);
-				if (i ==0 && isubset == 0)
-					step_size = _alpha*nrm2(x)/this->encoding_operator_->get_number_of_subsets();
+				{
 
+					ARRAY_TYPE tmp_image(image_dims.get());
+
+					this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
+					tmp_image *= *precon_image;
+					axpy(REAL(_beta/(1+_gamma*i))*this->encoding_operator_->get_number_of_subsets(),&tmp_image,z);
+				}
 
 
 				denoise(*x,*z,*precon_image,1.0,avg_lambda);
+				//*x = *z;
 
 				//axpy(REAL(_beta),&tmp_image,x);
 				if (non_negativity_){
@@ -178,10 +180,10 @@ public:
 						std::cout << "Kappa: " << kappa_int << std::endl;
 					}
 					reg_val = op->magnitude(&y);
-					*x = y;
+				 *x = y;
 
 				}
-			*/
+				 */
 
 				*z = *x;
 				*z *= 1+(told-1)/t;

@@ -253,6 +253,7 @@ template void Gadgetron::dct2<float,16>(cuNDArray<float>* in,int);
 template void Gadgetron::idct2<float,16>(cuNDArray<float>* in,int);
 template void Gadgetron::dct<float,16>(cuNDArray<float>* ,int, int);
 template void Gadgetron::idct<float,16>(cuNDArray<float>* ,int, int);
+
 template void Gadgetron::dct2<float,32>(cuNDArray<float>* in,int);
 template void Gadgetron::idct2<float,32>(cuNDArray<float>* in,int);
 template void Gadgetron::dct<float,32>(cuNDArray<float>* ,int, int);

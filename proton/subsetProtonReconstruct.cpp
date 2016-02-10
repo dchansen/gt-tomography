@@ -36,7 +36,9 @@
 #include "BILBSolver.h"
 #include "cuSolverUtils.h"
 #include "osLALMSolverD.h"
+#include "osLALMSolver.h"
 #include "osMOMSolverD.h"
+#include "osMOMSolverD3.h"
 
 #include "encodingOperatorContainer.h"
 #include "hoCuOperator.h"
@@ -95,6 +97,7 @@ int main( int argc, char** argv)
 			("use_hull",po::value<bool>(&use_hull)->default_value(true),"Estimate convex hull of object")
 			("use_weights",po::value<bool>(&use_weights)->default_value(false),"Use weights if available. ")
 			("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Use non-negativity constraint. ")
+			("dump","Will dump all iterations")
 
 	;
 
@@ -140,7 +143,7 @@ int main( int argc, char** argv)
 	//hoOSCGSolver<hoCuNDArray<_real> > solver;
 	//hoCuBILBSolver<hoCuNDArray<_real> > solver;
 	osMOMSolverD<cuNDArray<float>> solver;
-	//osLALMSolverD<cuNDArray<float>> solver;
+	//osLALMSolver<cuNDArray<float>> solver;
 
 	//solver.set_m(24);
 	//solver.set_beta(1.9f);
@@ -151,7 +154,10 @@ int main( int argc, char** argv)
   solver.set_max_iterations(iterations);
   solver.set_huber(huber);
   solver.set_reg_steps(5);
-  solver.set_dump(false);
+  solver.set_dump(vm.count("dump") > 0);
+
+  solver.set_tau(1e-4);
+  //solver.set_beta(0.1);
   //solver.set_tau(gamma);
   //solver.set_regularization_iterations(1);
   //solver.set_damping(beta);
@@ -174,19 +180,26 @@ int main( int argc, char** argv)
 
   if (tv_weight > 0){
 
-  	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,2>>(0);
+  	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,3>>(0);
   	Dx->set_weight(tv_weight);
   	Dx->set_domain_dimensions(&rhs_dims);
   	Dx->set_codomain_dimensions(&rhs_dims);
 
-  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,2>>(1);
+  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,3>>(1);
   	Dy->set_weight(tv_weight);
   	Dy->set_domain_dimensions(&rhs_dims);
   	Dy->set_codomain_dimensions(&rhs_dims);
 
-  	//solver.add_regularization_operator(Dx);
-  	//solver.add_regularization_operator(Dy);
-  	solver.add_regularization_group({Dx,Dy});
+  	if (rhs_dims[2] > 1){
+
+  		auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,2>>(2);
+  		Dz->set_weight(tv_weight);
+  		Dz->set_domain_dimensions(&rhs_dims);
+  		Dz->set_codomain_dimensions(&rhs_dims);
+  		solver.add_regularization_group({Dx,Dy,Dz});
+  	} else {
+  		solver.add_regularization_group({Dx,Dy});
+  	}
   }
 
 
@@ -273,14 +286,15 @@ int main( int argc, char** argv)
 
   }
 */
-  auto precon = boost::make_shared<cuNDArray<float>>(rhs_dims);
-  fill(precon.get(),1.0f);
+  //auto precon = boost::make_shared<cuNDArray<float>>(rhs_dims);
+  //fill(precon.get(),1.0f);
   //solver.set_preconditioning_image(precon);
 
 	//float res = dot(projections.get(),projections.get());
 
   if (data->get_weights()) *data->get_projections() *= *data->get_weights();
 
+  //fill(data->get_projections().get(),1.0f);
   boost::shared_ptr<cuNDArray<float> > result;
   {
   	  GPUTimer timer("Reconstruction time");

@@ -9,7 +9,7 @@ namespace Gadgetron {
 	public:
 
 		cuDCTOperator(): invertibleOperator<cuNDArray<T>>(){
-			repetitions = 2;
+			repetitions = 4;
 		};
 
 		virtual ~cuDCTOperator(){};
@@ -24,10 +24,11 @@ namespace Gadgetron {
 				cuNDArray<T> tmp_view(in_dims,tmp->get_data_ptr()+elements*i);
 				tmp_view = *in;
 				dct2<T,32>(&tmp_view,i*32/repetitions);
-				dct<T,32>(&tmp_view,2,i*32/repetitions);
+				if (in->get_size(2) > 1)
+					dct<T,32>(&tmp_view,2,i*32/repetitions);
 				if (in->get_size(3) > 1)
 					dct<T,10>(&tmp_view,3,i*10/repetitions);
-				//dct2<T,16>(&tmp_view,16);
+				//dct2<T,32>(&tmp_view,32);
 			}
 
 			*tmp /= std::sqrt(T(repetitions));
@@ -50,10 +51,11 @@ namespace Gadgetron {
 				cuNDArray<T> in_view(out_dims,in->get_data_ptr()+i*elements);
 				cuNDArray<T> tmp(in_view);
 				idct2<T,32>(&tmp,i*32/repetitions);
-				idct<T,32>(&tmp,2,i*32/repetitions);
+				if (out->get_size(2) > 1)
+					idct<T,32>(&tmp,2,i*32/repetitions);
 				if (out->get_size(3) > 1)
 					idct<T,10>(&tmp,3,i*10/repetitions);
-				//idct2<T,16>(&tmp,16);
+				//idct2<T,32>(&tmp,32);
 				axpy(std::sqrt(T(1)/repetitions),&tmp,out);
 			}
 

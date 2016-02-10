@@ -194,7 +194,7 @@ public:
 		hsize_t dim;
 		errCode = H5LTget_dataset_info(file_id,"/angles",&dim,NULL,NULL);
 		if (errCode < 0) 	throw std::runtime_error("Error getting /angles dataset info from file.");
-
+		std::cout <<"Number of angles " << dim << std::endl;
 		std::vector<float> angles (dim,0.0f);
 		geometry_->set_angles(angles);
 		errCode=H5LTread_dataset (file_id, "/angles", H5T_NATIVE_FLOAT, &geometry_->get_angles()[0]);

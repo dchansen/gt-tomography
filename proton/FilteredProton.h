@@ -13,6 +13,7 @@
 #include "cuNDArray_math.h"
 
 #include "hoNDArray_fileio.h"
+#include "cuNDArray_fileio.h"
 
 #include <boost/math/constants/constants.hpp>
 
@@ -38,7 +39,7 @@ public:
 
 
 	//Terrible terrible name. Penguin_sauce would be as good...or better, 'cos penguin
-	boost::shared_ptr<ARRAY<float> >  calculate(std::vector<size_t> dims,vector_td<float,3> physical_dims, boost::shared_ptr<protonDataset<ARRAY> > data, bool estimate_missing=true,float oversamplingWidth = 2.0f, float undersamplingDepth = 16.0f){
+	boost::shared_ptr<ARRAY<float> >  calculate(std::vector<size_t> dims,vector_td<float,3> physical_dims, boost::shared_ptr<protonDataset<ARRAY> > data, bool estimate_missing=true,float oversamplingWidth = 2.0f, float undersamplingDepth = 6.0f){
 
 		boost::shared_ptr<cuNDArray<float> > image(new cuNDArray<float>(dims));
 		clear(image.get());
@@ -71,6 +72,7 @@ public:
 
 		cuNDArray<float>* hull = 0x0;
 		if (data->get_hull()) hull = new cuNDArray<float>(*data->get_hull());
+
 		for (unsigned int group = 0; group < ngroups; group++){
 			//std::cout << "Penguin processing group " << group << std::endl;
 			boost::shared_ptr<cuNDArray<float> > cu_paths = to_cundarray(data->get_projection_group(group));
@@ -98,10 +100,11 @@ public:
 
 				protonBackprojection(&projection,cu_paths.get(),cu_splines.get(),physical_dims_proj,EPL.get());
 				protonBackprojection(&projection_nrm,&normalization,cu_splines.get(),physical_dims_proj,EPL.get());
-				if (min(&projection_nrm) <= 0 && estimate_missing)
-					interpolate_missing(&projection,&projection_nrm);
+
 				clamp(&projection_nrm,1e-6f,1e8f,1.0f,1.0f);
 				projection /= projection_nrm;
+				if (estimate_missing)
+					interpolate_missing(&projection);
 				CHECK_FOR_CUDA_ERROR();
 			}
 			std::vector<size_t> batch_dims = *projection.get_dimensions();
@@ -126,9 +129,9 @@ public:
 				uint64d3 crop_offsets(batch_dims[0]*(oversampling-1)/2, 0, 0);
 				crop<float,3>( crop_offsets, real(proj_complex.get()).get(), &projection);
 				//convert_to<double,float>(double_proj.get(),&projection);
+
 			}
-			//projection = *real(proj_complex.get());
-			//write_nd_array(&projection,"projection.real");
+
 			//CHECK_FOR_CUDA_ERROR();
 			//std::cout << "Filtering done " << std::endl;
 			parallel_backprojection(&projection,image.get(),data->get_angle(group),physical_dims,physical_dims_proj);
@@ -136,6 +139,8 @@ public:
 			//std::cout << "Backprojection done " << std::endl;
 
 		}
+
+
 		//if (hull) image *= *hull;
 		//image *= float(dims_proj[0])/(float(ngroups)*2*boost::math::constants::pi<float>());
 		*image *= 1.0f/float(ngroups);
@@ -216,8 +221,8 @@ protected:
 		auto hofilter = cufilter->to_host();
 		auto data = hofilter->get_data_ptr();
 		size_t elements = hofilter->get_number_of_elements();
-		//size_t ncut = width/2*0.5;
-		size_t ncut = width/2*0.8;
+		size_t ncut = width/2*0.5;
+		//size_t ncut = width/2*1.0;
 		for ( size_t i = 1; i < ncut; i++){
 			data[i] *= 0.5*(1+std::cos(boost::math::constants::pi<T>()*T(i)/ncut));
 			data[width-i] *= 0.5*(1+std::cos(boost::math::constants::pi<T>()*T(i)/ncut));

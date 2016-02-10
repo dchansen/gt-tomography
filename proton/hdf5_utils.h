@@ -28,8 +28,9 @@ template<unsigned int D> void saveNDArray2HDF5(hoNDArray<float>* input,std::stri
 
 	   H5LTset_attribute_float(file_id,"/image","dimensions",dimensions.vec,D);
 	   vector_td<float,D> element_size_um;
-	   for (int i = 0; i < D; i++)
-		   element_size_um[i] = input->get_size(i)*dimensions[i]*float(1e4);
+	   for (int i = 0; i < D; i++){
+		   element_size_um[D-i-1] = dimensions[i]/input->get_size(i);
+	   }
 	   H5LTset_attribute_float(file_id,"/image","element_size_um",element_size_um.vec,D);
 	   H5LTset_attribute_float(file_id,"/image","origin",origin.vec,D);
 	   H5LTset_attribute_uint(file_id,"/image","iterations",&iterations,1);

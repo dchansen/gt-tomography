@@ -10,6 +10,7 @@ template<class T> void solver_non_negativity_filter(cuNDArray<T>* x , cuNDArray<
 template<class T> void solver_non_negativity_filter(hoCuNDArray<T>* x , hoCuNDArray<T>* g);
 
 
+template<class T> void shrink_diff(cuNDArray<T>* in_out, cuNDArray<T> * diff, typename realType<T>::Type gamma);
 
 template<class T> void hard_shrink(cuNDArray<T>* in_out, typename realType<T>::Type gamma);
 template<class T> void save_nd_array(cuNDArray<T>* array, std::string s){

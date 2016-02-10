@@ -33,6 +33,8 @@
 #include <math_constants.h>
 #include <boost/program_options.hpp>
 #include <boost/make_shared.hpp>
+
+#include "hdf5_utils.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -101,7 +103,7 @@ int main(int argc, char** argv)
     		("help", "produce help message")
     		("acquisition,a", po::value<string>(&acquisition_filename)->default_value("acquisition.hdf5"), "Acquisition data")
     		("samples,n",po::value<unsigned int>(),"Number of samples per ray")
-    		("output,f", po::value<string>(&outputFile)->default_value("reconstruction.real"), "Output filename")
+    		("output,f", po::value<string>(&outputFile)->default_value("reconstruction.hdf5"), "Output filename")
     		("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
     		("binning,b",po::value<string>(),"Binning file for 4d reconstruction")
     		("SAG","Use exact SAG correction if present")
@@ -213,6 +215,7 @@ int main(int argc, char** argv)
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();
+	E->offset_correct(&projections);
 
 	boost::shared_ptr<hoCuNDArray<float> > prior;
 
@@ -262,6 +265,7 @@ int main(int argc, char** argv)
 
 	auto result = solver.solve(&projections);
 
-	write_nd_array<float>( result.get(), outputFile.c_str());
+	//write_nd_array<float>( result.get(), outputFile.c_str());
+	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),"",iterations);
 }
 

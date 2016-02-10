@@ -102,7 +102,8 @@ public:
 		}
 
 		ARRAY_TYPE * x = new ARRAY_TYPE(*z);
-		ARRAY_TYPE * xold = new ARRAY_TYPE(*z);
+		ARRAY_TYPE * uold = new ARRAY_TYPE(*z);
+		ARRAY_TYPE* u =new ARRAY_TYPE(*z);
 
 		std::vector<boost::shared_ptr<ARRAY_TYPE> > subsets = this->encoding_operator_->projection_subsets(in);
 
@@ -117,16 +118,14 @@ public:
 			fill(precon_image.get(),ELEMENT_TYPE(1));
 			this->encoding_operator_->mult_M(precon_image.get(),&tmp_projection,false);
 			this->encoding_operator_->mult_MH(&tmp_projection,precon_image.get(),false);
-			*precon_image += _beta;
+			//*precon_image += _beta;
 			clamp_min(precon_image.get(),ELEMENT_TYPE(1e-6));
 			reciprocal_inplace(precon_image.get());
 			//ones_image *= (ELEMENT_TYPE) this->encoding_operator_->get_number_of_subsets();
 		}
 		ARRAY_TYPE tmp_image(image_dims.get());
 
-		ARRAY_TYPE f(image_dims.get());
 		ARRAY_TYPE d(image_dims.get());
-		clear(&f);
 		clear(&d);
 		REAL avg_lambda = calc_avg_lambda();
 		REAL t = 1;
@@ -143,7 +142,7 @@ public:
 
 				t = 0.5*(1+std::sqrt(1+4*t*t));
 				int subset = isubsets[isubset];
-				this->encoding_operator_->mult_M(x,tmp_projections[subset].get(),subset,false);
+				this->encoding_operator_->mult_M(z,tmp_projections[subset].get(),subset,false);
 				*tmp_projections[subset] -= *subsets[subset];
 				if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 					std::cout << "Iteration " <<i << " Subset " << subset << " Update norm: " << nrm2(tmp_projections[subset].get()) << std::endl;
@@ -151,27 +150,38 @@ public:
 
 				this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 				tmp_image *= -REAL(this->encoding_operator_->get_number_of_subsets());
-				axpy(+_beta,&d,&tmp_image);
+				//axpy(_beta,&d,&tmp_image);
 
 
 				tmp_image *= *precon_image;
 
 				*z += tmp_image;
 
-
 				{
 
 					ARRAY_TYPE s(z);
-					s -= d;
+					//s -= d;
 					*x = *z;
 					denoise(*x,s,*precon_image,1.0,avg_lambda);
+
 				}
-				//axpy(REAL(_beta),&tmp_image,x);
 				if (non_negativity_){
 					clamp_min(x,ELEMENT_TYPE(0));
 				}
+				//axpy(REAL(_beta),&tmp_image,x);
+
 				d += *x;
 				d -= *z;
+				//*z = *x;
+
+				*z = *x;
+				//*z = *u;
+				*z *= 1+(told-1)/t;
+				axpy(-(told-1)/t,uold,z);
+				*uold = *x;
+				//*u = z;
+				//*x = *z;
+				told = t;
 
 				/*
 				for (auto op : regularization_operators){
@@ -196,14 +206,14 @@ public:
 				}
 			*/
 
-				*z = *x;
+				/**z = *x;
 
 				*z *= 1+(told-1)/t;
 				axpy(-(told-1)/t,xold,z);
 				std::swap(x,xold);
 				*x = *z;
 				told = t;
-
+				*/
 				//step_size *= 0.99;
 
 			}
@@ -228,7 +238,7 @@ public:
 			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
 			 */
 		}
-		delete x,xold;
+		delete x,uold,u;
 
 
 		return boost::shared_ptr<ARRAY_TYPE>(z);
@@ -269,6 +279,7 @@ protected:
 		REAL tau = tau0;
 		REAL sigma = 1/(tau*L*L);
 		ARRAY_TYPE g(x.get_dimensions());
+		ARRAY_TYPE xold(x);
 		if (regularization_groups.empty() && regularization_operators.empty()){
 			x = s;
 			return;
@@ -276,6 +287,7 @@ protected:
 
 		for (auto it = 0u; it < reg_steps_; it++){
 			clear(&g);
+			REAL reg_val = 0;
 			for (auto reg_op_pair : regularization_operators){
 				auto reg_op = std::get<0>(reg_op_pair);
 				auto prior = std::get<1>(reg_op_pair);
@@ -283,6 +295,8 @@ protected:
 				if (prior) x -= *prior;
 				reg_op->mult_M(&x,&data);
 				if (prior) x += *prior;
+
+				reg_val += asum(&data)*reg_op->get_weight();
 				data *= sigma*reg_op->get_weight()/avg_lambda;
 				//updateF is the resolvent operator on the regularization
 				updateF(data, denoise_alpha, sigma);
@@ -309,7 +323,6 @@ protected:
 				}
 				if (prior) x += *prior;
 
-				std::cout << "Reg val: " << reg_val << " Scaling " << scaling*avg_lambda  << std::endl;
 				//updateFgroup is the resolvent operators on the group
 				updateFgroup(datas,denoise_alpha,sigma);
 
@@ -321,22 +334,32 @@ protected:
 
 			}
 			//updateG is the resolvent operator on the |x-s| part of the optimization
-			axpy(-tau*_beta,&g,&x);
+			axpy(-tau,&g,&x);
 			g = s;
 			g /= precon;
 
-			axpy(tau*_beta/(scaling*avg_lambda),&g,&x);
+			axpy(tau/(scaling*avg_lambda),&g,&x);
 
 			g = precon;
 
 			reciprocal_inplace(&g);
-			g *= tau*_beta/(scaling*avg_lambda);
+			g *= tau/(scaling*avg_lambda);
 			g += REAL(1);
 			x /= g;
 			//x *= 1/(1+tau/(scaling*avg_lambda));
-			REAL theta = 1/std::sqrt(1+2*gam*tau);
-			tau *= theta;
-			sigma /= theta;
+			//REAL theta = 1/std::sqrt(1+2*gam*tau);
+			REAL theta = 0.5;
+			//tau *= theta;
+			//sigma /= theta;
+			x *= REAL(1.0)+theta;
+			axpy(REAL(-theta),&xold,&x);
+			xold = x;
+			g = s;
+			g -= x;
+			REAL ival = nrm2(&g);
+			ival = ival*ival;
+
+			std::cout << "Cost " << reg_val+ival*_beta << std::endl;
 
 		}
 	}

@@ -17,7 +17,7 @@ static texture<float, 3, cudaReadModeElementType>
 projection_tex( 1, cudaFilterModeLinear, cudaAddressModeBorder );
 
 using namespace Gadgetron;
-/*
+
 static __device__ float sinc(float x ){
 	if (x == 0)
 		return 1;
@@ -25,15 +25,68 @@ static __device__ float sinc(float x ){
 	float x2 = CUDART_PI_F*x;
 	return sin(x2)/x2;
 }
-*/
-static __global__ void interpolate_projection(float * __restrict__ image, const float * __restrict__ mask, float * __restrict__ out_mask, intd3 image_size){
+
+
+static __device__ void interpolate_along(float & val, float & weight, const intd3 co, int dim, const intd3 image_size, const float * __restrict__ image){
+	const int width =1;
+	//const float kernel[9] = {9.19870514e-01,   7.13804116e-01, 4.62716498e-01,   2.45964865e-01,   1.03825822e-01, 3.28855260e-02,   6.99601802e-03,   7.58708130e-04,   7.72686684e-06};
+	//const float kernel[5] = { 7.61509399e-01,   3.24874218e-01,   6.81537432e-02,  4.80567914e-03,   7.72686684e-06};
+	//const float kernel[5] = {7.02354993e-01,   2.32592792e-01,   3.06056304e-02,       9.68690088e-04,   1.60812750e-07};
+	//const float kernel[2] = {1.26138724e-01,   1.11926154e-06};
+	//const float kernel[5] = {1.33964726e-01,   2.47331088e-04,   2.30516831e-09,
+	//         5.48923649e-18,   9.31314002e-43};
+	//const float kernel[5] = {6.09699226e-01,   1.29631779e-01,   7.54313367e-03, 5.88182195e-05,   1.73173349e-10};
+	//const float kernel[1] = {1};
+
+
+	//const float kernel[9] = {0.97273069,  0.89448611,  0.7753221 ,  0.63001629,  0.47552746,
+	//        0.32820196,  0.20127873,  0.10315762,  0.03671089};
+	intd3 co2 = co;
+	for (int i = 1; i <= width; i++){
+		co2[dim]=co[dim]-i;
+		float img = image[co_to_idx((co2+image_size)%image_size,image_size)];
+		if (img > 0){
+			//float w = sinc(float(i));
+			float w =  1;
+			//float w = kernel[i-1];
+			val += img*w;
+			weight += w;
+		}
+	}
+
+
+
+	for (int i = 1; i <= width; i++){
+		co2[dim]=co[dim]+i;
+		float img = image[co_to_idx((co2+image_size)%image_size,image_size)];
+		if (img > 0){
+
+			//float w = sinc(float(i));
+
+			//float w = kernel[i-1];
+			float w = 1;
+			val += img*w;
+			weight += w;
+		}
+	}
+
+}
+static __device__ void add_to_interpolation(float & val, int & n, intd3& co, const intd3 image_size, const float * __restrict__ image){
+	float w = image[co_to_idx((co+image_size)%image_size,image_size)];
+	if (w > 0){
+		val += w;
+		n++;
+	}
+}
+static __global__ void interpolate_projection(float* __restrict__ image_out, const float * __restrict__ image, const intd3 image_size){
 
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
 	const int num_elements = prod(image_size);
 
 	if (idx < num_elements){
 
-		if (mask[idx] <= 0){
+		if (image[idx] <= 0){
+
 
 			intd3 co = idx_to_co<3>(idx,image_size);
 /*
@@ -56,33 +109,53 @@ static __global__ void interpolate_projection(float * __restrict__ image, const 
 			image[idx] = val;
 			out_mask[idx] = mask_val;
 */
+/*
 
+			float val = 0;
+			int n = 0;
+			co[0]+=1;
+			add_to_interpolation(val,n,co,image_size,image);
+			co[0] -= 2;
+			add_to_interpolation(val,n,co,image_size,image);
+			co[0] += 1;
+			co[1] += 1;
+			add_to_interpolation(val,n,co,image_size,image);
+			co[1] -= 2;
+			add_to_interpolation(val,n,co,image_size,image);
+			if (n > 0)
+				image_out[idx] = val/n;
+*/
+/*
 			if (co[0] == 0){
-				image[idx] = image[idx+1];
-				out_mask[idx] = mask[idx+1];
-
+				image_out[idx] = image[idx+1];
 			} else if (co[0] == (image_size[0]-1)){
-				image[idx] = image[idx-1];
-				out_mask[idx] = mask[idx-1];
+				image_out[idx] = image[idx-1];
 			} else {
-
-
-			image[idx] = (image[idx-1]+image[idx+1])/2;
-			out_mask[idx] = (mask[idx-1]+mask[idx+1])/2;
+			image_out[idx] = (image[idx-1]+image[idx+1])/2;
 			}
+*/
+
+
+			float val = 0;
+
+			float w = 0;
+			interpolate_along(val,w,co,0,image_size,image);
+			interpolate_along(val,w,co,1,image_size,image);
+			if (w > 0)
+				image_out[idx] = val/w;
+
 		}
 	}
 }
 
 
-void Gadgetron::interpolate_missing( cuNDArray<float>* image, cuNDArray<float>* mask){
+void Gadgetron::interpolate_missing( cuNDArray<float>* image){
 	dim3 dimBlock, dimGrid;
 	setup_grid( image->get_number_of_elements(), &dimBlock, &dimGrid );
 
-	cuNDArray<float> mask_copy(*mask);
-std::cout << "Interpolating missing data" << std::endl;
-	interpolate_projection<<<dimGrid,dimBlock>>>(image->get_data_ptr(),mask->get_data_ptr(),mask_copy.get_data_ptr(), intd3(from_std_vector<size_t,3>(*image->get_dimensions())));
-	*mask = mask_copy;
+	cuNDArray<float> image_copy(image);
+	std::cout << "Interpolating missing data" << std::endl;
+	interpolate_projection<<<dimGrid,dimBlock>>>(image->get_data_ptr(),image_copy.get_data_ptr(),intd3(from_std_vector<size_t,3>(*image->get_dimensions())));
 
 }
 

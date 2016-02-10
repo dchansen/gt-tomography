@@ -19,10 +19,12 @@
 #include <algorithm>
 #include <sstream>
 #include <boost/program_options.hpp>
+#include "subsetAccumulateOperator.h"
 #include "cuDCTOperator.h"
 #include "osSPSSolver.h"
 #include "osMOMSolver.h"
 #include "osMOMSolverD.h"
+#include "osMOMSolverDual.h"
 #include "osMOMSolverD2.h"
 #include "hoCuNCGSolver.h"
 #include "osMOMSolverD3.h"
@@ -46,7 +48,6 @@
 #include "weightingOperator.h"
 #include "hoNDArray_math.h"
 #include "cuNCGSolver.h"
-#include "subsetAccumulateOperator.h"
 #include "accumulateOperator.h"
 #include "subselectionOperator.h"
 #include "subsetConverter.h"
@@ -114,8 +115,8 @@ int main(int argc, char** argv){
 	solver.get_inner_solver()->set_max_iterations(10);
 	solver.set_output_mode(cuSbCgSolver<float>::OUTPUT_VERBOSE);
 */
-	osMOMSolverD3<cuNDArray<float>> solver;
-	solver.set_tau(1e-1);
+	osMOMSolverDual<cuNDArray<float>> solver;
+	solver.set_tau(1e0);
 	solver.set_max_iterations(iterations);
 	solver.set_reg_steps(1);
 
@@ -155,10 +156,10 @@ int main(int argc, char** argv){
 
 
 	if (dct_weight > 0){
-		auto dctOp = boost::make_shared<identityOperator<cuNDArray<float>>>();
-		//auto dctOp = boost::make_shared<cuDCTOperator<float>>();
+		//auto dctOp = boost::make_shared<identityOperator<cuNDArray<float>>>();
+		auto dctOp = boost::make_shared<cuDCTOperator<float>>();
 		dctOp->set_domain_dimensions(&is_dims);
-		dctOp->set_codomain_dimensions(&is_dims);
+		//dctOp->set_codomain_dimensions(&is_dims);
 		dctOp->set_weight(dct_weight);
 
 		auto dctOp1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(dctOp,1);
@@ -183,8 +184,8 @@ int main(int argc, char** argv){
 	B->set_weight(1);
 
 
-	auto B2 = boost::make_shared<subsetConverter<cuNDArray<float>>>(B);
-	B2->set_domain_dimensions(&double_dims);
+	auto B2 = boost::make_shared<subsetConverter<cuNDArray<float>>>(E);
+	B2->set_domain_dimensions(&is_dims);
 	solver.set_encoding_operator(B2);
 
 

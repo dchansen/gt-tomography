@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <algorithm>
 
-#include <Eigen/Core>
+#include <eigen3/Eigen/Core>
 
 namespace Gadgetron{
 
@@ -78,8 +78,8 @@ namespace Gadgetron{
 
         R_->reserve(Eigen::VectorXi::Constant(num_elements_ext,this->get_num_neighbors()));
         
-        //std::vector< Eigen::Triplet<typename realType<T>::Type> > coefficients;
-        //coefficients.reserve(num_elements_ext*this->get_num_neighbors());
+        std::vector< Eigen::Triplet<typename realType<T>::Type> > coefficients;
+        coefficients.reserve(num_elements_ext*this->get_num_neighbors());
 
         for( unsigned int idx=0; idx<num_elements_ext; idx++ ){
 
@@ -172,14 +172,14 @@ namespace Gadgetron{
                 // Insert weight in resampling matrix R_
                 //
 
-                R_->insert( mat_i, mat_j ) =  weight;
-                //coefficients.push_back(Eigen::Triplet<typename realType<T>::Type>(mat_i, mat_j, weight));
+                //R_->insert( mat_i, mat_j ) =  weight;
+                coefficients.push_back(Eigen::Triplet<typename realType<T>::Type>(mat_i, mat_j, weight));
             }
         }  
+
+        R_->setFromTriplets(coefficients.begin(), coefficients.end());
+
         R_->makeCompressed();
-
-        //R_->setFromTriplets(coefficients.begin(), coefficients.end());
-
         this->preprocessed_ = true;
     }
 
@@ -200,13 +200,13 @@ namespace Gadgetron{
     }
 
 
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<float,1>;
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<float,2>;
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<float,3>;
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<float,4>;
+    template class hoLinearResampleOperator_eigen<float,1>;
+    template class hoLinearResampleOperator_eigen<float,2>;
+    template class hoLinearResampleOperator_eigen<float,3>;
+    template class hoLinearResampleOperator_eigen<float,4>;
 
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<double,1>;
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<double,2>;
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<double,3>;
-    template class EXPORTCPUREG hoLinearResampleOperator_eigen<double,4>;
+    template class hoLinearResampleOperator_eigen<double,1>;
+    template class hoLinearResampleOperator_eigen<double,2>;
+    template class hoLinearResampleOperator_eigen<double,3>;
+    template class hoLinearResampleOperator_eigen<double,4>;
 }

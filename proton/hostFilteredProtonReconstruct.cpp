@@ -8,7 +8,7 @@
 #include "parameterparser.h"
 #include "cuNDArray.h"
 #include "hoCuNDArray.h"
-
+#include "cuNDArray_fileio.h"
 
 #include "splineBackprojectionOperator.h"
 #include "hoNDArray_fileio.h"
@@ -118,7 +118,7 @@ int main( int argc, char** argv)
 	boost::shared_ptr< hoCuNDArray<_real> > result;
 	{
 		GPUTimer tim("Reconstruction time:");
-		result = E.calculate(rhs_dims,physical_dims,data,estimate_missing,2,1);
+		result = E.calculate(rhs_dims,physical_dims,data,estimate_missing);
 	}
 
 /*

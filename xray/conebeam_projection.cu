@@ -246,11 +246,10 @@ offset_correct_kernel( float *projections,
 
 		const uintd3 co = idx_to_co<3>( idx, dims );
 		const floatd2 offset = offsets[co[2]];
-		const float t = phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0];
+		const float t = (phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0])*offset[0]/abs(offset[0]);
 		const float omega = phys_dims[0]/2.0f-fabs(offset[0]);
 		//const float omega = phys_dims[0]*float(co[0])/(2.0f*float(dims[0]));
-
-		if( fabs(t) <= fabs(omega) ){
+		if( fabs(t) <= omega ){
 			//float w = 0.5*sinf(CUDART_PI_F*atanf(t/SDD)/(2.0f*atanf(omega/SDD)))+0.5;
 			float sqrt_w = sinf(CUDART_PI_F*(t+omega)/(4.0f*omega));
 			float w = sqrt_w*sqrt_w;
@@ -289,7 +288,7 @@ offset_correct( cuNDArray<float> *projections,
 
 	dim3 dimBlock, dimGrid;
 	setup_grid( prod(dims), &dimBlock, &dimGrid );
-
+	std::cout << "Calling offset correct" << std::endl;
 	offset_correct_kernel<<< dimGrid, dimBlock >>>( projections->get_data_ptr(), offsets, dims, phys_dims, SAD, SDD );
 	CHECK_FOR_CUDA_ERROR();
 }
@@ -314,12 +313,14 @@ offset_correct_kernel_sqrt( float *projections,
 
 		const uintd3 co = idx_to_co<3>( idx, dims );
 		const floatd2 offset = offsets[co[2]];
-		const float t = phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0];
+
+		const float t = (phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0])*offset[0]/abs(offset[0]);
+		//const float t = (phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0]);
 		const float omega = phys_dims[0]/2.0f-fabs(offset[0]);
 		//const float omega = phys_dims[0]*float(co[0])/(2.0f*float(dims[0]));
 
 		if( fabs(t) <= fabs(omega) ){
-			//float w = 0.5*sinf(CUDART_PI_F*atanf(t/SDD)/(2.0f*atanf(omega/SDD)))+0.5;
+			//float sqrt_w = sqrtf(0.5*sinf(CUDART_PI_F*atanf(t/SDD)/(2.0f*atanf(omega/SDD)))+0.5);
 			float sqrt_w = sinf(CUDART_PI_F*(t+omega)/(4.0f*omega));
 			projections[idx] *= sqrt_w;
 		}

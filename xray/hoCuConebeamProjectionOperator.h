@@ -72,7 +72,7 @@ public:
 		std::vector<floatd2> offsets = acquisition_->get_geometry()->get_offsets();
 		floatd2 mean_offset = std::accumulate(offsets.begin(),offsets.end(),floatd2(0,0))/float(offsets.size());
 
-		if( allow_offset_correction_override_ && mean_offset[0] > ps_dims_in_mm[0]*0.1f )
+		if( allow_offset_correction_override_ && std::abs(mean_offset[0]) > ps_dims_in_mm[0]*0.1f )
 			use_offset_correction_ = true;
 
 		preprocessed_ = true;

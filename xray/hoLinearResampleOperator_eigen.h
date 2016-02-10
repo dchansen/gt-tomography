@@ -4,16 +4,15 @@
 
 #include "resampleOperator.h"
 #include "complext.h"
-#include "cpureg_export.h"
 
 #include <armadillo>
 #define EIGEN_YES_I_KNOW_SPARSE_MODULE_IS_NOT_STABLE_YET 
-#include <Eigen/Sparse>
+#include <eigen3/Eigen/Sparse>
 
 namespace Gadgetron{
 
   template <class T, unsigned int D>
-  class EXPORTCPUREG hoLinearResampleOperator_eigen : public resampleOperator<hoNDArray<typename realType<T>::Type>, hoNDArray<T> >
+  class hoLinearResampleOperator_eigen : public resampleOperator<hoNDArray<typename realType<T>::Type>, hoNDArray<T> >
   {  
   public:
   
@@ -26,10 +25,7 @@ namespace Gadgetron{
   
     virtual unsigned int get_temporal_dimension_size() { return temporal_dim_size_; }
   
-    virtual boost::shared_ptr< linearOperator< hoNDArray<T> > > clone() {
-      return linearOperator< hoNDArray<T> >::clone(this);
-    }
-  
+
   private:
     inline bool is_border_pixel( typename reald<typename realType<T>::Type,D>::Type co, typename uint64d<D>::Type dims );
     inline unsigned int get_num_neighbors();
