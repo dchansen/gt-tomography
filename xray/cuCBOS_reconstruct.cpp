@@ -57,6 +57,7 @@
 #include "weightingOperator.h"
 #include "hoNDArray_math.h"
 #include "cuNCGSolver.h"
+#include "CT_acquisition.h"
 using namespace std;
 using namespace Gadgetron;
 

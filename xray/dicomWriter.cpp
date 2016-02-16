@@ -13,11 +13,11 @@
 #include "hoNDArray_math.h"
 #include "vector_td.h"
 #include "dicomWriter.h"
-#include <gdcm/gdcmImage.h>
-#include <gdcm/gdcmImageWriter.h>
-#include <gdcm/gdcmFileDerivation.h>
-#include <gdcm/gdcmUIDGenerator.h>
-#include <gdcm/gdcmAttribute.h>
+#include <gdcmImage.h>
+#include <gdcmImageWriter.h>
+#include <gdcmFileDerivation.h>
+#include <gdcmUIDGenerator.h>
+#include <gdcmAttribute.h>
 using namespace Gadgetron;
 
 

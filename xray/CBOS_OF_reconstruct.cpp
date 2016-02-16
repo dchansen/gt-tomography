@@ -26,6 +26,7 @@
 #include "hoCuPartialDerivativeOperator.h"
 #include "CBSubsetOperator.h"
 #include "osMOMSolverD.h"
+#include "osMOMSolverD3.h"
 #include "cuSolverUtils.h"
 #include <iostream>
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include <math_constants.h>
 #include <boost/program_options.hpp>
 #include <boost/make_shared.hpp>
+#include <solvers/osMOMSolverD3.h>
 #include "hoLinearResampleOperator_eigen.h"
 #include "multiplicationOperatorContainer.h"
 #include "cuLinearResampleOperator.h"
@@ -40,6 +42,8 @@
 #include "cuCGHSOFSolver.h"
 
 #include "hdf5_utils.h"
+#include "hoCuOFPartialDerivativeOperator.h"
+
 using namespace std;
 using namespace Gadgetron;
 
@@ -67,17 +71,11 @@ perform_registration( boost::shared_ptr< hoCuNDArray<float> > volume, float of_a
 
 	// Upload host data to device
 	//
-	int phase = 0;
-
-	unsigned int counter = 0;
 
 	for( unsigned int i=0; i<num_phases; i++ ){
 
-		if( i==phase )
-			continue;
-
-		hoCuNDArray<float> host_moving( &volume_dims_3d, volume->get_data_ptr()+((i+1)%num_phases)*num_elements_3d );
-		hoCuNDArray<float> host_fixed( &volume_dims_3d, volume->get_data_ptr()+i*num_elements_3d );
+		hoCuNDArray<float> host_fixed( &volume_dims_3d, volume->get_data_ptr()+((i+1)%num_phases)*num_elements_3d );
+		hoCuNDArray<float> host_moving( &volume_dims_3d, volume->get_data_ptr()+i*num_elements_3d );
 
 		cuNDArray<float> fixed_image(&host_fixed);
 		cuNDArray<float> moving_image(&host_moving);
@@ -99,14 +97,17 @@ perform_registration( boost::shared_ptr< hoCuNDArray<float> > volume, float of_a
 		// Run registration
 		//
 		boost::shared_ptr< cuNDArray<float> > result = OFs.solve( &fixed_image, &moving_image );
+        std::cout << "Dimensions of vector field ";
+        auto dims = *result->get_dimensions();
+        for (size_t d : dims) std::cout << d << " ";
+        std::cout << std::endl;
 
 		cuNDArray<float> dev_sub;
 		dev_sub.create( &volume_dims_3d_3, result->get_data_ptr() );
 
-		hoCuNDArray<float> host_sub( &volume_dims_3d_3, host_result_field->get_data_ptr()+counter*num_elements_3d*3 );
+		hoCuNDArray<float> host_sub( &volume_dims_3d_3, host_result_field->get_data_ptr()+i*num_elements_3d*3 );
 		host_sub = *dev_sub.to_host();
 
-		counter++;
 	}
 
 	/*
@@ -118,18 +119,6 @@ perform_registration( boost::shared_ptr< hoCuNDArray<float> > volume, float of_a
  }
 	 */
 
-	{
-		// Permute the displacement field (temporal dimension before 'vector' dimension)
-		std::vector<size_t> order;
-		order.push_back(0); order.push_back(1); order.push_back(2);
-		order.push_back(4); order.push_back(3);
-		cuNDArray<float> tmp(host_result_field.get()); // permute is too slow on the host
-		*host_result_field = *permute(&tmp, &order);
-
-		/*char filename[256];
-    sprintf(&(filename[0]), "displacement_field_%i.real", phase);
-    write_nd_array<float>(host_result_field.get(), (char*)filename);*/
-	}
 
 	return host_result_field;
 }
@@ -189,6 +178,7 @@ int main(int argc, char** argv)
 	unsigned int subsets;
 	float rho;
 	float tv_weight;
+    float tv_weight4d;
 	po::options_description desc("Allowed options");
 	string tv_prior_filename;
 	desc.add_options()
@@ -206,6 +196,7 @@ int main(int argc, char** argv)
     		("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
     		("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     		("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
+            ("TV4D",po::value<float>(&tv_weight4d)->default_value(0),"OF Total variation weight")
     		("use_prior","Use an FDK prior")
     		("TV-prior",po::value<string>(&tv_prior_filename)->default_value("reconstructionTV.real"),"TV prior for registration")
     		("3D","Only use binning data to determine wrong projections")
@@ -297,7 +288,7 @@ int main(int argc, char** argv)
 	//hoCuGPBBSolver<float> solver;
 	//hoCuCgDescentSolver<float> solver;
 //	osSPSSolver<hoCuNDArray<float>> solver;
-	osMOMSolverD<hoCuNDArray<float>> solver;
+	osMOMSolverD3<hoCuNDArray<float>> solver;
 	//osSPSSolver<hoCuNDArray<float>> solver;
 	//hoCuNCGSolver<float> solver;
 	solver.set_encoding_operator(E);
@@ -305,6 +296,7 @@ int main(int argc, char** argv)
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
 	solver.set_non_negativity_constraint(true);
+    solver.set_tau(1e-5);
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();
@@ -326,9 +318,19 @@ int main(int argc, char** argv)
 }
 */
 
-	auto tv_recon = boost::make_shared<hoCuNDArray<float>>();
-	*tv_recon = *read_nd_array<float>(tv_prior_filename.c_str());
-   auto displacements =	perform_registration( tv_recon, 0.05, 1, 3);
+
+    if (tv_weight4d > 0){
+        auto tv_recon = boost::make_shared<hoCuNDArray<float>>();
+	    *tv_recon = *read_nd_array<float>(tv_prior_filename.c_str());
+        auto displacements =	perform_registration( tv_recon, 0.1, 1, 3);
+        //clear(displacements.get());
+        auto DtOF = boost::make_shared<hoCuOFPartialDerivativeOperator<float>>();
+        DtOF->set_weight(tv_weight4d);
+        DtOF->set_displacement_field(displacements);
+        DtOF->set_domain_dimensions(&is_dims);
+        DtOF->set_codomain_dimensions(&is_dims);
+        solver.add_regularization_operator(DtOF);
+    }
 
   if (tv_weight > 0){
 
@@ -347,15 +349,7 @@ int main(int argc, char** argv)
   	Dz->set_weight(tv_weight);
   	Dz->set_domain_dimensions(&is_dims);
   	Dz->set_codomain_dimensions(&is_dims);
-
-  	if (binning->get_number_of_bins() > 1){
-  	auto Dt = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(3);
-  	Dt->set_weight(tv_weight);
-  	Dt->set_domain_dimensions(&is_dims);
-  	Dt->set_codomain_dimensions(&is_dims);
-  	solver.add_regularization_group({Dx,Dy,Dz,Dt});
-  	} else
-  		solver.add_regularization_group({Dx,Dy,Dz});
+	solver.add_regularization_group({Dx,Dy,Dz});
   }
 
 

@@ -4,10 +4,13 @@ include_directories(
   ${CUDA_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIR}
   ${GADGETRON_INCLUDE_DIR}
+  ${GDCM_INCLUDE_DIRS}
   ${CMAKE_SOURCE_DIR}/solvers
   ${CMAKE_SOURCE_DIR}/operators
   ${CMAKE_SOURCE_DIR}/proton
 )
+
+MESSAGE("Include dir ${GDCM_INCLUDE_DIRS}")
 
 # The Armadillo sparse matrix suppport seems to be too slow be be a real alternative to the eigen version
 #
@@ -23,7 +26,7 @@ include_directories(
 #endif(EIGEN_INCLUDE_DIR)
 
 cuda_add_library(Xray_kernels SHARED
-  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp dicomWriter.cpp  hoLinearResampleOperator_eigen.cpp hoLinearResampleOperator.cpp
+  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp dicomWriter.cpp  hoLinearResampleOperator_eigen.cpp hoLinearResampleOperator.cpp hoCuOFPartialDerivativeOperator.cpp
   ${EIGEN_RESAMPLER}
   )
 
