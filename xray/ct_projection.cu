@@ -82,7 +82,18 @@ float degrees2radians(float degree) {
 }
 
 
+static inline __device__
+floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & y_offset const intd2 & elements, const floatd2 & spacing,const floatd2 & central_element, const int3d & co){
 
+        float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]+y_offset);
+        float x = -rho*sin(phi);
+        float y = rho*cos(phi)-y_offset;
+        float z = spacing[1]*elements[1]*(co[1]-central_element[1])+det_focal_cyl2;
+
+
+
+        return floatd3(cos(det_focal_cyl[0])*x+sin(det_focal_cyl[0])*y,-sin(det_focal_cyl[0])*x+cos(det_focal_cyl[0])*y,z);
+    }
 
 
 //
@@ -91,18 +102,12 @@ float degrees2radians(float degree) {
 
 __global__ void
 ct_forwards_projection_kernel( float * __restrict__ projections,
-		const float * __restrict__ thetas,
-		const float * __restrict__ rhos, const float * __restrict__ zs,
-       	const float * __restrict__ dthetas,
-		const float * __restrict__ drhos, const float * __restrict__ dzs,
-                               const float * __restrict__ centralElement
-
-        const float * __restrict__ SDD,
-                               const float * __restrict__ centralElement,
+		const floatd3 * __restrict__ detector_focal_cyls,
+		const floatd3 * __restrict__ focal_offset_cyls,
+                               const floatd2 * __restrict__ centralElements,
 		floatd3 is_dims_in_pixels,
 		floatd3 is_dims_in_mm,
 		intd2 ps_dims_in_pixels_int,
-		floatd2 ps_dims_in_mm,
                                floatd2 ps_spacing,
 		int num_projections,
 		float SAD,
@@ -118,29 +123,25 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		// Projection space dimensions and spacing
 		//
 
-		const floatd2 ps_dims_in_pixels = floatd2(ps_dims_in_pixels_int[0], ps_dims_in_pixels_int[1]);
 
 		// Determine projection angle and rotation matrix
 		//
 
-		const float theta = thetas[co[2]];
-        const float rho = rhos[co[2]];
-        const float z = zs[co[2]];
-    	const float dtheta = thetas[co[2]];
-        const float drho = rhos[co[2]];
-        const float dz = zs[co[2]];
+        floatd3 detector_focal_cyl = detector_focal_cyls[co[2]];
+        floatd3 focal_cyl = detector_focal_cyl + focal_offset_cyls[co[2]];
+        const float centralElement = centralElements[co[2]];
 		// Find start and end point for the line integral (image space)
 		//
-		floatd3 startPoint = floatd3(-(rho+drho)*sin(theta+dtheta),(rho+drho)*cos(theta+dtheta),z+dz);
+		floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[2]);
 
 
 		// Projection plate indices
 		//
 
 
-        floatd3 detectorPoint = floatd3()
-		// Find direction vector of the line integral
+    	// Find direction vector of the line integral
 		//
+        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,SAD,ps_dims_in_pixels_int,ps_spacing,centralElement,co);
 
 		floatd3 dir = endPoint-startPoint;
 
@@ -304,7 +305,7 @@ conebeam_forwards_projection( cuNDArray<float> *projections,
 //
 
 void
-conebeam_forwards_projection( hoCuNDArray<float> *projections,
+ct_forwards_projection( hoCuNDArray<float> *projections,
 		hoCuNDArray<float> *image,
 		std::vector<float> angles,
 		std::vector<floatd2> offsets,
@@ -585,8 +586,11 @@ conebeam_spacecarver_kernel( bool * __restrict__ mask,
 		mask[idx] = result < 3;
 	}
 }
-template <bool FBP> __global__ void
+__global__ void
 conebeam_backwards_projection_kernel( float * __restrict__ image,
+       	const floatd3 * __restrict__ detector_focal_cyls,
+		const floatd3 * __restrict__ focal_offset_cyls,
+        const floatd2 * __restrict__ centralElements,
 		const float * __restrict__ angles,
 		floatd2 *offsets,
 		intd3 is_dims_in_pixels_int,
@@ -594,7 +598,6 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 		floatd2 ps_dims_in_pixels,
 		floatd2 ps_dims_in_mm,
 		int num_projections_in_batch,
-		float SDD,
 		float SAD,
 		bool accumulate )
 {
@@ -671,22 +674,6 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 
 			float weight = 1.0;
 
-			if( FBP ){
-
-				// Equation 3.59, page 96 and equation 10.2, page 386
-				// in Computed Tomography 2nd edition, Jiang Hsieh
-				//
-
-				const float xx = pos[0];
-				const float yy = pos[1];
-				const float beta = angle;
-				const float r = hypotf(xx,yy);
-				const float phi = atan2f(yy,xx);
-				const float D = SAD;
-				const float ym = r*sinf(beta-phi);
-				const float U = (D+ym)/D;
-				weight = 1.0f/(U*U);
-			}
 
 			// Read the projection data (bilinear interpolation enabled) and accumulate
 			//

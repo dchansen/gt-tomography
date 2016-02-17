@@ -297,6 +297,7 @@ int main(int argc, char** argv)
 	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
 	solver.set_non_negativity_constraint(true);
     solver.set_tau(1e-5);
+	solver.set_reg_steps(5);
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();

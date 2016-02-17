@@ -55,6 +55,7 @@ template<class T> void hoCuOFPartialDerivativeOperator<T>::mult_MH(hoCuNDArray<T
         in_copy -= in_view2;
         auto out_view = hoCuNDArray<T>(dims3d,out->get_data_ptr()+i*elements);
         Rs[i].mult_MH(&in_copy,&out_view,accumulate);
+        //out_view = in_copy;
     }
 }
 
