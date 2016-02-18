@@ -194,112 +194,6 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 	}
 }
 
-void
-conebeam_forwards_projection( cuNDArray<float> *projections,
-		cuNDArray<float> *image,
-		std::vector<float> angles,
-		std::vector<floatd2> offsets,
-		float samples_per_pixel,
-		floatd3 is_dims_in_mm,
-		floatd2 ps_dims_in_mm,
-		float SDD,
-		float SAD,
-		bool accumulate)
-{
-
-	//
-	// Validate the input
-	//
-
-	if( projections == 0x0 || image == 0x0 ){
-		throw std::runtime_error("Error: conebeam_forwards_projection: illegal array pointer provided");
-	}
-
-	if( projections->get_number_of_dimensions() != 3 ){
-		throw std::runtime_error("Error: conebeam_forwards_projection: projections array must be three-dimensional");
-	}
-
-	if( image->get_number_of_dimensions() != 3 ){
-		throw std::runtime_error("Error: conebeam_forwards_projection: image array must be three-dimensional");
-	}
-
-	if( projections->get_size(2) != angles.size() || projections->get_size(2) != offsets.size() ) {
-		throw std::runtime_error("Error: conebeam_forwards_projection: inconsistent sizes of input arrays/vectors");
-	}
-
-
-	CHECK_FOR_CUDA_ERROR();
-	int projection_res_x = projections->get_size(0);
-	int projection_res_y = projections->get_size(1);
-	int num_projections = projections->get_size(2);
-	
-	int matrix_size_x = image->get_size(0);
-	int matrix_size_y = image->get_size(1);
-	int matrix_size_z = image->get_size(2);
-
-	// Build texture from input image
-	//
-
-	cudaFuncSetCacheConfig(conebeam_forwards_projection_kernel, cudaFuncCachePreferL1);
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-	cudaExtent extent;
-	extent.width = matrix_size_x;
-	extent.height = matrix_size_y;
-	extent.depth = matrix_size_z;
-
-	cudaMemcpy3DParms cpy_params = {0};
-	cpy_params.kind = cudaMemcpyDeviceToDevice;
-	cpy_params.extent = extent;
-
-	cudaArray *image_array;
-	cudaMalloc3DArray(&image_array, &channelDesc, extent);
-	cpy_params.dstArray = image_array;
-	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
-	cudaMemcpy3D(&cpy_params);
-
-	cudaBindTextureToArray(image_tex, image_array, channelDesc);
-	CHECK_FOR_CUDA_ERROR();
-
-	// Allocate the angles, offsets and projections in device memory
-	//
-
-	thrust::device_vector<float> angles_devVec(angles);
-	thrust::device_vector<floatd2> offsets_devVec(offsets);
-
-	//
-	// Iterate over the batches
-	//
-
-	// Block/grid configuration
-	//
-
-	dim3 dimBlock, dimGrid;
-	setup_grid( projection_res_x*projection_res_y*num_projections, &dimBlock, &dimGrid );
-
-	// Launch kernel
-	//
-
-	floatd3 is_dims_in_pixels(matrix_size_x, matrix_size_y, matrix_size_z);
-	intd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
-
-	float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[0]);
-	floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
-
-	conebeam_forwards_projection_kernel<<< dimGrid, dimBlock >>>
-			( projections->get_data_ptr(), raw_angles, raw_offsets,
-					is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
-					num_projections, SDD, SAD, samples_per_pixel*float(matrix_size_x),accumulate );
-
-	// If not initial batch, start copying the old stuff
-	//
-
-
-	cudaFreeArray(image_array);
-
-	CHECK_FOR_CUDA_ERROR();
-
-}
 //
 // Forwards projection of a 3D volume onto a set of (binned) projections
 //
@@ -485,120 +379,22 @@ ct_forwards_projection( hoCuNDArray<float> *projections,
 
 }
 
-
-__global__ void
-conebeam_spacecarver_kernel( bool * __restrict__ mask,
-		const float * __restrict__ angles,
-		floatd2 *offsets,
-		intd3 is_dims_in_pixels_int,
-		floatd3 is_dims_in_mm,
-		floatd2 ps_dims_in_pixels,
-		floatd2 ps_dims_in_mm,
-		int num_projections_in_batch,
-		float SDD,
-		float SAD,
-		float limit)
-{
-	// Image voxel to backproject into (pixel coordinate and index)
-	//
-
-	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
-	const int num_elements = prod(is_dims_in_pixels_int);
-
-	if( idx < num_elements ){
-
-		const intd3 co = idx_to_co<3>(idx, is_dims_in_pixels_int);
-
-		const floatd3 is_pc = floatd3(co[0], co[1], co[2]) + floatd3(0.5);
-
-
-		// Normalized image space coordinate [-0.5, 0.5[
-		//
-
-		const floatd3 is_dims_in_pixels(is_dims_in_pixels_int[0],is_dims_in_pixels_int[1],is_dims_in_pixels_int[2]);
-
-		floatd3 is_nc = is_pc / is_dims_in_pixels - floatd3(0.5f);
-		is_nc[2] *= -1.0f;
-
-		// Image space coordinate in metric units
-		//
-
-		const floatd3 pos = is_nc * is_dims_in_mm;
-
-		// Read the existing output value for accumulation at this point.
-		// The cost of this fetch is hidden by the loop
-
-
-		// Backprojection loop
-		//
-
-		//bool result = true;
-		int result = 0;
-		for( int projection = 0; projection < num_projections_in_batch; projection++ ) {
-
-			// Projection angle
-			//
-
-			const float angle = degrees2radians(angles[projection]);
-
-			// Projection rotation matrix
-			//
-
-			const float3x3 inverseRotation = calcRotationMatrixAroundZ(-angle);
-
-			// Rotated image coordinate (local to the projection's coordinate system)
-			//
-
-			const floatd3 pos_proj = mul(inverseRotation, pos);
-
-			// Project the image position onto the projection plate.
-			// Account for half-fan and sag offsets.
-			//
-
-			const floatd3 startPoint = floatd3(0.0f, -SAD, 0.0f);
-			floatd3 dir = pos_proj - startPoint;
-			dir = dir / dir[1];
-			const floatd3 endPoint = startPoint + dir * SDD;
-			const floatd2 endPoint2d = floatd2(endPoint[0], endPoint[2]) - offsets[projection];
-
-			// Convert metric projection coordinates into pixel coordinates
-			//
-
-
-			floatd2 ps_pc = ((endPoint2d / ps_dims_in_mm) + floatd2(0.5f));
-
-			// Apply filter (filtered backprojection mode only)
-			//
-
-
-
-			// Read the projection data (bilinear interpolation enabled) and accumulate
-			//
-			float tmp = tex2DLayered( projections_mask_tex, ps_pc[0], ps_pc[1], projection );
-			if ((tmp < limit) && (tmp != 0))
-				//result = false;
-				result++;
-		}
-
-		// Output normalized image
-		//
-
-		mask[idx] = result < 3;
-	}
-}
-__global__ void
-conebeam_backwards_projection_kernel( float * __restrict__ image,
-       	const floatd3 * __restrict__ detector_focal_cyls,
-		const floatd3 * __restrict__ focal_offset_cyls,
-        const floatd2 * __restrict__ centralElements,
-		const float * __restrict__ angles,
-		floatd2 *offsets,
-		intd3 is_dims_in_pixels_int,
-		floatd3 is_dims_in_mm,
-		floatd2 ps_dims_in_pixels,
-		floatd2 ps_dims_in_mm,
-		int num_projections_in_batch,
-		float SAD,
+/**
+ *
+ * Assumption - projections are sorted by z. Each slice
+ **/
+ __global__ void
+ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx,ny,nz]
+       	const floatd3 * __restrict__ detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
+		const floatd3 * __restrict__ focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
+        const floatd2 * __restrict__ centralElements, // Central element on the detector
+        const intd2 * __restrict__ proj_indices, // Array of size nz containing first to last projection for slice
+		intd3 is_dims_in_pixels_int, //nx, ny, nz
+		floatd3 is_dims_in_mm, // Image size in mm
+		floatd2 ps_dims_in_pixels, //Projection size
+		floatd2 ps_spacing,  //Size of each projection element in mm
+		float SDD, //focalpoint - detector disance
+        int offset,
 		bool accumulate )
 {
 	// Image voxel to backproject into (pixel coordinate and index)
@@ -611,13 +407,13 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 
 		const intd3 co = idx_to_co<3>(idx, is_dims_in_pixels_int);
 
-		const floatd3 is_pc = floatd3(co[0], co[1], co[2]) + floatd3(0.5);
+		const floatd3 is_pc = floatd3(co) + floatd3(0.5);
 
 
 		// Normalized image space coordinate [-0.5, 0.5[
 		//
 
-		const floatd3 is_dims_in_pixels(is_dims_in_pixels_int[0],is_dims_in_pixels_int[1],is_dims_in_pixels_int[2]);
+		const floatd3 is_dims_in_pixels(is_dims_in_pixels_int);
 
 
 		const floatd3 is_nc = is_pc / is_dims_in_pixels - floatd3(0.5f);
@@ -637,48 +433,33 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 
 		float result = 0.0f;
 
-		for( int projection = 0; projection < num_projections_in_batch; projection++ ) {
+		for( int projection = proj_indices[co[2]][0]-offset; projection < (proj_indices[co[2]][1]-offset); projection++ ) {
 
 			// Projection angle
 			//
+            const floatd3 detector_focal_cyl = detector_focal_cyls[projection];
+            const floatd3 focal_cyl = focal_offset_cyls[projection]+detector_focal_cyl;
 
-			const float angle = degrees2radians(angles[projection]);
+            const floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[0]*cos(focal_cyl[0]),focal_cyl[2]);
+            const floatd3 focal_point = floatd3(-detector_focal_cyl[1]*sin(detector_focal_cyl[0]),detector_focal_cyl[0]*cos(detector_focal_cyl[0]),detector_focal_cyl[2]);
+            const floatd3 dir = pos-startPoint;
 
-			// Projection rotation matrix
-			//
 
-			const float3x3 inverseRotation = calcRotationMatrixAroundZ(-angle);
+            const float a = (dir[0]*dir[0]+dir[1]*dir[1]);
+            const float b = (pos[0]-focal_point[0])*dir[0]+(pos[1]-focal_point[1])*dir[1];
+            const float c= -SDD*SDD+(pos[0]-focal_point[0])*(pos[0]-focal_point[0])+(pos[1]-focal_point[1])*(pos[1]-focal_point[1]);
+            float t = (-b+sqrt(b*b-4*a*c))/(2*a);
 
-			// Rotated image coordinate (local to the projection's coordinate system)
-			//
-
-			const floatd3 pos_proj = mul(inverseRotation, pos);
-
-			// Project the image position onto the projection plate.
-			// Account for half-fan and sag offsets.
-			//
-
-			const floatd3 startPoint = floatd3(0.0f, -SAD, 0.0f);
-			floatd3 dir = pos_proj - startPoint;
-			dir = dir / dir[1];
-			const floatd3 endPoint = startPoint + dir * SDD;
-			const floatd2 endPoint2d = floatd2(endPoint[0], endPoint[2]) - offsets[projection];
-
+            const floatd3 detectorPoint = startPoint+dir*t;
+            const floatd2 element_rad = floatd2((atan2(detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0])*SDD/ps_spacing[0],
+                                                (detectorPoint[2]-detector_focal_cyl[2])/ps_spacing[1])-centralElements[projection]+0.5f;
 			// Convert metric projection coordinates into pixel coordinates
 			//
-
-			floatd2 ps_pc = ((endPoint2d / ps_dims_in_mm) + floatd2(0.5f));
-
-			// Apply filter (filtered backprojection mode only)
-			//
-
-			float weight = 1.0;
-
 
 			// Read the projection data (bilinear interpolation enabled) and accumulate
 			//
 
-			result +=  weight * tex2DLayered( projections_tex, ps_pc[0], ps_pc[1], projection );
+			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection );
 		}
 
 		// Output normalized image
@@ -692,136 +473,7 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 // Backprojection
 //
 
-void conebeam_spacecarver( cuNDArray<float> *projections,
-		cuNDArray<bool> *mask,
-		std::vector<float> angles,
-		std::vector<floatd2> offsets,
-		intd3 is_dims_in_pixels,
-		floatd3 is_dims_in_mm,
-		floatd2 ps_dims_in_mm,
-		float SDD,
-		float SAD,
-		float limit
-
-)
-{
-	//
-	// Validate the input
-	//
-
-	if( projections == 0x0 || mask == 0x0 ){
-		throw std::runtime_error("Error: conebeam_backwards_projection: illegal array pointer provided");
-	}
-
-	if( projections->get_number_of_dimensions() != 3 ){
-		throw std::runtime_error("Error: conebeam_backwards_projection: projections array must be three-dimensional");
-	}
-
-	if( mask->get_number_of_dimensions() != 3 ){
-		throw std::runtime_error("Error: conebeam_backwards_projection: image array must be three-dimensional");
-	}
-
-	if( projections->get_size(2) != angles.size() || projections->get_size(2) != offsets.size() ) {
-		throw std::runtime_error("Error: conebeam_backwards_projection: inconsistent sizes of input arrays/vectors");
-	}
-
-	// Some utility variables
-	//
-
-	int matrix_size_x = mask->get_size(0);
-	int matrix_size_y = mask->get_size(1);
-	int matrix_size_z = mask->get_size(2);
-
-	floatd3 is_dims(matrix_size_x, matrix_size_y, matrix_size_z);
-
-	int projection_res_x = projections->get_size(0);
-	int projection_res_y = projections->get_size(1);
-	int num_projections = projections->get_size(2);
-
-	floatd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
-
-	// Allocate device memory for the backprojection result
-	//
-	// Allocate the angles, offsets and projections in device memory
-	//
-
-	thrust::device_vector<float> angles_devVec(angles);
-	thrust::device_vector<floatd2> offsets_devVec(offsets);
-
-	std::vector<size_t> dims;
-	dims.push_back(projection_res_x);
-	dims.push_back(projection_res_y);
-	dims.push_back(num_projections);
-
-
-	//
-	// Iterate over batches
-	//
-
-	float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[0]);
-	floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
-
-
-
-	// Build array for input texture
-	//
-
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-	cudaExtent extent;
-	extent.width = projection_res_x;
-	extent.height = projection_res_y;
-	extent.depth = num_projections;
-
-	cudaArray *projections_array;
-	cudaMalloc3DArray( &projections_array, &channelDesc, extent, cudaArrayLayered );
-	CHECK_FOR_CUDA_ERROR();
-
-	cudaMemcpy3DParms cpy_params = {0};
-	cpy_params.extent = extent;
-	cpy_params.dstArray = projections_array;
-	cpy_params.kind = cudaMemcpyDeviceToDevice;
-	cpy_params.srcPtr =
-			make_cudaPitchedPtr( (void*)projections->get_data_ptr(), projection_res_x*sizeof(float),
-					projection_res_x, projection_res_y );
-	cudaMemcpy3D( &cpy_params );
-	CHECK_FOR_CUDA_ERROR();
-
-	cudaBindTextureToArray( projections_mask_tex, projections_array, channelDesc );
-	CHECK_FOR_CUDA_ERROR();
-
-	// Upload projections for the next batch
-	// - to enable streaming
-	//
-	// Define dimensions of grid/blocks.
-	//
-
-	dim3 dimBlock, dimGrid;
-	setup_grid( matrix_size_x*matrix_size_y*matrix_size_z, &dimBlock, &dimGrid );
-
-	// Invoke kernel
-	//
-
-	cudaFuncSetCacheConfig(conebeam_spacecarver_kernel, cudaFuncCachePreferL1);
-
-	conebeam_spacecarver_kernel<<< dimGrid, dimBlock >>>
-			( mask->get_data_ptr(), raw_angles, raw_offsets,
-					is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
-					num_projections,  SDD, SAD, limit );
-
-	CHECK_FOR_CUDA_ERROR();
-
-	// Cleanup
-	//
-
-	cudaUnbindTexture(projections_mask_tex);
-	cudaFreeArray(projections_array);
-	CHECK_FOR_CUDA_ERROR();
-}
-//
-// Backprojection
-//
-
-void conebeam_backwards_projection( cuNDArray<float> *projections,
+void ct_backwards_projection( cuNDArray<float> *projections,
 		cuNDArray<float> *image,
 		std::vector<float> angles,
 		std::vector<floatd2> offsets,

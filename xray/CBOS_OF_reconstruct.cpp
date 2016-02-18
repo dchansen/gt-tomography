@@ -326,6 +326,7 @@ int main(int argc, char** argv)
         auto displacements =	perform_registration( tv_recon, 0.1, 1, 3);
         //clear(displacements.get());
         auto DtOF = boost::make_shared<hoCuOFPartialDerivativeOperator<float>>();
+		//auto DtOF = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(3);
         DtOF->set_weight(tv_weight4d);
         DtOF->set_displacement_field(displacements);
         DtOF->set_domain_dimensions(&is_dims);

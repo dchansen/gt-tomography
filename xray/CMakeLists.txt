@@ -82,6 +82,10 @@ target_link_libraries(CBCT_forwards_projection Xray_kernels gadgetron_toolbox_lo
 #if(EIGEN_INCLUDE_DIR)
 add_executable(CB_OF_reconstruct CB_OF_reconstruct.cpp)
 target_link_libraries(CB_OF_reconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
+
+add_executable(cuCT_reconstruct cuCT_reconstruct.cpp)
+target_link_libraries(cuCT_reconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #endif(EIGEN_INCLUDE_DIR)
 
 #install(TARGETS Reconstruct DESTINATION bin)

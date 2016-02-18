@@ -6,6 +6,8 @@
 #include <gdcmAttribute.h>
 #include <gdcmImageReader.h>
 
+#include <boost/make_shared.hpp>
+
 namespace Gadgetron {
     struct CT_geometry {
         std::vector<float> angles;
