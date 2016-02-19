@@ -88,7 +88,7 @@ floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & y_offset
         float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]+y_offset);
         float x = -rho*sin(phi);
         float y = rho*cos(phi)-y_offset;
-        float z = spacing[1]*elements[1]*(co[1]-central_element[1])+det_focal_cyl2;
+        float z = spacing[1]*elements[1]*(co[1]-central_element[1])+det_focal_cyl[2];
 
 
 

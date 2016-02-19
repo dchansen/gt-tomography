@@ -4,7 +4,7 @@
 #include "resampleOperator.h"
 #include "complext.h"
 #include "hoArmadillo.h"
-
+#include <armadillo>
 namespace Gadgetron{
 
   template <class T, unsigned int D>

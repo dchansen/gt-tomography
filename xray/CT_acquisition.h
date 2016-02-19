@@ -10,6 +10,11 @@
 
 namespace Gadgetron {
     struct CT_geometry {
+        CT_geometry() : angles(), detectorFocalCenterAngularPosition(), detectorFocalCenterAxialPosition(),
+                        constantRadialDistance(), detectorCentralElement(), sourceAngularPositionShift(),
+                        sourceAxialPositionShift(), sourceRadialDistanceShift(){
+        }
+
         std::vector<float> angles;
         floatd2 detectorSize;
 
@@ -25,6 +30,9 @@ namespace Gadgetron {
 
     class CT_acquisition {
     public:
+        CT_acquisition() : projections(), geometry(){
+
+        }
         hoCuNDArray<float> projections;
         CT_geometry geometry;
 
@@ -66,11 +74,13 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7029, 0x100B> detectorShape;
             detectorShape.Set(ds);
-            if (detectorShape.GetValue() != "CYLINDRICAL") throw std::runtime_error("Detector not cylindrical!");
+            if (detectorShape.GetValue() != "CYLINDRICAL ") {
+                std::cout << "Detector shape: " << detectorShape.GetValue() << "X" << std::endl;
+                throw std::runtime_error("Detector not cylindrical!");
+            }
         }
-        CT_geometry & geometry = result->geometry;
+        CT_geometry * geometry = &result->geometry;
         float* projectionPtr = result->projections.get_data_ptr();
-
         for (auto fileStr : files){
             gdcm::Reader reader;
 
@@ -81,35 +91,35 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7031,0x1001> detectorAngularPosition;
             detectorAngularPosition.Set(ds);
-            geometry.detectorFocalCenterAngularPosition.push_back(detectorAngularPosition.GetValue());
+            geometry->detectorFocalCenterAngularPosition.push_back(detectorAngularPosition.GetValue());
 
             gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
             detectorAxialPosition.Set(ds);
-            geometry.detectorFocalCenterAxialPosition.push_back(detectorAxialPosition.GetValue());
+            geometry->detectorFocalCenterAxialPosition.push_back(detectorAxialPosition.GetValue());
 
             gdcm::Attribute<0x7031,0x1003> detectorRadialDistance;
             detectorRadialDistance.Set(ds);
-            geometry.detectorFocalRadialDistance.push_back(detectorRadialDistance.GetValue());
+            geometry->detectorFocalRadialDistance.push_back(detectorRadialDistance.GetValue());
 
             gdcm::Attribute<0x7031,0x1031> constantRadialDistance;
             constantRadialDistance.Set(ds);
-            geometry.constantRadialDistance.push_back(constantRadialDistance.GetValue());
+            geometry->constantRadialDistance.push_back(constantRadialDistance.GetValue());
 
             gdcm::Attribute<0x7031,0x1033> centralElement;
             centralElement.Set(ds);
-            geometry.detectorCentralElement.push_back(floatd2(centralElement.GetValue(0),centralElement.GetValue(1)));
+            geometry->detectorCentralElement.push_back(floatd2(centralElement.GetValue(0),centralElement.GetValue(1)));
 
             gdcm::Attribute<0x7033,0x100B> sourceAngularPositionShift;
             sourceAngularPositionShift.Set(ds);
-            geometry.sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
+            geometry->sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
 
             gdcm::Attribute<0x7033,0x100C>  sourceAxialPositionShift;
             sourceAxialPositionShift.Set(ds);
-            geometry.sourceAxialPositionShift.push_back(sourceAxialPositionShift.GetValue());
+            geometry->sourceAxialPositionShift.push_back(sourceAxialPositionShift.GetValue());
 
             gdcm::Attribute<0x7033,0x100D> sourceRadialDistanceShift;
             sourceRadialDistanceShift.Set(ds);
-            geometry.sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
+            geometry->sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
 
             gdcm::ImageReader imReader;
             imReader.SetFileName(fileStr.c_str());
@@ -139,6 +149,7 @@ namespace Gadgetron {
 
         }
 
+        return result;
 
     }
 
