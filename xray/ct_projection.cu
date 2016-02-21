@@ -475,14 +475,15 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 
 void ct_backwards_projection( cuNDArray<float> *projections,
 		cuNDArray<float> *image,
-		std::vector<float> angles,
-		std::vector<floatd2> offsets,
-		intd3 is_dims_in_pixels,
-		floatd3 is_dims_in_mm,
-		floatd2 ps_dims_in_mm,
-		float SDD,
-		float SAD,
-		bool use_offset_correction,
+       	std::vector<floatd3> & detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
+		std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
+        std::vector<floatd2> & centralElements, // Central element on the detector
+        std::vector<intd2> & proj_indices, // Array of size nz containing first to last projection for slice
+		intd3 is_dims_in_pixels_int, //nx, ny, nz
+		floatd3 is_dims_in_mm, // Image size in mm
+		floatd2 ps_dims_in_pixels, //Projection size
+		floatd2 ps_spacing,  //Size of each projection element in mm
+		float SDD, //focalpoint - detector disance
 		bool accumulate
 )
 {
@@ -526,8 +527,9 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	// Allocate the angles, offsets and projections in device memory
 	//
 
-	thrust::device_vector<float> angles_devVec(angles);
-	thrust::device_vector<floatd2> offsets_devVec(offsets);
+	thrust::device_vector<floatd3> detector_focal_cylVec(detector_focal_cyls);
+	thrust::device_vector<floatd2> centralElementVec(centralElements);
+	thrust::device_vector<floatd3> focal_offset_cylVec(focal_offset_cyls);
 
 	std::vector<size_t> dims;
 	dims.push_back(projection_res_x);
@@ -542,63 +544,65 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[0]);
 	floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
 
+	int batchsize = cudaDeviceManager::Instance()->max_texture3d()[2];
+	size_t num_batches = (num_projections+batchsize-1)/batchsize;
 
-	if (use_offset_correction)
-		offset_correct_sqrt( projections, raw_offsets, ps_dims_in_mm, SAD, SDD );
-
+	float * proj_ptr = projections->get_data_ptr();
+	size_t elements_left = projections->get_number_of_elements();
 	// Build array for input texture
 	//
 
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-	cudaExtent extent;
-	extent.width = projection_res_x;
-	extent.height = projection_res_y;
-	extent.depth = num_projections;
+	for (size_t batch = 0; batch < num_batches; batch++) {
+		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
+		cudaExtent extent;
+		extent.width = projection_res_x;
+		extent.height = projection_res_y;
+		extent.depth = std::min(num_projections,elements_left);
 
-	cudaArray *projections_array;
-	cudaMalloc3DArray( &projections_array, &channelDesc, extent, cudaArrayLayered );
-	CHECK_FOR_CUDA_ERROR();
+		cudaArray *projections_array;
+		cudaMalloc3DArray(&projections_array, &channelDesc, extent, cudaArrayLayered);CHECK_FOR_CUDA_ERROR();
 
-	cudaMemcpy3DParms cpy_params = {0};
-	cpy_params.extent = extent;
-	cpy_params.dstArray = projections_array;
-	cpy_params.kind = cudaMemcpyDeviceToDevice;
-	cpy_params.srcPtr =
-			make_cudaPitchedPtr( (void*)projections->get_data_ptr(), projection_res_x*sizeof(float),
-					projection_res_x, projection_res_y );
-	cudaMemcpy3D( &cpy_params );
-	CHECK_FOR_CUDA_ERROR();
+		cudaMemcpy3DParms cpy_params = {0};
+		cpy_params.extent = extent;
+		cpy_params.dstArray = projections_array;
+		cpy_params.kind = cudaMemcpyDeviceToDevice;
+		cpy_params.srcPtr =
+				make_cudaPitchedPtr((void *) proj_ptr, projection_res_x * sizeof(float),
+									projection_res_x, projection_res_y);
+		cudaMemcpy3D(&cpy_params);CHECK_FOR_CUDA_ERROR();
 
-	cudaBindTextureToArray( projections_tex, projections_array, channelDesc );
-	CHECK_FOR_CUDA_ERROR();
+		cudaBindTextureToArray(projections_tex, projections_array, channelDesc);CHECK_FOR_CUDA_ERROR();
 
-	// Upload projections for the next batch
-	// - to enable streaming
-	//
-	// Define dimensions of grid/blocks.
-	//
+		// Upload projections for the next batch
+		// - to enable streaming
+		//
+		// Define dimensions of grid/blocks.
+		//
 
-	dim3 dimBlock, dimGrid;
-	setup_grid( matrix_size_x*matrix_size_y*matrix_size_z, &dimBlock, &dimGrid );
+		dim3 dimBlock, dimGrid;
+		setup_grid(matrix_size_x * matrix_size_y * matrix_size_z, &dimBlock, &dimGrid);
 
-	// Invoke kernel
-	//
+		// Invoke kernel
+		//
 
-	cudaFuncSetCacheConfig(conebeam_backwards_projection_kernel<false>, cudaFuncCachePreferL1);
+		cudaFuncSetCacheConfig(ct_backwards_projection_kernel < false > , cudaFuncCachePreferL1);
 
-	conebeam_backwards_projection_kernel<false	><<< dimGrid, dimBlock >>>
-			( image->get_data_ptr(), raw_angles, raw_offsets,
-					is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
-					num_projections,  SDD, SAD, accumulate );
+		ct_backwards_projection_kernel < false ><<<dimGrid, dimBlock >>>
+		(image->get_data_ptr(), raw_angles, raw_offsets,
+				is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
+				num_projections, SDD, SAD, true);
 
-	CHECK_FOR_CUDA_ERROR();
+		CHECK_FOR_CUDA_ERROR();
 
-	// Cleanup
-	//
+		proj_ptr += extent.width*extent.depth*extent.height;
+		elements_left -= (extent.width*extent.depth*extent.height;
 
-	cudaUnbindTexture(projections_tex);
-	cudaFreeArray(projections_array);
-	CHECK_FOR_CUDA_ERROR();
+		// Cleanup
+		//
+
+		cudaUnbindTexture(projections_tex);
+		cudaFreeArray(projections_array);CHECK_FOR_CUDA_ERROR();
+	}
 }
 template <bool FBP>
 void conebeam_backwards_projection( hoCuNDArray<float> *projections,
