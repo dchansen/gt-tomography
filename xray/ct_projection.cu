@@ -2,7 +2,7 @@
 // This code performs 3D cone beam CT forwards and backwards projection
 //
 
-#include "conebeam_projection.h"
+#include "ct_projection.h"
 #include "float3x3.h"
 #include "hoCuNDArray_elemwise.h"
 #include "vector_td.h"
@@ -83,11 +83,11 @@ float degrees2radians(float degree) {
 
 
 static inline __device__
-floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & y_offset const intd2 & elements, const floatd2 & spacing,const floatd2 & central_element, const int3d & co){
+floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & y_offset, const intd2 & elements, const floatd2 & spacing,const floatd2 & central_element, const intd3 & co){
 
         float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]+y_offset);
-        float x = -rho*sin(phi);
-        float y = rho*cos(phi)-y_offset;
+        float x = -det_focal_cyl[0]*sin(phi);
+        float y = det_focal_cyl[0]*cos(phi)-y_offset;
         float z = spacing[1]*elements[1]*(co[1]-central_element[1])+det_focal_cyl[2];
 
 
@@ -129,7 +129,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 
         floatd3 detector_focal_cyl = detector_focal_cyls[co[2]];
         floatd3 focal_cyl = detector_focal_cyl + focal_offset_cyls[co[2]];
-        const float centralElement = centralElements[co[2]];
+        const floatd2 centralElement = centralElements[co[2]];
 		// Find start and end point for the line integral (image space)
 		//
 		floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[2]);
@@ -197,7 +197,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 //
 // Forwards projection of a 3D volume onto a set of (binned) projections
 //
-
+/*
 void
 ct_forwards_projection( hoCuNDArray<float> *projections,
 		hoCuNDArray<float> *image,
@@ -378,7 +378,7 @@ ct_forwards_projection( hoCuNDArray<float> *projections,
 	CHECK_FOR_CUDA_ERROR();
 
 }
-
+*/
 /**
  *
  * Assumption - projections are sorted by z. Each slice
@@ -394,8 +394,7 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 		floatd2 ps_dims_in_pixels, //Projection size
 		floatd2 ps_spacing,  //Size of each projection element in mm
 		float SDD, //focalpoint - detector disance
-        int offset,
-		bool accumulate )
+        int offset)
 {
 	// Image voxel to backproject into (pixel coordinate and index)
 	//
@@ -423,11 +422,6 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 
 		const floatd3 pos = is_nc * is_dims_in_mm;
 
-		// Read the existing output value for accumulation at this point.
-		// The cost of this fetch is hidden by the loop
-
-		const float incoming = (accumulate) ? image[idx] : 0.0f;
-
 		// Backprojection loop
 		//
 
@@ -448,7 +442,7 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             const float a = (dir[0]*dir[0]+dir[1]*dir[1]);
             const float b = (pos[0]-focal_point[0])*dir[0]+(pos[1]-focal_point[1])*dir[1];
             const float c= -SDD*SDD+(pos[0]-focal_point[0])*(pos[0]-focal_point[0])+(pos[1]-focal_point[1])*(pos[1]-focal_point[1]);
-            float t = (-b+sqrt(b*b-4*a*c))/(2*a);
+            float t = (-b+::sqrt(b*b-4*a*c))/(2*a);
 
             const floatd3 detectorPoint = startPoint+dir*t;
             const floatd2 element_rad = floatd2((atan2(detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0])*SDD/ps_spacing[0],
@@ -465,7 +459,7 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 		// Output normalized image
 		//
 
-		image[idx] = incoming + result  ;
+		image[idx] += result  ;
 	}
 }
 
@@ -479,7 +473,7 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
         std::vector<floatd2> & centralElements, // Central element on the detector
         std::vector<intd2> & proj_indices, // Array of size nz containing first to last projection for slice
-		intd3 is_dims_in_pixels_int, //nx, ny, nz
+		intd3 is_dims_in_pixels, //nx, ny, nz
 		floatd3 is_dims_in_mm, // Image size in mm
 		floatd2 ps_dims_in_pixels, //Projection size
 		floatd2 ps_spacing,  //Size of each projection element in mm
@@ -503,10 +497,6 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		throw std::runtime_error("Error: conebeam_backwards_projection: image array must be three-dimensional");
 	}
 
-	if( projections->get_size(2) != angles.size() || projections->get_size(2) != offsets.size() ) {
-		throw std::runtime_error("Error: conebeam_backwards_projection: inconsistent sizes of input arrays/vectors");
-	}
-
 	// Some utility variables
 	//
 
@@ -520,7 +510,6 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	int projection_res_y = projections->get_size(1);
 	int num_projections = projections->get_size(2);
 
-	floatd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
 
 	// Allocate device memory for the backprojection result
 	//
@@ -530,6 +519,12 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	thrust::device_vector<floatd3> detector_focal_cylVec(detector_focal_cyls);
 	thrust::device_vector<floatd2> centralElementVec(centralElements);
 	thrust::device_vector<floatd3> focal_offset_cylVec(focal_offset_cyls);
+    thrust::device_vector<intd2> proj_indicesVec(proj_indices);
+
+    auto raw_focal_cyl = thrust::raw_pointer_cast(detector_focal_cylVec.data());
+    auto raw_centralElements = thrust::raw_pointer_cast(centralElementVec.data());
+    auto raw_focal_offsets = thrust::raw_pointer_cast(focal_offset_cylVec.data());
+    auto raw_proj_indices = thrust::raw_pointer_cast(proj_indicesVec.data());
 
 	std::vector<size_t> dims;
 	dims.push_back(projection_res_x);
@@ -537,27 +532,29 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	dims.push_back(num_projections);
 
 
+    if (!accumulate)
+        clear(image);
 	//
 	// Iterate over batches
 	//
 
-	float* raw_angles = thrust::raw_pointer_cast(&angles_devVec[0]);
-	floatd2* raw_offsets = thrust::raw_pointer_cast(&offsets_devVec[0]);
 
-	int batchsize = cudaDeviceManager::Instance()->max_texture3d()[2];
+//	int batchsize = cudaDeviceManager::Instance()->max_texture3d()[2];
+    int batchsize = 2048;
 	size_t num_batches = (num_projections+batchsize-1)/batchsize;
 
 	float * proj_ptr = projections->get_data_ptr();
 	size_t elements_left = projections->get_number_of_elements();
 	// Build array for input texture
 	//
-
+    int offset = 0;
+    cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
 	for (size_t batch = 0; batch < num_batches; batch++) {
 		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
 		cudaExtent extent;
 		extent.width = projection_res_x;
 		extent.height = projection_res_y;
-		extent.depth = std::min(num_projections,elements_left);
+		extent.depth = std::min(size_t(num_projections),elements_left);
 
 		cudaArray *projections_array;
 		cudaMalloc3DArray(&projections_array, &channelDesc, extent, cudaArrayLayered);CHECK_FOR_CUDA_ERROR();
@@ -585,17 +582,17 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		// Invoke kernel
 		//
 
-		cudaFuncSetCacheConfig(ct_backwards_projection_kernel < false > , cudaFuncCachePreferL1);
 
-		ct_backwards_projection_kernel < false ><<<dimGrid, dimBlock >>>
-		(image->get_data_ptr(), raw_angles, raw_offsets,
-				is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_dims_in_mm,
-				num_projections, SDD, SAD, true);
+		ct_backwards_projection_kernel<<<dimGrid, dimBlock >>>
+		(image->get_data_ptr(), raw_focal_cyl,raw_focal_offsets,raw_centralElements, raw_proj_indices,
+				is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_spacing,
+				SDD,offset);
 
 		CHECK_FOR_CUDA_ERROR();
 
+        offset += extent.depth;
 		proj_ptr += extent.width*extent.depth*extent.height;
-		elements_left -= (extent.width*extent.depth*extent.height;
+		elements_left -= extent.width*extent.depth*extent.height;
 
 		// Cleanup
 		//
@@ -604,8 +601,8 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		cudaFreeArray(projections_array);CHECK_FOR_CUDA_ERROR();
 	}
 }
-template <bool FBP>
-void conebeam_backwards_projection( hoCuNDArray<float> *projections,
+    /*
+void ct_backwards_projection( hoCuNDArray<float> *projections,
 		hoCuNDArray<float> *image,
 		std::vector<float> angles,
 		std::vector<floatd2> offsets,
@@ -954,23 +951,7 @@ void conebeam_backwards_projection( hoCuNDArray<float> *projections,
 	CUDA_CALL(cudaStreamDestroy(mainStream));
 	CHECK_FOR_CUDA_ERROR();
 }
+     */
 
-struct cuMultBool {
-	__device__ float operator()(float x, bool y) { return x*y;}
-};
-void apply_mask(cuNDArray<float>* image, cuNDArray<bool>* mask){
-	thrust::transform(image->begin(),image->end(),mask->begin(),image->begin(),cuMultBool());
 
-}
-
-// Template instantiations
-//
-
-template void conebeam_backwards_projection<false>
-( hoCuNDArray<float>*, hoCuNDArray<float>*, std::vector<float>, std::vector<floatd2>, std::vector<unsigned int>,
-		int, intd3, floatd3, floatd2, float, float, bool, bool, bool, cuNDArray<float>*, cuNDArray<float>* );
-
-template void conebeam_backwards_projection<true>
-( hoCuNDArray<float>*, hoCuNDArray<float>*, std::vector<float>, std::vector<floatd2>, std::vector<unsigned int>,
-		int, intd3, floatd3, floatd2, float, float, bool, bool, bool, cuNDArray<float>*, cuNDArray<float>* );
 }

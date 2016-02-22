@@ -11,6 +11,7 @@
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/extrema.h>
+#include <vector>
 
 #include "histogram.h"
 
@@ -50,7 +51,8 @@ template<class T> boost::shared_ptr<cuNDArray<float> >  parzen_grid(cuNDArray<T>
 	start = thrust::min_element(data->begin(),data->end());
 	end = thrust::max_element(data->begin(),data->end());
 
-	std::vector<size_t> pdims(1,bins);
+	std::vector<size_t> pdims;
+	pdims.push_back(bins);
 	boost::shared_ptr<cuNDArray<float> > parzen(new cuNDArray<float>(&pdims));
 	parzen_kernel<<<gridSize,blockSize,blockSize*sizeof(T)>>>(data->get_data_ptr(),parzen->get_data_ptr(),sigma,start,end,bins,data->get_number_of_elements());
 

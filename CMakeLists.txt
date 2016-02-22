@@ -57,11 +57,13 @@ FIND_PACKAGE(GDCM REQUIRED)
 find_package(Boost COMPONENTS system thread program_options filesystem REQUIRED)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
 find_package(CUDA 4.0 REQUIRED)
-if (CUDA_FOUND)
-  set(CUDA_PROPAGATE_HOST_FLAGS OFF)
-  set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
 
-  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_30,code=sm_30")
+#ADD_DEFINITIONS(-D__STRICT_ANSI__)
+
+#ADD_DEFINITIONS(-D_MATRIX_INTRIN_H_INCLUDED)
+if (CUDA_FOUND)
+  set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
+  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_52,code=sm_52" )
   #set(CUDA_VERBOSE_BUILD ON)
 
   # Compile kernels for compute models 1.0 and 2.0 as default for Cuda 4.1
