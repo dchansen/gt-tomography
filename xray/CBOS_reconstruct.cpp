@@ -33,6 +33,7 @@
 #include <math_constants.h>
 #include <boost/program_options.hpp>
 #include <boost/make_shared.hpp>
+#include <solvers/osMOMSolverD3.h>
 
 #include "hdf5_utils.h"
 using namespace std;
@@ -204,7 +205,7 @@ int main(int argc, char** argv)
 	//hoCuGPBBSolver<float> solver;
 	//hoCuCgDescentSolver<float> solver;
 //	osSPSSolver<hoCuNDArray<float>> solver;
-	osMOMSolverD<hoCuNDArray<float>> solver;
+	osMOMSolverD3<hoCuNDArray<float>> solver;
 	//osSPSSolver<hoNDArray<float>> solver;
 	//hoCuNCGSolver<float> solver;
 	solver.set_encoding_operator(E);
@@ -212,6 +213,8 @@ int main(int argc, char** argv)
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
 	solver.set_non_negativity_constraint(true);
+	solver.set_tau(1e-5);
+	solver.set_reg_steps(5);
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();

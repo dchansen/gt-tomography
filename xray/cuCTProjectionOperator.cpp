@@ -53,18 +53,8 @@ void cuCTProjectionOperator::mult_M(cuNDArray<float>* input,
 		outbindims.back() = angles[bin].size();
 		auto  output_view = boost::make_shared<cuNDArray<float>>(outbindims,output_ptr);
 		auto output_view2 = output_view;
-		if (use_offset_correction_ && accumulate){
-			output_view2 = boost::make_shared<cuNDArray<float>>(outbindims);
-			clear(output_view2.get());
-		}
 
 		conebeam_forwards_projection(output_view2.get(),&input_view,angles[bin],offsets[bin],samples_per_pixel_,is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),accumulate);
-
-		if (use_offset_correction_){
-			apply_offset_correct(output_view2.get(),offsets[bin],acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD());
-			if (accumulate)
-				*output_view += *output_view2;
-		}
 
 		input_ptr += input_view.get_number_of_elements();
 		output_ptr += output_view->get_number_of_elements();
