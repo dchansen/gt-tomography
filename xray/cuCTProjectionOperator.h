@@ -34,13 +34,19 @@ protected:
 	/**
 	 * Calculates the start and end index of the projections fitting to each projection
 	 */
-	std::vector<intd2> calculate_slice_indices();
-	boost::shared_ptr<CT_acquisition> acquisition_;
-	boost::shared_ptr<CBCT_binning> binning_;
-	floatd3 is_dims_in_mm_;
-	float samples_per_pixel_;
+    std::vector<intd2> calculate_slice_indices(CT_acquisition &acquisition);
+
+    boost::shared_ptr<CBCT_binning> binning;
+    floatd3 is_dims_in_mm; //Image size in mm
+    floatd2 ps_spacing; // Spacing between projection elements
+    floatd2 ps_dims_in_pixels; // Spacing between projection elements
+    float SDD; //Source detector distance
+    float samples_per_pixel_; //Number of samples used for the line integrals, divided by largest image slice dimensions
 	bool preprocessed_;
-	floatd3 offset_;
+    std::vector<std::vector<floatd3>> detector_focal_cyls;
+    std::vector<std::vector<floatd3>> focal_offset_cyls;
+    std::vector<std::vector<floatd2>> central_elements;
+    std::vector<std::vector<intd2>> proj_indices;
 };
 
 } /* namespace Gadgetron */
