@@ -148,9 +148,9 @@ int main(int argc, char** argv)
     								("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     								("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
     								("reg_downsample,R",po::value<unsigned int>(&num_reg_downsamples)->default_value(1),"Downsample projections this factor")
-    								("alpha",po::value<float>(&of_alpha)->default_value(0.05f),"Alpha for optical Flow");
-	("alpha",po::value<float>(&of_beta)->default_value(1.0f),"Alpha for optical Flow");
-	;
+    								("alpha",po::value<float>(&of_alpha)->default_value(0.05f),"Alpha for optical Flow")
+									("beta",po::value<float>(&of_beta)->default_value(1.0f),"Alpha for optical Flow");
+
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);

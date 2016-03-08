@@ -150,8 +150,10 @@ int main(int argc, char** argv)
 	unsigned int downsamples;
 	unsigned int iterations;
 	unsigned int subsets;
-	float rho;
+	float rho,tau;
 	float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight;
+	float tv_4d;
+    bool use_non_negativity;
 
 	po::options_description desc("Allowed options");
 
@@ -169,14 +171,17 @@ int main(int argc, char** argv)
     				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     				("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
     				("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
-    				("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
+    				("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight in spatial dimensions")
+							("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimensions")
     				("PICS",po::value<float>(&pics_weight)->default_value(0),"PICS weight")
     				("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
     				("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
     				("use_prior","Use an FDK prior")
+    				("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
     				("sigma",po::value<float>(&sigma)->default_value(0.001),"Sigma for billateral filter")
     				("DCT",po::value<float>(&dct_weight)->default_value(0),"DCT regularization")
     				("3D","Only use binning for selecting valid projections")
+							("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
     				;
 
 	po::variables_map vm;
@@ -200,6 +205,7 @@ int main(int argc, char** argv)
 		else if (a.type() == typeid(vector_td<float,3>)) command_line_string << it->second.as<vector_td<float,3> >();
 		else if (a.type() == typeid(vector_td<int,3>)) command_line_string << it->second.as<vector_td<int,3> >();
 		else if (a.type() == typeid(vector_td<unsigned int,3>)) command_line_string << it->second.as<vector_td<unsigned int,3> >();
+        else if (a.type() == typeid(bool)) command_line_string << it->second.as<bool>();
 		else command_line_string << "Unknown type" << std::endl;
 		command_line_string << std::endl;
 	}
@@ -255,7 +261,7 @@ int main(int argc, char** argv)
 	is_dims.push_back(binning->get_number_of_bins());
 
 	//osLALMSolver<cuNDArray<float>> solver;
-	osMOMSolverD3<cuNDArray<float>> solver;
+	osMOMSolverD<cuNDArray<float>> solver;
 	//osMOMSolverL1<cuNDArray<float>> solver;
 	//osAHZCSolver<cuNDArray<float>> solver;
 	//osMOMSolverF<cuNDArray<float>> solver;
@@ -345,8 +351,8 @@ int main(int argc, char** argv)
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
-	solver.set_tau(1e-5);
-	solver.set_non_negativity_constraint(true);
+	solver.set_tau(tau);
+	solver.set_non_negativity_constraint(use_non_negativity);
 	solver.set_huber(huber);
 
 	solver.set_reg_steps(5);
@@ -371,13 +377,13 @@ int main(int argc, char** argv)
   	Dz->set_codomain_dimensions(&is_dims);
 
   	solver.add_regularization_group({Dx,Dy,Dz});
-
-auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
-	Dt->set_weight(tv_weight);
-	Dt->set_domain_dimensions(&is_dims);
-	Dt->set_codomain_dimensions(&is_dims);
-	solver.add_regularization_operator(Dt);
-
+    if (tv_4d > 0) {
+        auto Dt = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(3);
+        Dt->set_weight(tv_4d);
+        Dt->set_domain_dimensions(&is_dims);
+        Dt->set_codomain_dimensions(&is_dims);
+        solver.add_regularization_operator(Dt);
+    }
 /*
 	auto projections = *ps->get_projections();
   	auto prior_weight = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
@@ -554,7 +560,7 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 	}
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
 	write_nd_array(result.get(),"reconstruction.real");
-	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
+	write_dicom(result.get(),command_line_string.str(),imageDimensions);
 	/*
   cuNDArray<float> tmp(W->get_codomain_dimensions());
 

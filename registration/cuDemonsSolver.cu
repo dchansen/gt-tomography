@@ -1,6 +1,7 @@
 #include "cuDemonsSolver.h"
 #include "setup_grid.h"
 #include "gpureg_export.h"
+#include "vector_td_utilities.h"
 using namespace Gadgetron;
 
 template< class T, unsigned int D> static inline  __device__ void partialDerivs(const T* in, const vector_td<unsigned int,D>& dims, vector_td<unsigned int,D>& co, T * out)
@@ -71,10 +72,10 @@ template<class T, unsigned int D>  boost::shared_ptr<cuNDArray<T> > cuDemonsSolv
 
 
 
-	std::vector<unsigned int> dims = *fixed->get_dimensions();
+	std::vector<size_t> dims = *fixed->get_dimensions();
 	dims.push_back(D);
 
-	vector_td<unsigned int,D> idims = from_std_vector<unsigned int,D>(dims);
+	vector_td<unsigned int,D> idims = vector_td<unsigned int,D>(from_std_vector<size_t,D>(dims));
 	boost::shared_ptr<cuNDArray<T> > out(new cuNDArray<T>(&dims));
 	clear(out.get());
 

@@ -179,6 +179,7 @@ int main(int argc, char** argv)
 	float rho;
 	float tv_weight;
     float tv_weight4d;
+    float tau;
 	po::options_description desc("Allowed options");
 	string tv_prior_filename;
 	desc.add_options()
@@ -196,9 +197,11 @@ int main(int argc, char** argv)
     		("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
     		("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     		("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
-            ("TV4D",po::value<float>(&tv_weight4d)->default_value(0),"OF Total variation weight")
+            ("TV4D",po::value<float>(&tv_weight4d)->default_value(0),"Total variation in temporal direction")
+                    ("tau",po::value<float>(&tau)->default_value(0),"Solver tau")
     		("use_prior","Use an FDK prior")
     		("TV-prior",po::value<string>(&tv_prior_filename)->default_value("reconstructionTV.real"),"TV prior for registration")
+                    ("vector-field",po::value<string>(),"Stored vector field")
     		("3D","Only use binning data to determine wrong projections")
     		;
 
@@ -288,7 +291,7 @@ int main(int argc, char** argv)
 	//hoCuGPBBSolver<float> solver;
 	//hoCuCgDescentSolver<float> solver;
 //	osSPSSolver<hoCuNDArray<float>> solver;
-	osMOMSolverD3<hoCuNDArray<float>> solver;
+	osMOMSolverD<hoCuNDArray<float>> solver;
 	//osSPSSolver<hoCuNDArray<float>> solver;
 	//hoCuNCGSolver<float> solver;
 	solver.set_encoding_operator(E);
@@ -296,7 +299,7 @@ int main(int argc, char** argv)
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
 	solver.set_non_negativity_constraint(true);
-    solver.set_tau(1e-5);
+    solver.set_tau(tau);
 	solver.set_reg_steps(5);
 	//solver.set_rho(rho);
 
@@ -321,9 +324,17 @@ int main(int argc, char** argv)
 
 
     if (tv_weight4d > 0){
-        auto tv_recon = boost::make_shared<hoCuNDArray<float>>();
-	    *tv_recon = *read_nd_array<float>(tv_prior_filename.c_str());
-        auto displacements =	perform_registration( tv_recon, 0.1, 1, 3);
+        boost::shared_ptr<hoNDArray<float>> displacements;
+        if (vm.count("vector-field")){
+            displacements = read_nd_array<float>(vm["vector-field"].as<string>().c_str());
+            auto vdims = *displacements->get_dimensions();
+            for (auto v : vdims) std::cout << v << " ";
+            std::cout<<std::endl;
+        } else {
+            auto tv_recon = boost::make_shared<hoCuNDArray<float>>();
+            *tv_recon = *read_nd_array<float>(tv_prior_filename.c_str());
+            displacements = perform_registration(tv_recon, 0.01, 1, 3);
+        }
         //clear(displacements.get());
         auto DtOF = boost::make_shared<hoCuOFPartialDerivativeOperator<float>>();
 		//auto DtOF = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(3);

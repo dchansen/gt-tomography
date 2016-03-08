@@ -4,7 +4,7 @@
 
 // Gadgetron includes
 #include "cuDemonsSolver.h"
-#include "cuLinearResampleOperator.h"
+#include "cuTextureResampleOperator.h"
 #include "cuNDArray.h"
 #include "hoNDArray_fileio.h"
 #include "parameterparser.h"

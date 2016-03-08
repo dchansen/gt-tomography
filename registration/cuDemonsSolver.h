@@ -21,7 +21,7 @@ public:
 
 		cuGaussianFilterOperator<T,D> gauss;
 		gauss.set_sigma(sigma);
-		std::vector<unsigned int> dims = *moving_image->get_dimensions();
+		std::vector<size_t> dims = *moving_image->get_dimensions();
 
 		dims.push_back(D);
 

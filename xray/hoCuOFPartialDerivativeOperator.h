@@ -8,6 +8,7 @@
 #include <boost/smart_ptr/shared_array.hpp>
 #include <hoCuNDArray.h>
 #include "hoLinearResampleOperator_eigen.h"
+#include "cuLinearResampleOperator.h"
 
 namespace Gadgetron {
     template<class T>
@@ -22,7 +23,8 @@ namespace Gadgetron {
         virtual void mult_M(hoCuNDArray<T>* in, hoCuNDArray<T>* out, bool accumulate) override;
 
     protected:
-        std::vector<hoLinearResampleOperator_eigen<T,3>> Rs;
+        //std::vector<hoLinearResampleOperator_eigen<T,3>> Rs;
+        std::vector<cuLinearResampleOperator<T,3>> Rs;
 
     };
 }
