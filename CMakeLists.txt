@@ -54,7 +54,7 @@ FIND_PACKAGE(GDCM REQUIRED)
     ELSE(GDCM_FOUND)
         MESSAGE(FATAL_ERROR "Cannot find GDCM, did you set GDCM_DIR?")
     ENDIF(GDCM_FOUND)
-find_package(Boost COMPONENTS system thread program_options filesystem REQUIRED)
+find_package(Boost COMPONENTS system thread program_options filesystem regex REQUIRED)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
 find_package(CUDA 4.0 REQUIRED)
 

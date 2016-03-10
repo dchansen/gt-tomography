@@ -30,7 +30,7 @@
 // - taking advantage of the cache and hardware interpolation
 //
 
-#define NORMALIZED_TC 1
+#define NORMALIZED_TC 0
 
 static texture<float, 3, cudaReadModeElementType>
 image_tex( NORMALIZED_TC, cudaFilterModeLinear, cudaAddressModeBorder );
@@ -107,7 +107,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		intd2 ps_dims_in_pixels_int,
                                floatd2 ps_spacing,
 		int num_projections,
-		float SDD,
+		float ADD,
 		int num_samples_per_ray, bool accumulate )
 {
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
@@ -138,7 +138,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 
     	// Find direction vector of the line integral
 		//
-        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,SDD-detector_focal_cyl[1],ps_dims_in_pixels_int,ps_spacing,centralElement,co);
+        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_dims_in_pixels_int,ps_spacing,centralElement,co);
 
 		floatd3 dir = endPoint-startPoint;
 
@@ -198,7 +198,7 @@ void ct_forwards_projection( cuNDArray<float> *projections,
         std::vector<floatd2> & centralElements, // Central element on the detector
 		floatd3 is_dims_in_mm, // Image size in mm
 		floatd2 ps_spacing,  //Size of each projection element in mm
-		float SDD, //focalpoint - detector disance
+		float ADD, //focalpoint - detector disance
                              float samples_per_ray,
 		bool accumulate
 )
@@ -284,7 +284,7 @@ void ct_forwards_projection( cuNDArray<float> *projections,
 
 	ct_forwards_projection_kernel<<< dimGrid, dimBlock >>>
 			( projections->get_data_ptr(), raw_focal_cyl,raw_focal_offsets,raw_centralElements,is_dims_in_pixels,
-                    is_dims_in_mm,ps_dims_in_pixels,ps_spacing,projections->get_size(2),SDD,
+                    is_dims_in_mm,ps_dims_in_pixels,ps_spacing,projections->get_size(2),ADD,
                     samples_per_ray*std::max(matrix_size_x,matrix_size_y),accumulate);
 
 	// If not initial batch, start copying the old stuff
@@ -314,8 +314,9 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 		floatd3 is_dims_in_mm, // Image size in mm
 		intd2 ps_dims_in_pixels, //Projection size
 		floatd2 ps_spacing,  //Size of each projection element in mm
-		float SDD, //focalpoint - detector disance
-        int offset)
+		float ADD, //focalpoint - detector disance
+        int offset,
+        int nprojs)
 {
 	// Image voxel to backproject into (pixel coordinate and index)
 	//
@@ -348,7 +349,7 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 
 		float result = 0.0f;
 
-		for( int projection = proj_indices[co[2]][0]-offset; projection < (proj_indices[co[2]][1]-offset); projection++ ) {
+		for( int projection = proj_indices[co[2]][0]; projection < (proj_indices[co[2]][1]) && (projection-offset) < nprojs; projection++ ) {
 
 			// Projection angle
 			//
@@ -361,20 +362,23 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 
 
             const float a = (dir[0]*dir[0]+dir[1]*dir[1]);
-            const float b = (pos[0]-focal_point[0])*dir[0]+(pos[1]-focal_point[1])*dir[1];
-            const float c= -SDD*SDD+(pos[0]-focal_point[0])*(pos[0]-focal_point[0])+(pos[1]-focal_point[1])*(pos[1]-focal_point[1]);
+            const float b = 2*(startPoint[0]-focal_point[0])*dir[0]+2*(startPoint[1]-focal_point[1])*dir[1];
+            const float c= -(ADD+focal_cyl[1])*(ADD+focal_cyl[1])+(startPoint[0]-focal_point[0])*(startPoint[0]-focal_point[0])+(startPoint[1]-focal_point[1])*(startPoint[1]-focal_point[1]);
             float t = (-b+::sqrt(b*b-4*a*c))/(2*a);
 
-            const floatd3 detectorPoint = startPoint+dir*t;
-            const floatd2 element_rad = floatd2((atan2(detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0])*SDD/ps_spacing[0],
+            const floatd3 detectorPoint = startPoint+dir*t-focal_point;
+            const floatd2 element_rad = floatd2((atan2(detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0])/ps_spacing[0],
                                                 (detectorPoint[2]-detector_focal_cyl[2])/ps_spacing[1])-centralElements[projection]+0.5f;
+            if (idx == 100){
+                printf("Element rad %f %f %d %f %f %f %f \n",element_rad[0],element_rad[1],projection,detectorPoint[0],detectorPoint[1],detectorPoint[2],detector_focal_cyl[0]);
+            }
 			// Convert metric projection coordinates into pixel coordinates
 			//
 
 			// Read the projection data (bilinear interpolation enabled) and accumulate
 			//
 
-			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection );
+			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
 		}
 
 		// Output normalized image
@@ -396,7 +400,7 @@ void ct_backwards_projection( cuNDArray<float> *projections,
         std::vector<intd2> & proj_indices, // Array of size nz containing first to last projection for slice
 		floatd3 is_dims_in_mm, // Image size in mm
 		floatd2 ps_spacing,  //Size of each projection element in mm
-		float SDD, //focalpoint - detector disance
+		float ADD, //focalpoint - detector disance
 		bool accumulate
 )
 {
@@ -474,8 +478,10 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		cudaExtent extent;
 		extent.width = projection_res_x;
 		extent.height = projection_res_y;
-		extent.depth = std::min(size_t(num_projections),elements_left);
+		extent.depth = std::min(size_t(batchsize),elements_left/(projection_res_x*projection_res_y));
 
+		std::cout << "Extent " << extent.width << " " << extent.height << " " << extent.depth << std::endl;
+        std::cout << "Elements left " << elements_left << std::endl;
 		cudaArray *projections_array;
 		cudaMalloc3DArray(&projections_array, &channelDesc, extent, cudaArrayLayered);CHECK_FOR_CUDA_ERROR();
 
@@ -486,7 +492,8 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		cpy_params.srcPtr =
 				make_cudaPitchedPtr((void *) proj_ptr, projection_res_x * sizeof(float),
 									projection_res_x, projection_res_y);
-		cudaMemcpy3D(&cpy_params);CHECK_FOR_CUDA_ERROR();
+		cudaMemcpy3D(&cpy_params);
+        CHECK_FOR_CUDA_ERROR();
 
 		cudaBindTextureToArray(projections_tex, projections_array, channelDesc);CHECK_FOR_CUDA_ERROR();
 
@@ -506,7 +513,7 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		ct_backwards_projection_kernel<<<dimGrid, dimBlock >>>
 		(image->get_data_ptr(), raw_focal_cyl,raw_focal_offsets,raw_centralElements, raw_proj_indices,
 				is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_spacing,
-				SDD,offset);
+				ADD,offset,extent.depth);
 
 		CHECK_FOR_CUDA_ERROR();
 

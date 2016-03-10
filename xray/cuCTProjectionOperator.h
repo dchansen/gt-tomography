@@ -39,8 +39,7 @@ protected:
     boost::shared_ptr<CBCT_binning> binning;
     floatd3 is_dims_in_mm; //Image size in mm
     floatd2 ps_spacing; // Spacing between projection elements
-    floatd2 ps_dims_in_pixels; // Spacing between projection elements
-    float SDD; //Source detector distance
+    float ADD; //Aparture detector distance
     float samples_per_pixel_; //Number of samples used for the line integrals, divided by largest image slice dimensions
 	bool preprocessed_;
     std::vector<std::vector<floatd3>> detector_focal_cyls;

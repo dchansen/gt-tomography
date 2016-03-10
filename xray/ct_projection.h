@@ -52,7 +52,7 @@ void ct_backwards_projection( cuNDArray<float> *projections,
         std::vector<intd2> & proj_indices, // Array of size nz containing first to last projection for slice
 		floatd3 is_dims_in_mm, // Image size in mm
 		floatd2 ps_spacing,  //Size of each projection element in mm
-		float SDD, //focalpoint - detector disance
+		float ADD, //aparture - detector disance
 		bool accumulate
 );
 
@@ -63,7 +63,7 @@ void ct_forwards_projection( cuNDArray<float> *projections,
         std::vector<floatd2> & centralElements, // Central element on the detector
 		floatd3 is_dims_in_mm, // Image size in mm
 		floatd2 ps_spacing,  //Size of each projection element in mm
-		float SDD, //focalpoint - detector disance
+		float ADD, //aparture - detector disance
                              float samples_per_ray,
 		bool accumulate
 );

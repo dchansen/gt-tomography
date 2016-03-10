@@ -43,7 +43,7 @@ void cuCTProjectionOperator::mult_M(cuNDArray<float>* input,
         outbindims.back() = detector_focal_cyls[bin].size();
         auto output_view = cuNDArray<float>(outbindims, output_ptr);
 
-        ct_forwards_projection(&output_view,&input_view,detector_focal_cyls[bin],focal_offset_cyls[bin],central_elements[bin],is_dims_in_mm,ps_spacing,SDD,samples_per_pixel_,accumulate);
+        ct_forwards_projection(&output_view,&input_view,detector_focal_cyls[bin],focal_offset_cyls[bin],central_elements[bin],is_dims_in_mm,ps_spacing,ADD,samples_per_pixel_,accumulate);
         //conebeam_forwards_projection(output_view2.get(),&input_view,angles[bin],offsets[bin],samples_per_pixel_,is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),accumulate);
 
         input_ptr += input_view.get_number_of_elements();
@@ -76,7 +76,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         vector_td<int, 3> is_dims_in_pixels{dims3d[0], dims3d[1], dims3d[2]};
 
         ct_backwards_projection(&input_view, &output_view, detector_focal_cyls[bin], focal_offset_cyls[bin],
-                                central_elements[bin], proj_indices[bin], is_dims_in_mm, ps_spacing, SDD, accumulate);
+                                central_elements[bin], proj_indices[bin], is_dims_in_mm, ps_spacing, ADD, accumulate);
         input_ptr += input_view.get_number_of_elements();
         output_ptr += output_view.get_number_of_elements();
 
@@ -117,13 +117,18 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         for (int i = 0; i < slice_indices.size(); i++) {
             float slice_start = is_dims_in_mm[2] / image_dims[2] * (i - 0.5f) - is_dims_in_mm[2] / 2;
             float slice_stop = is_dims_in_mm[2] / image_dims[2] * (i + 0.5f) - is_dims_in_mm[2] / 2;
-            while (slice_start > (start_point[projection_start] + detectorSize[1]))
+            std::cout << "Slice start " << slice_start << " slice end " << slice_stop << std::endl;
+            while (slice_start > (start_point[projection_start] - detectorSize[1])) {
                 projection_start++;
-            while (slice_stop < start_point[projection_start])
+            }
+            while (slice_stop > start_point[projection_stop] ) {
                 projection_stop++;
+            }
+
 
             slice_indices[i][0] = projection_start;
             slice_indices[i][1] = projection_stop;
+            std::cout << "Projection start stop " << projection_stop-projection_start << std::endl;
         }
         return slice_indices;
 
@@ -143,14 +148,16 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
 
         auto all_proj_indices = calculate_slice_indices(*acquisition);
         CT_geometry &geometry = acquisition->geometry;
+        ps_spacing = acquisition->geometry.detectorSize;
+        ADD = acquisition->geometry.constantRadialDistance[0];
 
         for (size_t b = 0; b < bins.size(); b++) {
             for (auto i : bins[b]) {
-                detector_focal_cyls[b].emplace_back(geometry.detectorFocalCenterAngularPosition[i] * pi / 360,
+                detector_focal_cyls[b].emplace_back(geometry.detectorFocalCenterAngularPosition[i],
                                                     geometry.detectorFocalCenterAxialPosition[i],
                                                     geometry.detectorFocalRadialDistance[i]);
 
-                focal_offset_cyls[b].emplace_back(geometry.sourceAngularPositionShift[i] * pi / 360,
+                focal_offset_cyls[b].emplace_back(geometry.sourceAngularPositionShift[i],
                                                   geometry.sourceAxialPositionShift[i],
                                                   geometry.sourceRadialDistanceShift[i]);
 
