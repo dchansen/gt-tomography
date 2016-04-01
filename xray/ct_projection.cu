@@ -13,7 +13,7 @@
 #include "GPUTimer.h"
 #include "cudaDeviceManager.h"
 #include "hoNDArray_fileio.h"
-
+#include "vector_td_io.h"
 #include <cuda_runtime_api.h>
 #include <math_constants.h>
 #include <cufft.h>
@@ -356,22 +356,25 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             const floatd3 detector_focal_cyl = detector_focal_cyls[projection];
             const floatd3 focal_cyl = focal_offset_cyls[projection]+detector_focal_cyl;
 
-            const floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[0]*cos(focal_cyl[0]),focal_cyl[2]);
+            floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[0]*cos(focal_cyl[0]),focal_cyl[2]);
             const floatd3 focal_point = floatd3(-detector_focal_cyl[1]*sin(detector_focal_cyl[0]),detector_focal_cyl[0]*cos(detector_focal_cyl[0]),detector_focal_cyl[2]);
             const floatd3 dir = pos-startPoint;
-
+			startPoint -= focal_point;
 
             const float a = (dir[0]*dir[0]+dir[1]*dir[1]);
-            const float b = 2*(startPoint[0]-focal_point[0])*dir[0]+2*(startPoint[1]-focal_point[1])*dir[1];
-            const float c= -(ADD+focal_cyl[1])*(ADD+focal_cyl[1])+(startPoint[0]-focal_point[0])*(startPoint[0]-focal_point[0])+(startPoint[1]-focal_point[1])*(startPoint[1]-focal_point[1]);
+            const float b = 2*startPoint[0]*dir[0]+2*startPoint[1]*dir[1];
+            const float c= startPoint[0]*startPoint[0]+startPoint[1]*startPoint[1]-ADD*ADD;
             float t = (-b+::sqrt(b*b-4*a*c))/(2*a);
 
-            const floatd3 detectorPoint = startPoint+dir*t-focal_point;
+            const floatd3 detectorPoint = startPoint+dir*t;
             const floatd2 element_rad = floatd2((atan2(detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0])/ps_spacing[0],
-                                                (detectorPoint[2]-detector_focal_cyl[2])/ps_spacing[1])-centralElements[projection]+0.5f;
-            if (idx == 100){
-                printf("Element rad %f %f %d %f %f %f %f \n",element_rad[0],element_rad[1],projection,detectorPoint[0],detectorPoint[1],detectorPoint[2],detector_focal_cyl[0]);
+                                                detectorPoint[2]/ps_spacing[1])+centralElements[projection];
+
+			/*
+            if (co[2]==100 && co[1] == 100 && co[0] == 100){
+                printf("Element rad %f %f %d %f %f %f %f %f\n",element_rad[0],element_rad[1],projection,detectorPoint[0],detectorPoint[1],detectorPoint[2],::sqrt(detectorPoint[0]*detectorPoint[0]+detectorPoint[1]*detectorPoint[1]),ADD);
             }
+*/
 			// Convert metric projection coordinates into pixel coordinates
 			//
 
@@ -379,6 +382,12 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 			//
 
 			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
+			/*
+			float tmp = tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
+			if (co[2]==100 && co[1] == 100 && co[0] == 100)
+				printf("Value %f \n",tmp);
+			result += tmp;
+			 */
 		}
 
 		// Output normalized image
@@ -482,6 +491,7 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 
 		std::cout << "Extent " << extent.width << " " << extent.height << " " << extent.depth << std::endl;
         std::cout << "Elements left " << elements_left << std::endl;
+		std::cout << "Pixels " << is_dims_in_pixels << std::endl;
 		cudaArray *projections_array;
 		cudaMalloc3DArray(&projections_array, &channelDesc, extent, cudaArrayLayered);CHECK_FOR_CUDA_ERROR();
 

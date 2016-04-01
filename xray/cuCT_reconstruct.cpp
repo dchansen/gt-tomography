@@ -84,6 +84,8 @@ int main(int argc, char** argv){
     E.setup(files,imsize_in_mm);
     std::cout << "Setup done" << std::endl;
 
+    write_nd_array(&projections,"projections.real");
+    std::cout << "Projections size: " << projections.get_size(0) << " " << projections.get_size(1) << " " << projections.get_size(2) << std::endl;
     E.mult_MH(&projections,&image,false);
 
     write_nd_array(&image,"test.real");

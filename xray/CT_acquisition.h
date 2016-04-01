@@ -141,9 +141,13 @@ namespace Gadgetron {
             rescaleSlope.Set(ds);
             double slope = rescaleSlope.GetValue();
 
-
-            for (size_t i = 0; i < elements; i ++)
-                projectionPtr[i] = double(bufferptr[i])*slope+intercept;
+            const size_t xdim = result->projections.get_size(0);
+            const size_t ydim = result->projections.get_size(1);
+            for (size_t y = 0; y <ydim; y++) {
+                for (size_t x = 0; x < xdim; x++) {
+                    projectionPtr[x+y*xdim] = double(bufferptr[y+x*ydim]) * slope + intercept;
+                }
+            }
 
             projectionPtr += elements;
 

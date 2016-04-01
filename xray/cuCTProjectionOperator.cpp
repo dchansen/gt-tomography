@@ -64,6 +64,8 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
     std::vector<size_t> inbindims(indims);
     float *input_ptr = input->get_data_ptr();
     float *output_ptr = output->get_data_ptr();
+    if (!accumulate)
+        clear(output);
     for (int bin = 0; bin < binning->get_number_of_bins(); bin++) {
         //Check for empty bins
         if (binning->get_bin(bin).size() == 0)
@@ -108,8 +110,8 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         std::vector<float> start_point(centralElements.size());
 
         for (int i = 0; i < centralElements.size(); i++) {
-            start_point[i] = axialPosition[i] + (centralElements[i][1] / float(proj_dims[1]) - 0.5) * detectorSize[1] -
-                             detectorSize[1] / 2;
+            start_point[i] = axialPosition[i] + (centralElements[i][1] - float(proj_dims[1])/2) * detectorSize[1] -
+                             detectorSize[1]*proj_dims[1] / 2;
         }
 
         int projection_start = 0;
@@ -118,7 +120,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
             float slice_start = is_dims_in_mm[2] / image_dims[2] * (i - 0.5f) - is_dims_in_mm[2] / 2;
             float slice_stop = is_dims_in_mm[2] / image_dims[2] * (i + 0.5f) - is_dims_in_mm[2] / 2;
             std::cout << "Slice start " << slice_start << " slice end " << slice_stop << std::endl;
-            while (slice_start > (start_point[projection_start] - detectorSize[1])) {
+            while (slice_start > (start_point[projection_start] + detectorSize[1]*proj_dims[1])) {
                 projection_start++;
             }
             while (slice_stop > start_point[projection_stop] ) {
@@ -128,7 +130,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
 
             slice_indices[i][0] = projection_start;
             slice_indices[i][1] = projection_stop;
-            std::cout << "Projection start stop " << projection_stop-projection_start << std::endl;
+            std::cout << "Projection start stop " << projection_stop-projection_start << " start point " << start_point[projection_start] << " " << start_point[projection_stop] << " " << detectorSize[1] << std::endl;
         }
         return slice_indices;
 
@@ -154,12 +156,12 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         for (size_t b = 0; b < bins.size(); b++) {
             for (auto i : bins[b]) {
                 detector_focal_cyls[b].emplace_back(geometry.detectorFocalCenterAngularPosition[i],
-                                                    geometry.detectorFocalCenterAxialPosition[i],
-                                                    geometry.detectorFocalRadialDistance[i]);
+                                                    geometry.detectorFocalRadialDistance[i],
+                                                    geometry.detectorFocalCenterAxialPosition[i]);
 
                 focal_offset_cyls[b].emplace_back(geometry.sourceAngularPositionShift[i],
-                                                  geometry.sourceAxialPositionShift[i],
-                                                  geometry.sourceRadialDistanceShift[i]);
+                                                  geometry.sourceRadialDistanceShift[i],
+                                                  geometry.sourceAxialPositionShift[i]);
 
                 central_elements[b].push_back(geometry.detectorCentralElement[i]);
                 proj_indices[b].push_back(all_proj_indices[i]);

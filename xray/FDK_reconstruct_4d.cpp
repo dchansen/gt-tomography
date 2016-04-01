@@ -12,6 +12,7 @@
 #include <iostream>
 #include <algorithm>
 #include <sstream>
+#include <proton/hdf5_utils.h>
 
 using namespace Gadgetron;
 using namespace std;
@@ -170,5 +171,6 @@ po::options_description desc("Allowed options");
 
 	//write_nd_array<float>( &result, image_filename.c_str() );
 	write_dicom(&result,"",is_dims_in_mm);
+	saveNDArray2HDF5(&result,"fdk.hdf5",is_dims_in_mm,floatd3(0,0,0),"",0);
 	return 0;
 }

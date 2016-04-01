@@ -43,6 +43,7 @@
 #include <math_constants.h>
 #include <boost/program_options.hpp>
 #include <boost/make_shared.hpp>
+#include <GPUTimer.h>
 #include "cuSolverUtils.h"
 #include "osPDsolver.h"
 #include "osLALMSolver.h"
@@ -154,6 +155,7 @@ int main(int argc, char** argv)
 	float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight;
 	float tv_4d;
     bool use_non_negativity;
+	int reg_iter;
 
 	po::options_description desc("Allowed options");
 
@@ -182,6 +184,7 @@ int main(int argc, char** argv)
     				("DCT",po::value<float>(&dct_weight)->default_value(0),"DCT regularization")
     				("3D","Only use binning for selecting valid projections")
 							("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
+							("reg_iter",po::value<int>(&reg_iter)->default_value(2))
     				;
 
 	po::variables_map vm;
@@ -355,7 +358,7 @@ int main(int argc, char** argv)
 	solver.set_non_negativity_constraint(use_non_negativity);
 	solver.set_huber(huber);
 
-	solver.set_reg_steps(5);
+	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
   if (tv_weight > 0){
@@ -493,27 +496,6 @@ int main(int argc, char** argv)
 	//E->set_mask(mask);
 	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
 
-	{
-		E->set_use_offset_correction(false);
-		linearOperator<cuNDArray<float>>* E_all = E.get();
-		auto precon_image = boost::make_shared<cuNDArray<float>>(is_dims);
-		fill(precon_image.get(),1.0f);
-
-
-		/*cuNDArray<float> tmp_proj(projections.get_dimensions());
-
-  	E_all->mult_M(precon_image.get(),&tmp_proj);
-  	E_all->mult_MH(&tmp_proj,precon_image.get());
-
-   	clamp_min(precon_image.get(),1e-6f);
-  	reciprocal_inplace(precon_image.get());
-		 */
-		//*precon_image *= 1e-5f;
-		//  	solver.set_preconditioning_image(precon_image);
-
-		E->set_use_offset_correction(true);
-
-	}
 
 
 	//solver.set_damping(1e-6);
@@ -526,8 +508,11 @@ int main(int argc, char** argv)
   	solver.set_x0(prior);
   }
 	 */
-
-	auto result = solver.solve(projections.get());
+	boost::shared_ptr<cuNDArray<float>> result;
+	{
+		GPUTimer tim("Solver");
+		result = solver.solve(projections.get());
+	}
 	std::cout << "Penguin" << nrm2(result.get()) << std::endl;
 
 	std::cout << "Result sum " << asum(result.get()) << std::endl;
@@ -559,16 +544,9 @@ int main(int argc, char** argv)
 
 	}
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
-	write_nd_array(result.get(),"reconstruction.real");
-	write_dicom(result.get(),command_line_string.str(),imageDimensions);
-	/*
-  cuNDArray<float> tmp(W->get_codomain_dimensions());
+//	write_nd_array(result.get(),"reconstruction.real");
+	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
 
-  W->mult_M(result.get(),&tmp);
-
-  write_nd_array(&tmp,"test.real");
-	 */
-	//E->set_use_offset_correction(false);
 
 
 }
