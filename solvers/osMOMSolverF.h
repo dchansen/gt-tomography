@@ -151,12 +151,12 @@ public:
 				//*x =*z;
 
 				//axpy(REAL(_beta),&tmp_image,x);
+				denoise(*z);
 				if (non_negativity_){
 					//clamp_min(x,ELEMENT_TYPE(0));
 					clamp_min(z,ELEMENT_TYPE(0));
 				}
 
-			denoise(*z);
 				/*
 				for (auto op : regularization_operators){
 
@@ -181,10 +181,10 @@ public:
 			*/
 
 				//*z = *x;
-				*x = *z;
-				*z *= 1+(told-1)/t;
-				axpy(-(told-1)/t,xold,z);
-				std::swap(x,xold);
+				//*x = *z;
+				//*z *= 1+(told-1)/t;
+				//axpy(-(told-1)/t,xold,z);
+				//std::swap(x,xold);
 				told = t;
 
 				//step_size *= 0.99;
@@ -232,6 +232,7 @@ protected:
 			for (auto & reg_op : regularization_operators){
 				ARRAY_TYPE reg_space(reg_op->get_codomain_dimensions());
 				reg_op->mult_M(&x, &reg_space,false);
+				std::cout << "Reg1 " << asum(&reg_space)  << " " << asum(&x) << std::endl;
 				//hard_shrink(&reg_space,reg_op->get_weight());
 				shrink1(&reg_space,reg_op->get_weight());
 				std::cout << "Reg " << asum(&reg_space) << std::endl;

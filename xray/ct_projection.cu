@@ -356,8 +356,8 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             const floatd3 detector_focal_cyl = detector_focal_cyls[projection];
             const floatd3 focal_cyl = focal_offset_cyls[projection]+detector_focal_cyl;
 
-            floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[0]*cos(focal_cyl[0]),focal_cyl[2]);
-            const floatd3 focal_point = floatd3(-detector_focal_cyl[1]*sin(detector_focal_cyl[0]),detector_focal_cyl[0]*cos(detector_focal_cyl[0]),detector_focal_cyl[2]);
+            floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[2]);
+            const floatd3 focal_point = floatd3(-detector_focal_cyl[1]*sin(detector_focal_cyl[0]),detector_focal_cyl[1]*cos(detector_focal_cyl[0]),detector_focal_cyl[2]);
             const floatd3 dir = pos-startPoint;
 			startPoint -= focal_point;
 

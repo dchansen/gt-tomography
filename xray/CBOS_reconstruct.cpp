@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 	unsigned int iterations;
 	unsigned int subsets;
 	float rho;
-	float tv_weight;
+	float tv_weight,tv_4d;
 	po::options_description desc("Allowed options");
 
 	desc.add_options()
@@ -115,6 +115,7 @@ int main(int argc, char** argv)
     		("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
     		("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     		("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
+					("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimension")
     		("use_prior","Use an FDK prior")
     		("3D","Only use binning data to determine wrong projections")
     		;
@@ -213,8 +214,8 @@ int main(int argc, char** argv)
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
 	solver.set_non_negativity_constraint(true);
-	solver.set_tau(1e-5);
-	solver.set_reg_steps(5);
+	solver.set_tau(1e-4);
+	solver.set_reg_steps(2);
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();
@@ -254,16 +255,16 @@ int main(int argc, char** argv)
   	Dz->set_domain_dimensions(&is_dims);
   	Dz->set_codomain_dimensions(&is_dims);
 
-  	if (binning->get_number_of_bins() > 1){
+	  solver.add_regularization_group({Dx,Dy,Dz});
+
+  }
+if (tv_4d > 0){
   	auto Dt = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(3);
   	Dt->set_weight(tv_weight);
   	Dt->set_domain_dimensions(&is_dims);
   	Dt->set_codomain_dimensions(&is_dims);
-  	solver.add_regularization_group({Dx,Dy,Dz,Dt});
-  	} else
-  		solver.add_regularization_group({Dx,Dy,Dz});
-  }
-
+  	solver.add_regularization_operator(Dt);
+  	}
 
 
 	auto result = solver.solve(&projections);

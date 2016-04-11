@@ -143,6 +143,7 @@ boost::shared_ptr<cuNDArray<float>> calculate_weightImage(boost::shared_ptr<CBCT
 
 int main(int argc, char** argv)
 {
+
 	string acquisition_filename;
 	string outputFile;
 	uintd3 imageSize;
@@ -180,7 +181,7 @@ int main(int argc, char** argv)
     				("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
     				("use_prior","Use an FDK prior")
     				("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
-    				("sigma",po::value<float>(&sigma)->default_value(0.001),"Sigma for billateral filter")
+    				("sigma",po::value<float>(&sigma)->default_value(0.1),"Sigma for billateral filter")
     				("DCT",po::value<float>(&dct_weight)->default_value(0),"DCT regularization")
     				("3D","Only use binning for selecting valid projections")
 							("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
@@ -279,6 +280,29 @@ int main(int argc, char** argv)
 		//prior = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
 		solver.set_x0(prior);
 	}
+
+/*
+	if (pics_weight > 0 ){
+			auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
+  	Dx->set_weight(pics_weight);
+  	Dx->set_domain_dimensions(&is_dims);
+  	Dx->set_codomain_dimensions(&is_dims);
+
+  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
+  	Dy->set_weight(pics_weight);
+  	Dy->set_domain_dimensions(&is_dims);
+  	Dy->set_codomain_dimensions(&is_dims);
+
+
+  	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
+  	Dz->set_weight(pics_weight);
+  	Dz->set_domain_dimensions(&is_dims);
+  	Dz->set_codomain_dimensions(&is_dims);
+		solver.add_regularization_group({Dx,Dy,Dz},prior);
+
+
+	}
+ */
 	//osPDSolver<cuNDArray<float>> solver;
 	/*
   {
@@ -357,7 +381,6 @@ int main(int argc, char** argv)
 	solver.set_tau(tau);
 	solver.set_non_negativity_constraint(use_non_negativity);
 	solver.set_huber(huber);
-
 	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
@@ -513,6 +536,7 @@ int main(int argc, char** argv)
 		GPUTimer tim("Solver");
 		result = solver.solve(projections.get());
 	}
+//	global_timer.reset();
 	std::cout << "Penguin" << nrm2(result.get()) << std::endl;
 
 	std::cout << "Result sum " << asum(result.get()) << std::endl;
@@ -525,9 +549,10 @@ int main(int argc, char** argv)
 
 	if (wavelet_weight > 0){
 		osMOMSolverF<cuNDArray<float>> solverF;
-		solverF.set_max_iterations(iterations);
+		solverF.set_max_iterations(10);
 		solverF.set_x0(result);
 		solverF.set_encoding_operator(E);
+		solverF.set_non_negativity_constraint(true);
 
 		auto wave = boost::make_shared<cuEdgeATrousOperator<float>>();
 
@@ -543,6 +568,7 @@ int main(int argc, char** argv)
 		result = solverF.solve(projections.get());
 
 	}
+
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
 //	write_nd_array(result.get(),"reconstruction.real");
 	//write_dicom(result.get(),command_line_string.str(),imageDimensions);

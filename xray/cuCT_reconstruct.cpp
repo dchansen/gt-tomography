@@ -10,6 +10,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <algorithm>
+#include <cuCgSolver.h>
 
 using namespace std;
 using namespace Gadgetron;
@@ -71,23 +72,28 @@ int main(int argc, char** argv){
     std::cout << "Axials start " << axials[0] << " Axials end " << axials.back() << std::endl;
 
 
-    cuCTProjectionOperator E;
+    auto E = boost::make_shared<cuCTProjectionOperator>();
     std::vector<size_t> imdims {imageSize[0],imageSize[1],imageSize[2]};
     cuNDArray<float> image(imdims);
 
     cuNDArray<float> projections(files->projections );
 
     std::cout << "Projection memory size " << projections.get_number_of_bytes()/(1024*1024) << "MB" << std::endl;
-    E.set_domain_dimensions(image.get_dimensions().get());
-    E.set_codomain_dimensions(projections.get_dimensions().get());
+    E->set_domain_dimensions(image.get_dimensions().get());
+    E->set_codomain_dimensions(projections.get_dimensions().get());
     std::cout << "Starting setup" << std::endl;
-    E.setup(files,imsize_in_mm);
+    E->setup(files,imsize_in_mm);
     std::cout << "Setup done" << std::endl;
 
     write_nd_array(&projections,"projections.real");
     std::cout << "Projections size: " << projections.get_size(0) << " " << projections.get_size(1) << " " << projections.get_size(2) << std::endl;
-    E.mult_MH(&projections,&image,false);
+    //E->mult_MH(&projections,&image,false);
+    cuCgSolver<float> solver;
+    solver.set_max_iterations(3);
+    solver.set_encoding_operator(E);
 
-    write_nd_array(&image,"test.real");
+    auto result = solver.solve(&projections);
+
+    write_nd_array(result.get(),"test.real");
 
 }
