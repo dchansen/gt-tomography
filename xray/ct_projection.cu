@@ -34,7 +34,7 @@
 #define NORMALIZED_TC 0
 
 static texture<float, 3, cudaReadModeElementType>
-image_tex( NORMALIZED_TC, cudaFilterModeLinear, cudaAddressModeBorder );
+image_tex( 1, cudaFilterModeLinear, cudaAddressModeBorder );
 
 static texture<float, cudaTextureType2DLayered, cudaReadModeElementType>
 projections_tex( NORMALIZED_TC, cudaFilterModeLinear, cudaAddressModeBorder );
@@ -130,7 +130,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		// Find start and end point for the line integral (image space)
 		//
 		floatd3 startPoint = floatd3(focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[2]);
-
+		//if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f \n",startPoint[0],startPoint[1],startPoint[2]);
 
 		// Projection plate indices
 		//
@@ -140,6 +140,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		//
         floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_spacing,centralElement,co);
 
+		//if (co[0] == 350 && co[1] == 32) printf("End point %f %f %f \n",endPoint[0],endPoint[1],endPoint[2]);
 		floatd3 dir = endPoint-startPoint;
 
 		// Perform integration only inside the bounding cylinder of the image volume
@@ -156,6 +157,8 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 
 		const float sampling_distance = norm((aend-a1)*dir)/num_samples_per_ray;
 
+		//if (co[0] == 350 && co[1] == 32) printf("sampling distance %f \n",sampling_distance);
+
 		// Now perform conversion of the line integral start/end into voxel coordinates
 		//
 
@@ -165,6 +168,8 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		dir /= is_dims_in_mm;
 		dir /= float(num_samples_per_ray); // now in step size units
 
+		//if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f \n",startPoint[0],startPoint[1],startPoint[2]);
+		//if (co[0] == 350 && co[1] == 32) printf("Dir %f %f %f \n",dir[0],dir[1],dir[2]);
 		//
 		// Perform line integration
 		//
@@ -479,6 +484,8 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	//
     int offset = 0;
     cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
+	projections_tex.addressMode[0]=cudaAddressModeBorder;
+	projections_tex.addressMode[1]=cudaAddressModeClamp;
 	for (size_t batch = 0; batch < num_batches; batch++) {
 		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
 		cudaExtent extent;

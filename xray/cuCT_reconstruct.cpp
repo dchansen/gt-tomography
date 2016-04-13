@@ -72,7 +72,8 @@ int main(int argc, char** argv){
     //for (auto x  : axials)
     //    std::cout << x << std::endl;
     std::cout << "Axials start " << axials[0] << " Axials end " << axials.back() << std::endl;
-
+    mean_offset = std::accumulate(files->geometry.detectorFocalCenterAxialPosition.begin(),files->geometry.detectorFocalCenterAxialPosition.end(),0)/axials.size();
+    std::cout << "Mean offset " << mean_offset << std::endl;
 
     auto E = boost::make_shared<cuCTProjectionOperator>();
     std::vector<size_t> imdims {imageSize[0],imageSize[1],imageSize[2]};
@@ -90,6 +91,7 @@ int main(int argc, char** argv){
     std::cout << "Projections size: " << projections.get_size(0) << " " << projections.get_size(1) << " " << projections.get_size(2) << std::endl;
     //E->mult_MH(&projections,&image,false);
     //cuGpBbSolver<float> solver;
+    write_nd_array(&projections,"projections.real");
     cuCgSolver<float> solver;
     solver.set_max_iterations(0);
 
@@ -101,6 +103,6 @@ int main(int argc, char** argv){
 
     //fill(result.get(),1.0f);
     E->mult_M(result.get(),&projections,false);
-    write_nd_array(&projections,"projections.real");
+    write_nd_array(&projections,"projections2.real");
 
 }
