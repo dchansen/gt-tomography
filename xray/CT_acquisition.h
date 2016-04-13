@@ -8,6 +8,8 @@
 
 #include <boost/make_shared.hpp>
 
+#include <thrust/sort.h>
+#include <thrust/execution_policy.h>
 namespace Gadgetron {
     struct CT_geometry {
         CT_geometry() : angles(), detectorFocalCenterAngularPosition(), detectorFocalCenterAxialPosition(),
@@ -39,9 +41,34 @@ namespace Gadgetron {
 
     };
 
+    std::vector<double> extract_axial_position(std::vector<std::string> files){
+        std::vector<double> result;
+        for (auto file : files){
+            gdcm::Reader reader;
+            reader.SetFileName(file.c_str());
+            if (!reader.Read()) throw std::runtime_error("Could not read dicom file");
+            auto & dcmFile = reader.GetFile();
+
+            gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
+            auto & ds = dcmFile.GetDataSet();
+            detectorAxialPosition.Set(ds);
+            result.push_back(detectorAxialPosition.GetValue());
+
+        }
+        return result;
+    }
+
+    std::vector<std::string> sort_dicoms(std::vector<std::string> files){
+        auto axial_pos = extract_axial_position(files);
+
+        thrust::sort_by_key(thrust::host,axial_pos.begin(),axial_pos.end(),files.begin());
+        return files;
+
+    }
 
     boost::shared_ptr<CT_acquisition> read_dicom_projections(std::vector<std::string> files) {
 
+        files = sort_dicoms(files);
         boost::shared_ptr<CT_acquisition> result = boost::make_shared<CT_acquisition>();
         {
             gdcm::Reader reader;

@@ -24,6 +24,7 @@
 
 #define PS_ORIGIN_CENTERING
 #define IS_ORIGIN_CENTERING
+#include <host_defines.h>
 //#define FLIP_Z_AXIS
 
 // Read the projection/image data respectively as a texture (for input)
@@ -80,16 +81,15 @@ static inline
 
 
 static inline __device__
-floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & y_offset, const intd2 & elements, const floatd2 & spacing,const floatd2 & central_element, const intd3 & co){
+floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & ADD, const floatd2 & spacing,const floatd2 & central_element, const intd3 & co){
 
-        float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]+y_offset);
-        float x = -det_focal_cyl[0]*sin(phi);
-        float y = det_focal_cyl[0]*cos(phi)-y_offset;
-        float z = spacing[1]*elements[1]*(co[1]-central_element[1])+det_focal_cyl[2];
+        float phi = (det_focal_cyl[0]+CUDART_PI_F)+(co[0]-central_element[0])*spacing[0]/ADD;
+        //float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]);
 
-
-
-        return floatd3(cos(det_focal_cyl[0])*x+sin(det_focal_cyl[0])*y,-sin(det_focal_cyl[0])*x+cos(det_focal_cyl[0])*y,z);
+        float x = ADD*cos(phi)+det_focal_cyl[1]*cos(det_focal_cyl[0]);
+        float y = ADD*sin(phi)+det_focal_cyl[1]*sin(det_focal_cyl[1]);
+        float z = (co[1]-central_element[1])*spacing[1]+det_focal_cyl[2];
+        return floatd3(x,y,z);
     }
 
 
@@ -129,7 +129,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
         const floatd2 centralElement = centralElements[co[2]];
 		// Find start and end point for the line integral (image space)
 		//
-		floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[2]);
+		floatd3 startPoint = floatd3(focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[2]);
 
 
 		// Projection plate indices
@@ -138,7 +138,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 
     	// Find direction vector of the line integral
 		//
-        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_dims_in_pixels_int,ps_spacing,centralElement,co);
+        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_spacing,centralElement,co);
 
 		floatd3 dir = endPoint-startPoint;
 
@@ -320,7 +320,6 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 {
 	// Image voxel to backproject into (pixel coordinate and index)
 	//
-
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
 	const int num_elements = prod(is_dims_in_pixels_int);
 
@@ -356,8 +355,13 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             const floatd3 detector_focal_cyl = detector_focal_cyls[projection];
             const floatd3 focal_cyl = focal_offset_cyls[projection]+detector_focal_cyl;
 
-            floatd3 startPoint = floatd3(-focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[2]);
-            const floatd3 focal_point = floatd3(-detector_focal_cyl[1]*sin(detector_focal_cyl[0]),detector_focal_cyl[1]*cos(detector_focal_cyl[0]),detector_focal_cyl[2]);
+            floatd3 startPoint = floatd3(focal_cyl[1]*cos(focal_cyl[0]),
+										 focal_cyl[1]*sin(focal_cyl[0]),
+										 focal_cyl[2]);
+
+            const floatd3 focal_point = floatd3(detector_focal_cyl[1]*cos(detector_focal_cyl[0]),
+												detector_focal_cyl[1]*sin(detector_focal_cyl[0]),
+												detector_focal_cyl[2]);
             const floatd3 dir = pos-startPoint;
 			startPoint -= focal_point;
 
@@ -367,27 +371,20 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             float t = (-b+::sqrt(b*b-4*a*c))/(2*a);
 
             const floatd3 detectorPoint = startPoint+dir*t;
-            const floatd2 element_rad = floatd2((atan2(detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0])/ps_spacing[0],
+            const floatd2 element_rad = floatd2((atan2(detectorPoint[1],detectorPoint[0])-detector_focal_cyl[0]-CUDART_PI_F)*ADD/ps_spacing[0],
                                                 detectorPoint[2]/ps_spacing[1])+centralElements[projection];
 
-			/*
-            if (co[2]==100 && co[1] == 100 && co[0] == 100){
-                printf("Element rad %f %f %d %f %f %f %f %f\n",element_rad[0],element_rad[1],projection,detectorPoint[0],detectorPoint[1],detectorPoint[2],::sqrt(detectorPoint[0]*detectorPoint[0]+detectorPoint[1]*detectorPoint[1]),ADD);
-            }
-*/
+
 			// Convert metric projection coordinates into pixel coordinates
 			//
 
 			// Read the projection data (bilinear interpolation enabled) and accumulate
 			//
 
+            //if (idx == 0) printf("Kelvin was here %d %d\n",projection,offset);
 			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
-			/*
-			float tmp = tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
-			if (co[2]==100 && co[1] == 100 && co[0] == 100)
-				printf("Value %f \n",tmp);
-			result += tmp;
-			 */
+			//result += pos[2];
+
 		}
 
 		// Output normalized image
@@ -505,7 +502,9 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		cudaMemcpy3D(&cpy_params);
         CHECK_FOR_CUDA_ERROR();
 
-		cudaBindTextureToArray(projections_tex, projections_array, channelDesc);CHECK_FOR_CUDA_ERROR();
+		cudaBindTextureToArray(projections_tex, projections_array, channelDesc);
+        cudaThreadSynchronize();
+        CHECK_FOR_CUDA_ERROR();
 
 		// Upload projections for the next batch
 		// - to enable streaming

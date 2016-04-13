@@ -11,7 +11,7 @@
 #include <boost/regex.hpp>
 #include <algorithm>
 #include <cuCgSolver.h>
-
+#include <cuGpBbSolver.h>
 using namespace std;
 using namespace Gadgetron;
 
@@ -62,10 +62,12 @@ int main(int argc, char** argv){
     auto files = read_dicom_projections(get_dcm_files(vm["dir"].as<string>()));
     std::cout << " Penguins ";
     std::cout << files->geometry.detectorFocalCenterAxialPosition.size() << std::endl;
-    std::vector<float> axials =  files->geometry.detectorFocalCenterAxialPosition;
+    std::vector<float>& axials =  files->geometry.detectorFocalCenterAxialPosition;
     std::cout << "Axials size " << axials.size() << std::endl;
-    for ( auto & z : files->geometry.detectorFocalCenterAxialPosition)
-        z -= offset;
+    auto mean_offset = std::accumulate(axials.begin(),axials.end(),0.0f)/axials.size();
+    std::cout << "Mean offset " << mean_offset << std::endl;
+    for ( auto & z : axials)
+        z -= mean_offset+offset;
 
     //for (auto x  : axials)
     //    std::cout << x << std::endl;
@@ -85,15 +87,20 @@ int main(int argc, char** argv){
     E->setup(files,imsize_in_mm);
     std::cout << "Setup done" << std::endl;
 
-    write_nd_array(&projections,"projections.real");
     std::cout << "Projections size: " << projections.get_size(0) << " " << projections.get_size(1) << " " << projections.get_size(2) << std::endl;
     //E->mult_MH(&projections,&image,false);
+    //cuGpBbSolver<float> solver;
     cuCgSolver<float> solver;
-    solver.set_max_iterations(3);
-    solver.set_encoding_operator(E);
+    solver.set_max_iterations(0);
 
+    solver.set_encoding_operator(E);
+    solver.set_output_mode(cuCgSolver<float>::OUTPUT_VERBOSE);
     auto result = solver.solve(&projections);
 
     write_nd_array(result.get(),"test.real");
+
+    //fill(result.get(),1.0f);
+    E->mult_M(result.get(),&projections,false);
+    write_nd_array(&projections,"projections.real");
 
 }
