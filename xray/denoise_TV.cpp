@@ -13,7 +13,7 @@ typedef std::vector<std::vector<boost::shared_ptr<linearOperator<cuNDArray<float
 
 	void denoise(ARRAY_TYPE& x, ARRAY_TYPE& s, REAL scaling,REAL avg_lambda, int inner_iterations, RG& regularization_groups){
 		std::cout << "scaling " << scaling << std::endl;
-		REAL tau=1.0;
+		REAL tau=1e-4;
 		REAL gam=0.35/(scaling*avg_lambda);
 		REAL sigma = 1;
 		REAL alpha = 0;

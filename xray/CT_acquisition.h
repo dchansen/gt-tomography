@@ -10,6 +10,7 @@
 
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
+#include <boost/math/constants/constants.hpp>
 namespace Gadgetron {
     struct CT_geometry {
         CT_geometry() : angles(), detectorFocalCenterAngularPosition(), detectorFocalCenterAxialPosition(),
@@ -52,7 +53,7 @@ namespace Gadgetron {
             gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
             auto & ds = dcmFile.GetDataSet();
             detectorAxialPosition.Set(ds);
-            result.push_back(detectorAxialPosition.GetValue());
+            result.push_back(-detectorAxialPosition.GetValue());
 
         }
         return result;
@@ -68,6 +69,7 @@ namespace Gadgetron {
 
     boost::shared_ptr<CT_acquisition> read_dicom_projections(std::vector<std::string> files) {
 
+        using namespace boost::math::double_constants;
         files = sort_dicoms(files);
         boost::shared_ptr<CT_acquisition> result = boost::make_shared<CT_acquisition>();
         {
@@ -118,7 +120,8 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7031,0x1001> detectorAngularPosition;
             detectorAngularPosition.Set(ds);
-            geometry->detectorFocalCenterAngularPosition.push_back(detectorAngularPosition.GetValue());
+            geometry->detectorFocalCenterAngularPosition.push_back((fmod(detectorAngularPosition.GetValue()+pi,2*pi)-pi));
+           // geometry->detectorFocalCenterAngularPosition.push_back(detectorAngularPosition.GetValue());
 
             gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
             detectorAxialPosition.Set(ds);

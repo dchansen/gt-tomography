@@ -121,7 +121,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         for (int i = 0; i < slice_indices.size(); i++) {
             float slice_start = is_dims_in_mm[2] / image_dims[2] * (i - 0.5f) - is_dims_in_mm[2] / 2;
             float slice_stop = is_dims_in_mm[2] / image_dims[2] * (i + 0.5f) - is_dims_in_mm[2] / 2;
-            std::cout << "Slice start " << slice_start << " slice end " << slice_stop << std::endl;
+            //std::cout << "Slice start " << slice_start << " slice end " << slice_stop << std::endl;
             while (slice_start > (start_point[projection_start] + detectorSize[1]*proj_dims[1])) {
                 projection_start++;
                 if (projection_start >= centralElements.size()){
@@ -141,7 +141,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
 
             slice_indices[i][0] = projection_start;
             slice_indices[i][1] = projection_stop;
-            std::cout << "Projection start stop " << projection_start << " " << projection_stop << " start point " << start_point[projection_start] << " " << start_point[projection_stop] << " " << detectorSize[1] << std::endl;
+            //std::cout << "Projection start stop " << projection_start << " " << projection_stop << " start point " << start_point[projection_start] << " " << start_point[projection_stop] << " " << detectorSize[1] << std::endl;
         }
 
         std::cout << "Indices size " << slice_indices.size() << std::endl;

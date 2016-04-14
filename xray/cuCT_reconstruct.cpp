@@ -72,8 +72,8 @@ int main(int argc, char** argv){
     //for (auto x  : axials)
     //    std::cout << x << std::endl;
     std::cout << "Axials start " << axials[0] << " Axials end " << axials.back() << std::endl;
-    mean_offset = std::accumulate(files->geometry.detectorFocalCenterAxialPosition.begin(),files->geometry.detectorFocalCenterAxialPosition.end(),0)/axials.size();
-    std::cout << "Mean offset " << mean_offset << std::endl;
+
+    std::cout << "Minimum angle " << *std::min_element(files->geometry.detectorFocalCenterAngularPosition.begin(),files->geometry.detectorFocalCenterAngularPosition.end())  << " max " << *std::max_element(files->geometry.detectorFocalCenterAngularPosition.begin(),files->geometry.detectorFocalCenterAngularPosition.end()) << std::endl;
 
     auto E = boost::make_shared<cuCTProjectionOperator>();
     std::vector<size_t> imdims {imageSize[0],imageSize[1],imageSize[2]};
@@ -102,7 +102,12 @@ int main(int argc, char** argv){
     write_nd_array(result.get(),"test.real");
 
     //fill(result.get(),1.0f);
-    E->mult_M(result.get(),&projections,false);
-    write_nd_array(&projections,"projections2.real");
+    auto proj2 = projections;
+    E->mult_M(result.get(),&proj2,false);
+    float scaling = dot(&proj2,&projections)/dot(&projections,&projections);
+    std::cout << "Scaling " << scaling << std::endl;
+    proj2 /= scaling;
+    proj2 -= projections;
+    write_nd_array(&proj2,"projections2.real");
 
 }

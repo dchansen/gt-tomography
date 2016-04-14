@@ -22,10 +22,7 @@
 #include <algorithm>
 #include <vector>
 
-#define PS_ORIGIN_CENTERING
-#define IS_ORIGIN_CENTERING
 #include <host_defines.h>
-//#define FLIP_Z_AXIS
 
 // Read the projection/image data respectively as a texture (for input)
 // - taking advantage of the cache and hardware interpolation
@@ -34,13 +31,11 @@
 #define NORMALIZED_TC 0
 
 static texture<float, 3, cudaReadModeElementType>
-image_tex( 1, cudaFilterModeLinear, cudaAddressModeBorder );
+image_tex( true, cudaFilterModeLinear, cudaAddressModeBorder );
 
 static texture<float, cudaTextureType2DLayered, cudaReadModeElementType>
-projections_tex( NORMALIZED_TC, cudaFilterModeLinear, cudaAddressModeBorder );
+projections_tex( false, cudaFilterModeLinear, cudaAddressModeBorder );
 
-static texture<float, cudaTextureType2DLayered, cudaReadModeElementType>
-projections_mask_tex( NORMALIZED_TC, cudaFilterModePoint, cudaAddressModeBorder );
 
 namespace Gadgetron
 {
@@ -77,6 +72,10 @@ static inline
 // Utility to convert from degrees to radians
 //
 
+	static inline __device__
+	floatd3 cylindrical_to_cartesian(const floatd3 & cyl){
+		return floatd3(cos(cyl[0])*cyl[1],sin(cyl[0])*cyl[1],cyl[2]);
+	}
 
 
 
@@ -85,12 +84,16 @@ floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & ADD, con
 
         float phi = (det_focal_cyl[0]+CUDART_PI_F)+(co[0]-central_element[0])*spacing[0]/ADD;
         //float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]);
-
+/*
         float x = ADD*cos(phi)+det_focal_cyl[1]*cos(det_focal_cyl[0]);
-        float y = ADD*sin(phi)+det_focal_cyl[1]*sin(det_focal_cyl[1]);
+        float y = ADD*sin(phi)+det_focal_cyl[1]*sin(det_focal_cyl[0]);
         float z = (co[1]-central_element[1])*spacing[1]+det_focal_cyl[2];
+
         return floatd3(x,y,z);
-    }
+        */
+		floatd3 tmp(phi,ADD,(co[1]-central_element[1])*spacing[1]);
+		return cylindrical_to_cartesian(tmp)+cylindrical_to_cartesian(det_focal_cyl);
+	}
 
 
 //
@@ -129,25 +132,27 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
         const floatd2 centralElement = centralElements[co[2]];
 		// Find start and end point for the line integral (image space)
 		//
-		floatd3 startPoint = floatd3(focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[2]);
+		//floatd3 startPoint = floatd3(focal_cyl[1]*cos(focal_cyl[0]),focal_cyl[1]*sin(focal_cyl[0]),focal_cyl[2]);
+		floatd3 startPoint = cylindrical_to_cartesian(focal_cyl);
 		//if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f \n",startPoint[0],startPoint[1],startPoint[2]);
 
 		// Projection plate indices
 		//
 
+		//if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f \n",startPoint[0],startPoint[1],startPoint[2]);
 
     	// Find direction vector of the line integral
 		//
         floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_spacing,centralElement,co);
 
-		//if (co[0] == 350 && co[1] == 32) printf("End point %f %f %f \n",endPoint[0],endPoint[1],endPoint[2]);
 		floatd3 dir = endPoint-startPoint;
 
+		//if (co[0] == 350 && co[1] == 32) printf("End point %f %f %f %f \n",endPoint[0],endPoint[1],endPoint[2],norm(dir));
 		// Perform integration only inside the bounding cylinder of the image volume
 		//
 
-		const floatd3 vec_over_dir = (is_dims_in_mm-startPoint)/dir;
-		const floatd3 vecdiff_over_dir = (-is_dims_in_mm-startPoint)/dir;
+		const floatd3 vec_over_dir = (is_dims_in_mm/2-startPoint)/dir;
+		const floatd3 vecdiff_over_dir = (-is_dims_in_mm/2-startPoint)/dir;
 		const floatd3 start = amin(vecdiff_over_dir, vec_over_dir);
 		const floatd3 end   = amax(vecdiff_over_dir, vec_over_dir);
 
@@ -155,6 +160,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		float aend = fmin(min(end),1.0f);
 		startPoint += a1*dir;
 
+		//if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f %f \n",startPoint[0],startPoint[1],startPoint[2],a1);
 		const float sampling_distance = norm((aend-a1)*dir)/num_samples_per_ray;
 
 		//if (co[0] == 350 && co[1] == 32) printf("sampling distance %f \n",sampling_distance);
@@ -168,8 +174,8 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 		dir /= is_dims_in_mm;
 		dir /= float(num_samples_per_ray); // now in step size units
 
-		//if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f \n",startPoint[0],startPoint[1],startPoint[2]);
 		//if (co[0] == 350 && co[1] == 32) printf("Dir %f %f %f \n",dir[0],dir[1],dir[2]);
+		//if (co[0] == 350 && co[1] == 32) printf("ADD %f \n",ADD);
 		//
 		// Perform line integration
 		//
@@ -239,7 +245,7 @@ void ct_forwards_projection( cuNDArray<float> *projections,
 	// Build texture from input image
 	//
 
-	cudaFuncSetCacheConfig(ct_forwards_projection_kernel, cudaFuncCachePreferL1);
+	//cudaFuncSetCacheConfig(ct_forwards_projection_kernel, cudaFuncCachePreferL1);
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
 	cudaExtent extent;
 	extent.width = matrix_size_x;
@@ -273,6 +279,7 @@ void ct_forwards_projection( cuNDArray<float> *projections,
 	//
 	// Iterate over the batches
 	//
+
 
 	// Block/grid configuration
 	//
@@ -351,6 +358,7 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 		// Backprojection loop
 		//
 
+		//if (co[0] == 100 && co[1] == 100 && co[2] == 50) printf("ADD back %f\n",ADD);
 		float result = 0.0f;
 
 		for( int projection = proj_indices[co[2]][0]; projection < (proj_indices[co[2]][1]) && (projection-offset) < nprojs; projection++ ) {
@@ -360,13 +368,10 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             const floatd3 detector_focal_cyl = detector_focal_cyls[projection];
             const floatd3 focal_cyl = focal_offset_cyls[projection]+detector_focal_cyl;
 
-            floatd3 startPoint = floatd3(focal_cyl[1]*cos(focal_cyl[0]),
-										 focal_cyl[1]*sin(focal_cyl[0]),
-										 focal_cyl[2]);
+            floatd3 startPoint = cylindrical_to_cartesian(focal_cyl);
 
-            const floatd3 focal_point = floatd3(detector_focal_cyl[1]*cos(detector_focal_cyl[0]),
-												detector_focal_cyl[1]*sin(detector_focal_cyl[0]),
-												detector_focal_cyl[2]);
+			//if (co[0] == 255 && co[1] == 255 && co[2] == 100) printf("Startpoint back %f %f %f \n",startPoint[0],startPoint[1],startPoint[2]);
+            const floatd3 focal_point = cylindrical_to_cartesian(detector_focal_cyl);
             const floatd3 dir = pos-startPoint;
 			startPoint -= focal_point;
 
@@ -376,7 +381,8 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
             float t = (-b+::sqrt(b*b-4*a*c))/(2*a);
 
             const floatd3 detectorPoint = startPoint+dir*t;
-            const floatd2 element_rad = floatd2((atan2(detectorPoint[1],detectorPoint[0])-detector_focal_cyl[0]-CUDART_PI_F)*ADD/ps_spacing[0],
+			//if (co[0] == 255 && co[1] == 255 && co[2] == 100) printf("Endpiont back %f %f %f %f \n",detectorPoint[0],detectorPoint[1],detectorPoint[2],norm(detectorPoint-startPoint));
+            const floatd2 element_rad = floatd2((fmod(atan2(detectorPoint[1],detectorPoint[0])-detector_focal_cyl[0]+2*CUDART_PI_F,2*CUDART_PI_F)-CUDART_PI_F)*ADD/ps_spacing[0],
                                                 detectorPoint[2]/ps_spacing[1])+centralElements[projection];
 
 
@@ -386,6 +392,7 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 			// Read the projection data (bilinear interpolation enabled) and accumulate
 			//
 
+			//if (co[0] == 255 && co[1] == 255 && co[2] == 100) printf("Element rad %f %f %f %f \n",element_rad[0],element_rad[1],atan2(detectorPoint[1],detectorPoint[0]),detector_focal_cyl[0]);
             //if (idx == 0) printf("Kelvin was here %d %d\n",projection,offset);
 			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
 			//result += pos[2];
@@ -483,7 +490,7 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	// Build array for input texture
 	//
     int offset = 0;
-    cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
+    //cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
 	projections_tex.addressMode[0]=cudaAddressModeBorder;
 	projections_tex.addressMode[1]=cudaAddressModeClamp;
 	for (size_t batch = 0; batch < num_batches; batch++) {
@@ -493,9 +500,9 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		extent.height = projection_res_y;
 		extent.depth = std::min(size_t(batchsize),elements_left/(projection_res_x*projection_res_y));
 
-		std::cout << "Extent " << extent.width << " " << extent.height << " " << extent.depth << std::endl;
-        std::cout << "Elements left " << elements_left << std::endl;
-		std::cout << "Pixels " << is_dims_in_pixels << std::endl;
+		//std::cout << "Extent " << extent.width << " " << extent.height << " " << extent.depth << std::endl;
+        //std::cout << "Elements left " << elements_left << std::endl;
+		//std::cout << "Pixels " << is_dims_in_pixels << std::endl;
 		cudaArray *projections_array;
 		cudaMalloc3DArray(&projections_array, &channelDesc, extent, cudaArrayLayered);CHECK_FOR_CUDA_ERROR();
 
