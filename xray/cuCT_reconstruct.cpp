@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cuCgSolver.h>
 #include <cuGpBbSolver.h>
+#include <cuNlcgSolver.h>
+
 using namespace std;
 using namespace Gadgetron;
 
@@ -90,10 +92,11 @@ int main(int argc, char** argv){
 
     std::cout << "Projections size: " << projections.get_size(0) << " " << projections.get_size(1) << " " << projections.get_size(2) << std::endl;
     //E->mult_MH(&projections,&image,false);
-    //cuGpBbSolver<float> solver;
     write_nd_array(&projections,"projections.real");
-    cuCgSolver<float> solver;
-    solver.set_max_iterations(0);
+    //cuGpBbSolver<float> solver;
+    cuNlcgSolver<float> solver;
+    //cuCgSolver<float> solver;
+    solver.set_max_iterations(10);
 
     solver.set_encoding_operator(E);
     solver.set_output_mode(cuCgSolver<float>::OUTPUT_VERBOSE);

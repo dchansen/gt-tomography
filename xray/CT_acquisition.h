@@ -125,7 +125,7 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
             detectorAxialPosition.Set(ds);
-            geometry->detectorFocalCenterAxialPosition.push_back(detectorAxialPosition.GetValue());
+            geometry->detectorFocalCenterAxialPosition.push_back(-detectorAxialPosition.GetValue());
 
             gdcm::Attribute<0x7031,0x1003> detectorRadialDistance;
             detectorRadialDistance.Set(ds);
@@ -141,11 +141,11 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7033,0x100B> sourceAngularPositionShift;
             sourceAngularPositionShift.Set(ds);
-            geometry->sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
+            geometry->sourceAngularPositionShift.push_back(-sourceAngularPositionShift.GetValue());
 
             gdcm::Attribute<0x7033,0x100C>  sourceAxialPositionShift;
             sourceAxialPositionShift.Set(ds);
-            geometry->sourceAxialPositionShift.push_back(sourceAxialPositionShift.GetValue());
+            geometry->sourceAxialPositionShift.push_back(-sourceAxialPositionShift.GetValue());
 
             gdcm::Attribute<0x7033,0x100D> sourceRadialDistanceShift;
             sourceRadialDistanceShift.Set(ds);
