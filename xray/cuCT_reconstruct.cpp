@@ -94,9 +94,10 @@ int main(int argc, char** argv){
     //E->mult_MH(&projections,&image,false);
     write_nd_array(&projections,"projections.real");
     //cuGpBbSolver<float> solver;
-    cuNlcgSolver<float> solver;
-    //cuCgSolver<float> solver;
-    solver.set_max_iterations(10);
+    //cuNlcgSolver<float> solver;
+    cuCgSolver<float> solver;
+    //solver.set_non_negativity_constraint(true);
+    solver.set_max_iterations(2);
 
     solver.set_encoding_operator(E);
     solver.set_output_mode(cuCgSolver<float>::OUTPUT_VERBOSE);
@@ -107,10 +108,11 @@ int main(int argc, char** argv){
     //fill(result.get(),1.0f);
     auto proj2 = projections;
     E->mult_M(result.get(),&proj2,false);
+    write_nd_array(&proj2,"projections2.real");
     float scaling = dot(&proj2,&projections)/dot(&projections,&projections);
     std::cout << "Scaling " << scaling << std::endl;
     proj2 /= scaling;
     proj2 -= projections;
-    write_nd_array(&proj2,"projections2.real");
+    write_nd_array(&proj2,"projections3.real");
 
 }

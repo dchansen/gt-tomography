@@ -53,7 +53,7 @@ namespace Gadgetron {
             gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
             auto & ds = dcmFile.GetDataSet();
             detectorAxialPosition.Set(ds);
-            result.push_back(-detectorAxialPosition.GetValue());
+            result.push_back(detectorAxialPosition.GetValue());
 
         }
         return result;
@@ -120,12 +120,12 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7031,0x1001> detectorAngularPosition;
             detectorAngularPosition.Set(ds);
-            geometry->detectorFocalCenterAngularPosition.push_back((fmod(detectorAngularPosition.GetValue()+pi,2*pi)-pi));
-           // geometry->detectorFocalCenterAngularPosition.push_back(detectorAngularPosition.GetValue());
+            //geometry->detectorFocalCenterAngularPosition.push_back((fmod(detectorAngularPosition.GetValue()+pi,2*pi)-pi));
+           geometry->detectorFocalCenterAngularPosition.push_back(detectorAngularPosition.GetValue());
 
             gdcm::Attribute<0x7031,0x1002> detectorAxialPosition;
             detectorAxialPosition.Set(ds);
-            geometry->detectorFocalCenterAxialPosition.push_back(-detectorAxialPosition.GetValue());
+            geometry->detectorFocalCenterAxialPosition.push_back(detectorAxialPosition.GetValue());
 
             gdcm::Attribute<0x7031,0x1003> detectorRadialDistance;
             detectorRadialDistance.Set(ds);
@@ -141,15 +141,18 @@ namespace Gadgetron {
 
             gdcm::Attribute<0x7033,0x100B> sourceAngularPositionShift;
             sourceAngularPositionShift.Set(ds);
-            geometry->sourceAngularPositionShift.push_back(-sourceAngularPositionShift.GetValue());
+            //geometry->sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
+            geometry->sourceAngularPositionShift.push_back(0);
 
             gdcm::Attribute<0x7033,0x100C>  sourceAxialPositionShift;
             sourceAxialPositionShift.Set(ds);
-            geometry->sourceAxialPositionShift.push_back(-sourceAxialPositionShift.GetValue());
+            geometry->sourceAxialPositionShift.push_back(0);
+            //geometry->sourceAxialPositionShift.push_back(sourceAxialPositionShift.GetValue());
 
             gdcm::Attribute<0x7033,0x100D> sourceRadialDistanceShift;
             sourceRadialDistanceShift.Set(ds);
-            geometry->sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
+            //geometry->sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
+            geometry->sourceRadialDistanceShift.push_back(0);
 
             gdcm::ImageReader imReader;
             imReader.SetFileName(fileStr.c_str());
