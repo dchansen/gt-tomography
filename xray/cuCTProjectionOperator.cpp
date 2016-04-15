@@ -81,8 +81,10 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
                                 central_elements[bin], proj_indices[bin], is_dims_in_mm, ps_spacing, ADD, accumulate);
         input_ptr += input_view.get_number_of_elements();
         output_ptr += output_view.get_number_of_elements();
+        //std::cout << "Killroy was here " << std::endl;
 
     }
+    std::cout << "Mult_MH norm " << nrm2(output) << " " << nrm2(input) << " " << input->get_number_of_elements() << std::endl;
 
 
 }
@@ -113,6 +115,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         for (int i = 0; i < centralElements.size(); i++) {
             start_point[i] = axialPosition[i] + (centralElements[i][1] - float(proj_dims[1])/2) * detectorSize[1] -
                              detectorSize[1]*proj_dims[1] / 2;
+            //std::cout << "Start point " << start_point[i] << std::endl;
         }
         start_point.back() = 2*start_point[centralElements.size()-1]-start_point[centralElements.size()-2];
 

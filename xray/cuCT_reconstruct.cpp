@@ -97,7 +97,8 @@ int main(int argc, char** argv){
     //cuNlcgSolver<float> solver;
     cuCgSolver<float> solver;
     //solver.set_non_negativity_constraint(true);
-    solver.set_max_iterations(2);
+    solver.set_max_iterations(20);
+    solver.set_tc_tolerance(1e-8);
 
     solver.set_encoding_operator(E);
     solver.set_output_mode(cuCgSolver<float>::OUTPUT_VERBOSE);

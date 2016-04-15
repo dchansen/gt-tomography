@@ -74,13 +74,13 @@ static inline
 
 	static inline __device__
 	floatd3 cylindrical_to_cartesian(const floatd3 & cyl){
-		return floatd3(cos(cyl[0])*cyl[1],sin(cyl[0])*cyl[1],cyl[2]);
+		return floatd3(-sin(cyl[0])*cyl[1],cos(cyl[0])*cyl[1],cyl[2]);
 	}
 
 
 
 static inline __device__
-floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & ADD, const floatd2 & spacing,const floatd2 & central_element, const intd3 & co){
+floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & ADD, const floatd2 & spacing,const floatd2 & central_element, const intd3 & co, const intd2 & ps_dims_in_pixels){
 
         float phi = (det_focal_cyl[0]+CUDART_PI_F)+(co[0]-central_element[0])*spacing[0]/ADD;
         //float phi = spacing[0]*elements[0]*(co[0]-central_element[0])/(det_focal_cyl[1]);
@@ -91,7 +91,7 @@ floatd3 calculate_endpoint(const floatd3 & det_focal_cyl, const float & ADD, con
 
         return floatd3(x,y,z);
         */
-		floatd3 tmp(phi,ADD,(co[1]-central_element[1])*spacing[1]);
+		floatd3 tmp(phi,ADD,(ps_dims_in_pixels[1]-co[1]-central_element[1])*spacing[1]);
 		return cylindrical_to_cartesian(tmp)+cylindrical_to_cartesian(det_focal_cyl);
 	}
 
@@ -107,18 +107,18 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
                                const floatd2 * __restrict__ centralElements,
 		floatd3 is_dims_in_pixels,
 		floatd3 is_dims_in_mm,
-		intd2 ps_dims_in_pixels_int,
+		intd2 ps_dims_in_pixels,
                                floatd2 ps_spacing,
 		int num_projections,
 		float ADD,
 		int num_samples_per_ray, bool accumulate )
 {
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x+threadIdx.x;
-	const int num_elements = prod(ps_dims_in_pixels_int)*num_projections;
+	const int num_elements = prod(ps_dims_in_pixels)*num_projections;
 
 	if( idx < num_elements){
 
-		const intd3 co = idx_to_co<3>( idx, intd3(ps_dims_in_pixels_int[0], ps_dims_in_pixels_int[1], num_projections) );
+		const intd3 co = idx_to_co<3>( idx, intd3(ps_dims_in_pixels[0], ps_dims_in_pixels[1], num_projections) );
 
 		// Projection space dimensions and spacing
 		//
@@ -143,7 +143,7 @@ ct_forwards_projection_kernel( float * __restrict__ projections,
 
     	// Find direction vector of the line integral
 		//
-        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_spacing,centralElement,co);
+        floatd3 endPoint = calculate_endpoint(detector_focal_cyl,ADD,ps_spacing,centralElement,co,ps_dims_in_pixels);
 
 		floatd3 dir = endPoint-startPoint;
 
@@ -382,7 +382,8 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 
             const floatd3 detectorPoint = startPoint+dir*t;
 			//if (co[0] == 255 && co[1] == 255 && co[2] == 100) printf("Endpiont back %f %f %f %f \n",detectorPoint[0],detectorPoint[1],detectorPoint[2],norm(detectorPoint-startPoint));
-            const floatd2 element_rad = floatd2((fmod(atan2(detectorPoint[1],detectorPoint[0])-detector_focal_cyl[0]+2*CUDART_PI_F,2*CUDART_PI_F)-CUDART_PI_F)*ADD/ps_spacing[0],
+            float test = fmod(atan2(-detectorPoint[0],detectorPoint[1])-detector_focal_cyl[0]+4*CUDART_PI_F,2*CUDART_PI_F)-CUDART_PI_F;
+            const floatd2 element_rad = floatd2(test*ADD/ps_spacing[0],
                                                 detectorPoint[2]/ps_spacing[1])+centralElements[projection];
 
 
@@ -393,8 +394,8 @@ ct_backwards_projection_kernel( float * __restrict__ image, // Image of size [nx
 			//
 
 			//if (co[0] == 255 && co[1] == 255 && co[2] == 100) printf("Element rad %f %f %f %f \n",element_rad[0],element_rad[1],atan2(detectorPoint[1],detectorPoint[0]),detector_focal_cyl[0]);
-            //if (idx == 0) printf("Kelvin was here %d %d\n",projection,offset);
-			result += tex2DLayered( projections_tex, element_rad[0], element_rad[1], projection-offset );
+
+			result += tex2DLayered( projections_tex, element_rad[0], ps_dims_in_pixels[1]-1.0f-element_rad[1], projection-offset );
 			//result += pos[2];
 
 		}
