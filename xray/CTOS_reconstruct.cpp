@@ -199,14 +199,14 @@ int main(int argc, char** argv)
 	std::cout << "IS dimensions " << is_dims[0] << " " << is_dims[1] << " " << is_dims[2] << std::endl;
 	std::cout << "Image size " << imageDimensions << std::endl;
 
-	//osLALMSolver<cuNDArray<float>> solver;
-	osMOMSolverD3<cuNDArray<float>> solver;
-	//osMOMSolverL1<cuNDArray<float>> solver;
-	//osAHZCSolver<cuNDArray<float>> solver;
-	//osMOMSolverF<cuNDArray<float>> solver;
-	//ADMMSolver<cuNDArray<float>> solver;
-	solver.set_dump(false);
-	solver.set_stepsize(0.1);
+	//osLALMSolver<hoCuNDArray<float> solver;
+	osMOMSolverD3<hoCuNDArray<float>> solver;
+	//osMOMSolverL1<hoCuNDArray<float> solver;
+	//osAHZCSolver<hoCuNDArray<float> solver;
+	//osMOMSolverF<hoCuNDArray<float> solver;
+	//ADMMSolver<hoCuNDArray<float> solver;
+	solver.set_dump(true);
+	solver.set_stepsize(1);
 	//solver.set_beta(0.1);
 
 
@@ -219,7 +219,7 @@ int main(int argc, char** argv)
 	//hoCuNCGSolver<float> solver;
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
-	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
+	solver.set_output_mode(osSPSSolver<hoCuNDArray<float>>::OUTPUT_VERBOSE);
 	solver.set_tau(tau);
 	solver.set_non_negativity_constraint(use_non_negativity);
 	solver.set_huber(huber);
@@ -228,32 +228,27 @@ int main(int argc, char** argv)
 
   if (tv_weight > 0) {
 
-	  auto Dx = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(0);
+	  auto Dx = boost::make_shared<hoCuPartialDerivativeOperator<float, 4>>(0);
 	  Dx->set_weight(tv_weight);
 	  Dx->set_domain_dimensions(&is_dims);
 	  Dx->set_codomain_dimensions(&is_dims);
 
-	  auto Dy = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(1);
+	  auto Dy = boost::make_shared<hoCuPartialDerivativeOperator<float, 4>>(1);
 	  Dy->set_weight(tv_weight);
 	  Dy->set_domain_dimensions(&is_dims);
 	  Dy->set_codomain_dimensions(&is_dims);
 
 
-	  auto Dz = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(2);
+	  auto Dz = boost::make_shared<hoCuPartialDerivativeOperator<float, 4>>(2);
 	  Dz->set_weight(tv_weight);
 	  Dz->set_domain_dimensions(&is_dims);
 	  Dz->set_codomain_dimensions(&is_dims);
 
 	  solver.add_regularization_group({Dx, Dy, Dz});
   }
-	if (dct_weight > 0){
-		auto dctOp = boost::make_shared<cuDCTOperator<float>>();
-		dctOp->set_domain_dimensions(&is_dims);
-		dctOp->set_weight(dct_weight);
-		solver.add_regularization_operator(dctOp);
-	}
 
-	auto E = boost::make_shared<CTSubsetOperator<cuNDArray> >(subsets);
+
+	auto E = boost::make_shared<CTSubsetOperator<hoCuNDArray> >(subsets);
 
 	E->set_domain_dimensions(&is_dims);
 	//E->setup(ps,binning,imageDimensions);
@@ -265,13 +260,11 @@ int main(int argc, char** argv)
 
 
 
-	auto projections = boost::make_shared<cuNDArray<float>>(*host_projections);
-	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
-	write_nd_array(projections.get(),"projections.real");
-	boost::shared_ptr<cuNDArray<float>> result;
+
+	boost::shared_ptr<hoCuNDArray<float>> result;
 	{
 		GPUTimer tim("Solver");
-		result = solver.solve(projections.get());
+		result = solver.solve(host_projections.get());
 	}
 
 	std::cout << "Penguin" << nrm2(result.get()) << std::endl;
@@ -284,26 +277,6 @@ int main(int argc, char** argv)
 	//saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
 
 
-	if (wavelet_weight > 0){
-		osMOMSolverF<cuNDArray<float>> solverF;
-		solverF.set_max_iterations(10);
-		solverF.set_x0(result);
-		solverF.set_encoding_operator(E);
-		solverF.set_non_negativity_constraint(true);
-
-		auto wave = boost::make_shared<cuEdgeATrousOperator<float>>();
-
-		wave->set_sigma(sigma);
-		wave->set_domain_dimensions(&is_dims);
-
-		wave->set_levels({2,2,2});
-
-		wave->set_weight(wavelet_weight);
-		solverF.add_regularization_operator(wave);
-
-		result = solverF.solve(projections.get());
-
-	}
 
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
 //	write_nd_array(result.get(),"reconstruction.real");

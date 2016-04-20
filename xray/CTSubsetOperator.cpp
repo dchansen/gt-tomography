@@ -12,7 +12,7 @@ using namespace Gadgetron;
 
 template<template<class> class ARRAY> Gadgetron::CTSubsetOperator<ARRAY>::CTSubsetOperator(int subsets): subsetOperator<ARRAY<float>>(subsets) {
 	for (int i = 0; i < subsets; i++)
-		operators.push_back(boost::make_shared<typename ctProjectionOperator<ARRAY>::type>());
+		operators.push_back(boost::make_shared<CTProjectionOperator<ARRAY>>());
 }
 
 template<template<class> class ARRAY> Gadgetron::CTSubsetOperator<ARRAY>::~CTSubsetOperator() {
@@ -73,6 +73,8 @@ template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float>> Gadg
 
 
 		}
+		sub_geometry.detectorSize = geometry.detectorSize;
+
 		std::cout  << "Focal size " << sub_geometry.detectorFocalCenterAngularPosition.size() << std::endl;
 	}
 
@@ -133,4 +135,4 @@ template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float> > Gad
 }
 
 template class Gadgetron::CTSubsetOperator<cuNDArray>;
-//template class Gadgetron::CTSubsetOperator<hoCuNDArray>;
+template class Gadgetron::CTSubsetOperator<hoCuNDArray>;

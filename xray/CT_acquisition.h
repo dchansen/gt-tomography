@@ -40,7 +40,10 @@ namespace Gadgetron {
         }
         hoCuNDArray<float> projections;
         CT_geometry geometry;
-
+        float calibration_factor;
+        std::string StudyInstanceUID;
+        std::string SeriesInstanceUID;
+        size_t SeriesNumber;
 
     };
 

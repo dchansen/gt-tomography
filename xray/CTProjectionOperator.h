@@ -18,13 +18,13 @@
 
 namespace Gadgetron {
 
-class cuCTProjectionOperator: public Gadgetron::linearOperator<cuNDArray<float>> {
+template< template<class> class ARRAY> class CTProjectionOperator: public Gadgetron::linearOperator<ARRAY<float>> {
 public:
-	cuCTProjectionOperator();
-	virtual ~cuCTProjectionOperator();
+	CTProjectionOperator();
+	virtual ~CTProjectionOperator();
 
-	virtual void mult_M(cuNDArray<float>* input, cuNDArray<float>* output, bool accumulate=false);
-	virtual void mult_MH(cuNDArray<float>* input, cuNDArray<float>* output, bool accumulate=false);
+	virtual void mult_M(ARRAY<float>* input, ARRAY<float>* output, bool accumulate=false);
+	virtual void mult_MH(ARRAY<float>* input, ARRAY<float>* output, bool accumulate=false);
 
 	void setup(boost::shared_ptr<CT_acquisition> acquisition, floatd3 is_dims_in_mm);
 	void setup(boost::shared_ptr<CT_acquisition> acquisition, boost::shared_ptr<CBCT_binning> binnning,floatd3 is_dims_in_mm);

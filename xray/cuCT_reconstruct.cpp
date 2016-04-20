@@ -6,7 +6,7 @@
 #include <cuNDArray.h>
 #include <cuNDArray_fileio.h>
 #include "CT_acquisition.h"
-#include "cuCTProjectionOperator.h"
+#include "CTProjectionOperator.h"
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <algorithm>
@@ -77,7 +77,7 @@ int main(int argc, char** argv){
 
     std::cout << "Minimum angle " << *std::min_element(files->geometry.detectorFocalCenterAngularPosition.begin(),files->geometry.detectorFocalCenterAngularPosition.end())  << " max " << *std::max_element(files->geometry.detectorFocalCenterAngularPosition.begin(),files->geometry.detectorFocalCenterAngularPosition.end()) << std::endl;
 
-    auto E = boost::make_shared<cuCTProjectionOperator>();
+    auto E = boost::make_shared<CTProjectionOperator<cuNDArray>>();
     std::vector<size_t> imdims {imageSize[0],imageSize[1],imageSize[2]};
     cuNDArray<float> image(imdims);
 

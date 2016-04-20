@@ -56,7 +56,20 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 		bool accumulate
 );
 
-void ct_forwards_projection( cuNDArray<float> *projections,
+	void ct_backwards_projection( hoCuNDArray<float> *projections,
+								  hoCuNDArray<float> *image,
+								  std::vector<floatd3> & detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
+								  std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
+								  std::vector<floatd2> & centralElements, // Central element on the detector
+								  std::vector<intd2> & proj_indices, // Array of size nz containing first to last projection for slice
+								  floatd3 is_dims_in_mm, // Image size in mm
+								  floatd2 ps_spacing,  //Size of each projection element in mm
+								  float ADD, //aparture - detector disance
+								  bool accumulate
+	);
+
+
+	void ct_forwards_projection( cuNDArray<float> *projections,
 		cuNDArray<float> *image,
        	std::vector<floatd3> & detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
 		std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
@@ -67,6 +80,17 @@ void ct_forwards_projection( cuNDArray<float> *projections,
                              float samples_per_ray,
 		bool accumulate
 );
+	void ct_forwards_projection( hoCuNDArray<float> *projections,
+								 hoCuNDArray<float> *image,
+								 std::vector<floatd3> & detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
+								 std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
+								 std::vector<floatd2> & centralElements, // Central element on the detector
+								 floatd3 is_dims_in_mm, // Image size in mm
+								 floatd2 ps_spacing,  //Size of each projection element in mm
+								 float ADD, //aparture - detector disance
+								 float samples_per_ray,
+								 bool accumulate
+	);
 
 /*
   // Forwards projection of a 3D volume onto a set of projections.

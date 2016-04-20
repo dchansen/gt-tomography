@@ -1,4 +1,5 @@
 #include "CT_acquisition.h"
+#include "vector_td_io.h"
 using namespace Gadgetron;
 static std::vector<double> extract_axial_position(std::vector<std::string> files){
     std::vector<double> result;
@@ -52,12 +53,14 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
         result->projections = hoCuNDArray<float>(projection_dims);
 
 
-        gdcm::Attribute<0x7029, 0x1002> detectorsizeY;
-        detectorsizeY.Set(ds);
-        gdcm::Attribute<0x7029, 0x1006> detectorsizeX;
+        gdcm::Attribute<0x7029, 0x1002> detectorsizeX;
         detectorsizeX.Set(ds);
+        gdcm::Attribute<0x7029, 0x1006> detectorsizeY;
+        detectorsizeY.Set(ds);
 
         result->geometry.detectorSize = floatd2(detectorsizeX.GetValue(), detectorsizeY.GetValue());
+        std::cout << "Detector element size " << result->geometry.detectorSize << std::endl;
+
 
         gdcm::Attribute<0x7029, 0x100B> detectorShape;
         detectorShape.Set(ds);
@@ -65,6 +68,23 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
             std::cout << "Detector shape: " << detectorShape.GetValue() << "X" << std::endl;
             throw std::runtime_error("Detector not cylindrical!");
         }
+
+        gdcm::Attribute<0x0018,0x0061> calibrationFactor;
+        calibrationFactor.Set(ds);
+        result->calibration_factor = calibrationFactor.GetValue();
+        std::cout << "Calibration factor " << result->calibration_factor << std::endl;
+
+        gdcm::Attribute<0x0020,0x000D> StudyInstanceUID;
+        StudyInstanceUID.Set(ds);
+        result->StudyInstanceUID = StudyInstanceUID.GetValue();
+
+        gdcm::Attribute<0x0020,0x000E> SeriesInstanceUID;
+        SeriesInstanceUID.Set(ds);
+        result->SeriesInstanceUID = SeriesInstanceUID.GetValue();
+
+        gdcm::Attribute<0x0020,0x0011> SeriesNumber;
+        SeriesNumber.Set(ds);
+        result->SeriesNumber = SeriesNumber.GetValue();
     }
     CT_geometry * geometry = &result->geometry;
     float* projectionPtr = result->projections.get_data_ptr();
@@ -99,21 +119,21 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
 
         gdcm::Attribute<0x7033,0x100C> sourceAngularPositionShift;
         sourceAngularPositionShift.Set(ds);
-        //geometry->sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
-        std::cout << "Angular position shift " << sourceAngularPositionShift.GetValue() << std::endl;
-        geometry->sourceAngularPositionShift.push_back(0);
+        geometry->sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
+
+        //geometry->sourceAngularPositionShift.push_back(0);
 
         gdcm::Attribute<0x7033,0x100B>  sourceAxialPositionShift;
         sourceAxialPositionShift.Set(ds);
-        geometry->sourceAxialPositionShift.push_back(0);
-        //geometry->sourceAxialPositionShift.push_back(sourceAxialPositionShift.GetValue());
-        std::cout << "Axial position shift " << sourceAxialPositionShift.GetValue() << std::endl;
+        //geometry->sourceAxialPositionShift.push_back(0);
+        geometry->sourceAxialPositionShift.push_back(sourceAxialPositionShift.GetValue());
+
 
         gdcm::Attribute<0x7033,0x100D> sourceRadialDistanceShift;
         sourceRadialDistanceShift.Set(ds);
-        //geometry->sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
-        std::cout << "Radial distance shift " << sourceRadialDistanceShift.GetValue() << std::endl;
-        geometry->sourceRadialDistanceShift.push_back(0);
+        geometry->sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
+
+        //geometry->sourceRadialDistanceShift.push_back(0);
 
         gdcm::ImageReader imReader;
         imReader.SetFileName(fileStr.c_str());

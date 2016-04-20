@@ -13,18 +13,15 @@
 #include "CBCT_acquisition.h"
 #include "cuConebeamProjectionOperator.h"
 #include "hoCuConebeamProjectionOperator.h"
-#include "cuCTProjectionOperator.h"
+#include "CTProjectionOperator.h"
 namespace Gadgetron {
 
-template<template<class> class T> struct ctProjectionOperator{};
+
 
 //template<> struct ctProjectionOperator<hoCuNDArray>{
 	//using type = oCuConebeamProjectionOperator;
 //};
 
-template<> struct ctProjectionOperator<cuNDArray>{
-	using type = cuCTProjectionOperator;
-};
 
 
 
@@ -55,7 +52,7 @@ public:
 protected:
 
 	boost::shared_ptr<hoCuNDArray<float>> permute_projections(hoCuNDArray<float>& projections, std::vector<unsigned int > & permutations);
-	std::vector<boost::shared_ptr<cuCTProjectionOperator>> operators;
+	std::vector<boost::shared_ptr<CTProjectionOperator<ARRAY>>> operators;
 	//std::vector<boost::shared_ptr<typename ctProjectionOperator<ARRAY>::type>> operators;
 
 	std::vector<boost::shared_ptr<std::vector<size_t> > > projection_dims;

@@ -5,27 +5,28 @@
  *      Author: u051747
  */
 
-#include "cuCTProjectionOperator.h"
+#include "CTProjectionOperator.h"
 #include <boost/math/constants/constants.hpp>
 #include "ct_projection.h"
+#include "hoNDArray_math.h"
 
 using namespace boost::math::float_constants;
 namespace Gadgetron {
 
 
-cuCTProjectionOperator::cuCTProjectionOperator() {
+template<template<class> class ARRAY> CTProjectionOperator<ARRAY>::CTProjectionOperator() {
     // TODO Auto-generated constructor stub
 
     samples_per_pixel_ = 1.5f;
 
 }
 
-cuCTProjectionOperator::~cuCTProjectionOperator() {
+    template<template<class> class ARRAY>CTProjectionOperator<ARRAY>::~CTProjectionOperator() {
     // TODO Auto-generated destructor stub
 }
 
-void cuCTProjectionOperator::mult_M(cuNDArray<float>* input,
-                                    cuNDArray<float> *output, bool accumulate) {
+    template<template<class> class ARRAY> void CTProjectionOperator<ARRAY>::mult_M(ARRAY<float>* input,
+                                    ARRAY<float> *output, bool accumulate) {
 
     auto dims = *input->get_dimensions();
     std::vector<size_t> dims3d(dims);
@@ -39,23 +40,27 @@ void cuCTProjectionOperator::mult_M(cuNDArray<float>* input,
         //Check for empty bins
         if (binning->get_bin(bin).size() == 0)
             continue;
-        cuNDArray<float> input_view(dims3d, input_ptr);
+        ARRAY<float> input_view(dims3d, input_ptr);
         outbindims.back() = detector_focal_cyls[bin].size();
-        auto output_view = cuNDArray<float>(outbindims, output_ptr);
+        auto output_view = ARRAY<float>(outbindims, output_ptr);
+
 
         ct_forwards_projection(&output_view,&input_view,detector_focal_cyls[bin],focal_offset_cyls[bin],central_elements[bin],is_dims_in_mm,ps_spacing,ADD,samples_per_pixel_,accumulate);
         //conebeam_forwards_projection(output_view2.get(),&input_view,angles[bin],offsets[bin],samples_per_pixel_,is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),accumulate);
 
+        std::cout << "Mult M1 bin " << nrm2(&input_view) << " " << nrm2(&output_view ) << " " << output_view.get_number_of_elements() <<  std::endl;
         input_ptr += input_view.get_number_of_elements();
         output_ptr += output_view.get_number_of_elements();
 
 
     }
 
+        std::cout << "Mult M " << nrm2(input) << " " << nrm2(output ) <<  std::endl;
+
 }
 
-void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
-                                     cuNDArray<float> *output, bool accumulate) {
+    template<template<class> class ARRAY> void CTProjectionOperator<ARRAY>::mult_MH(ARRAY<float>* input,
+                                     ARRAY<float> *output, bool accumulate) {
     auto dims = *output->get_dimensions();
     std::vector<size_t> dims3d = dims;
     if (dims3d.size() == 4) dims3d.pop_back();
@@ -71,9 +76,9 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         if (binning->get_bin(bin).size() == 0)
             continue;
 
-        cuNDArray<float> output_view(dims3d, output_ptr);
+        ARRAY<float> output_view(dims3d, output_ptr);
         inbindims.back() = detector_focal_cyls[bin].size();
-        auto input_view = cuNDArray<float>(inbindims, input_ptr);
+        auto input_view = ARRAY<float>(inbindims, input_ptr);
 
         vector_td<int, 3> is_dims_in_pixels{dims3d[0], dims3d[1], dims3d[2]};
 
@@ -81,24 +86,23 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
                                 central_elements[bin], proj_indices[bin], is_dims_in_mm, ps_spacing, ADD, accumulate);
         input_ptr += input_view.get_number_of_elements();
         output_ptr += output_view.get_number_of_elements();
-        //std::cout << "Killroy was here " << std::endl;
+    }
+        std::cout << "Mult MH " << nrm2(input) << " " << nrm2(output ) <<  std::endl;
+
+
 
     }
-    std::cout << "Mult_MH norm " << nrm2(output) << " " << nrm2(input) << " " << input->get_number_of_elements() << std::endl;
 
-
-}
-
-    void Gadgetron::cuCTProjectionOperator::setup(boost::shared_ptr<CT_acquisition> acquisition,
+    template<template<class> class ARRAY> void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
                                                   floatd3 is_dims_in_mm)
 {
-    std::vector<unsigned int> bins(acquisition->projections.get_size(2));
+    std::vector<unsigned int> bins(acquisition->geometry.detectorFocalCenterAngularPosition.size());
     std::iota(bins.begin(), bins.end(), 0);
     auto tmp_binning = boost::make_shared<CBCT_binning>(std::vector<std::vector<unsigned int>>(1, bins));
     this->setup(acquisition, tmp_binning, is_dims_in_mm);
 }
 
-    std::vector<intd2> Gadgetron::cuCTProjectionOperator::calculate_slice_indices(CT_acquisition &acquisition) {
+    template<template<class> class ARRAY> std::vector<intd2> Gadgetron::CTProjectionOperator<ARRAY>::calculate_slice_indices(CT_acquisition &acquisition) {
 
         floatd2 detectorSize = acquisition.geometry.detectorSize;
         auto &centralElements = acquisition.geometry.detectorCentralElement;
@@ -152,7 +156,7 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
 
     }
 
-    void Gadgetron::cuCTProjectionOperator::setup(boost::shared_ptr<CT_acquisition> acquisition,
+    template<template<class> class ARRAY> void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
                                                   boost::shared_ptr<CBCT_binning> binning, floatd3 is_dims_in_mm) {
         this->binning = binning;
         auto bins = binning->get_bins();
@@ -187,6 +191,9 @@ void cuCTProjectionOperator::mult_MH(cuNDArray<float>* input,
         }
 }
 
+
+    template class CTProjectionOperator<cuNDArray>;
+    template class CTProjectionOperator<hoCuNDArray>;
 
 
 

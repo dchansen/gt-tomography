@@ -4,7 +4,7 @@
 
 #include "ct_projection.h"
 #include "float3x3.h"
-#include "hoCuNDArray_elemwise.h"
+#include "hoCuNDArray_math.h"
 #include "vector_td.h"
 #include "cuNDArray_math.h"
 #include "cuNDArray_utils.h"
@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <host_defines.h>
+#include <driver_functions.h>
 
 // Read the projection/image data respectively as a texture (for input)
 // - taking advantage of the cache and hardware interpolation
@@ -287,6 +288,7 @@ void ct_forwards_projection( cuNDArray<float> *projections,
 	dim3 dimBlock, dimGrid;
 	setup_grid( projection_res_x*projection_res_y*num_projections, &dimBlock, &dimGrid );
 
+
 	// Launch kernel
 	//
 
@@ -302,10 +304,168 @@ void ct_forwards_projection( cuNDArray<float> *projections,
 	// If not initial batch, start copying the old stuff
 	//
 
-
+    cudaUnbindTexture(image_tex);
 	cudaFreeArray(image_array);
 
 	CHECK_FOR_CUDA_ERROR();
+
+}
+
+
+void ct_forwards_projection( hoCuNDArray<float> *projections,
+                             hoCuNDArray<float> *image,
+                             std::vector<floatd3> & detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
+                             std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
+                             std::vector<floatd2> & centralElements, // Central element on the detector
+                             floatd3 is_dims_in_mm, // Image size in mm
+                             floatd2 ps_spacing,  //Size of each projection element in mm
+                             float ADD, //focalpoint - detector disance
+                             float samples_per_ray,
+                             bool accumulate
+)
+{
+
+    //
+    // Validate the input
+    //
+
+    if( projections == 0x0 || image == 0x0 ){
+        throw std::runtime_error("Error: conebeam_forwards_projection: illegal array pointer provided");
+    }
+
+    if( projections->get_number_of_dimensions() != 3 ){
+        throw std::runtime_error("Error: conebeam_forwards_projection: projections array must be three-dimensional");
+    }
+
+    if( image->get_number_of_dimensions() != 3 ){
+        throw std::runtime_error("Error: conebeam_forwards_projection: image array must be three-dimensional");
+    }
+
+
+
+    CHECK_FOR_CUDA_ERROR();
+    size_t projection_res_x = projections->get_size(0);
+    size_t projection_res_y = projections->get_size(1);
+    size_t num_projections = projections->get_size(2);
+
+    int matrix_size_x = image->get_size(0);
+    int matrix_size_y = image->get_size(1);
+    int matrix_size_z = image->get_size(2);
+
+    // Build texture from input image
+    //
+
+    //cudaFuncSetCacheConfig(ct_forwards_projection_kernel, cudaFuncCachePreferL1);
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+    cudaExtent extent;
+    extent.width = matrix_size_x;
+    extent.height = matrix_size_y;
+    extent.depth = matrix_size_z;
+
+    cudaMemcpy3DParms cpy_params = {0};
+    cpy_params.kind = cudaMemcpyHostToDevice;
+    cpy_params.extent = extent;
+
+    cudaArray *image_array;
+    cudaMalloc3DArray(&image_array, &channelDesc, extent);
+    cpy_params.dstArray = image_array;
+    cpy_params.srcPtr = make_cudaPitchedPtr
+            ((void*)image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
+    cudaMemcpy3D(&cpy_params);
+
+    cudaBindTextureToArray(image_tex, image_array, channelDesc);
+    CHECK_FOR_CUDA_ERROR();
+
+    // Allocate the angles, offsets and projections in device memory
+    //
+    thrust::device_vector<floatd3> detector_focal_cylVec(detector_focal_cyls);
+    thrust::device_vector<floatd2> centralElementVec(centralElements);
+    thrust::device_vector<floatd3> focal_offset_cylVec(focal_offset_cyls);
+
+    auto raw_focal_cyl = thrust::raw_pointer_cast(detector_focal_cylVec.data());
+    auto raw_centralElements = thrust::raw_pointer_cast(centralElementVec.data());
+    auto raw_focal_offsets = thrust::raw_pointer_cast(focal_offset_cylVec.data());
+
+    //
+    // Iterate over the batches
+    //
+
+
+    // Block/grid configuration
+    //
+    cudaStream_t mainStream, indyStream;
+    cudaStreamCreate(&mainStream);
+    cudaStreamCreate(&indyStream);
+
+    dim3 dimBlock, dimGrid;
+
+
+    // Launch kernel
+    //
+
+    floatd3 is_dims_in_pixels(matrix_size_x, matrix_size_y, matrix_size_z);
+    intd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
+
+    size_t batchSize = 2048;
+
+    size_t remaining_projections = num_projections;
+
+    cuNDArray<float> cu_proj1({projection_res_x,projection_res_y,batchSize});
+    cuNDArray<float> cu_proj2({projection_res_x,projection_res_y,batchSize});
+
+    hoCuNDArray<float> *tmp_proj;
+    if (accumulate)
+        tmp_proj = new hoCuNDArray<float>(projections->get_dimensions());
+    else
+        tmp_proj = projections;
+
+    float* host_proj_ptr = tmp_proj->get_data_ptr();
+    float* dev_proj_ptr = cu_proj1.get_data_ptr();
+    float* dev_proj_ptr2 = cu_proj2.get_data_ptr();
+
+    for (size_t i = 0; i < (num_projections+batchSize-1)/batchSize; i++) {
+
+        size_t batch_projections = std::min(batchSize,remaining_projections);
+        setup_grid( projection_res_x*projection_res_y*batch_projections, &dimBlock, &dimGrid );
+
+        size_t nelements = batch_projections*projection_res_x*projection_res_y;
+
+
+
+        ct_forwards_projection_kernel <<< dimGrid, dimBlock,0,mainStream >>>
+                                                    (dev_proj_ptr, raw_focal_cyl, raw_focal_offsets, raw_centralElements, is_dims_in_pixels,
+                                                            is_dims_in_mm, ps_dims_in_pixels, ps_spacing, batch_projections, ADD,
+                                                            samples_per_ray *
+                                                            std::max(matrix_size_x, matrix_size_y), false);
+        cudaMemcpyAsync(host_proj_ptr,dev_proj_ptr,nelements*sizeof(float),cudaMemcpyDeviceToHost,mainStream);
+
+        std::cout << " cuproj " << nrm2(&cu_proj1) << std::endl;
+        raw_focal_cyl += batch_projections;
+        raw_centralElements += batch_projections;
+        raw_focal_offsets += batch_projections;
+
+        host_proj_ptr += nelements;
+        remaining_projections -= batch_projections;
+        std::swap(mainStream,indyStream);
+        std::swap(dev_proj_ptr,dev_proj_ptr2);
+    }
+
+    CUDA_CALL(cudaStreamDestroy(indyStream));
+    CUDA_CALL(cudaStreamDestroy(mainStream));
+
+
+    if (accumulate){
+        *projections += *tmp_proj;
+        delete tmp_proj;
+    }
+
+
+
+
+    cudaUnbindTexture(image_tex);
+    cudaFreeArray(image_array);
+
+    CHECK_FOR_CUDA_ERROR();
 
 }
 //
@@ -553,4 +713,164 @@ void ct_backwards_projection( cuNDArray<float> *projections,
 	}
 }
 
+
+
+void ct_backwards_projection( hoCuNDArray<float> *projections,
+                              hoCuNDArray<float> *image,
+                              std::vector<floatd3> & detector_focal_cyls, //phi,rho,z of the detector focal spot in units of rad, mm and mm
+                              std::vector<floatd3> & focal_offset_cyls, // phi,rho,z offset of the source focal spot compared to detector focal spot
+                              std::vector<floatd2> & centralElements, // Central element on the detector
+                              std::vector<intd2> & proj_indices, // Array of size nz containing first to last projection for slice
+                              floatd3 is_dims_in_mm, // Image size in mm
+                              floatd2 ps_spacing,  //Size of each projection element in mm
+                              float ADD, //focalpoint - detector disance
+                              bool accumulate
+)
+{
+    //
+    // Validate the input
+    //
+
+    if( projections == 0x0 || image == 0x0 ){
+        throw std::runtime_error("Error: conebeam_backwards_projection: illegal array pointer provided");
+    }
+
+    if( projections->get_number_of_dimensions() != 3 ){
+        throw std::runtime_error("Error: conebeam_backwards_projection: projections array must be three-dimensional");
+    }
+
+    if( image->get_number_of_dimensions() != 3 ){
+        throw std::runtime_error("Error: conebeam_backwards_projection: image array must be three-dimensional");
+    }
+
+    // Some utility variables
+    //
+
+    int matrix_size_x = image->get_size(0);
+    int matrix_size_y = image->get_size(1);
+    int matrix_size_z = image->get_size(2);
+
+    floatd3 is_dims(matrix_size_x, matrix_size_y, matrix_size_z);
+
+    int projection_res_x = projections->get_size(0);
+    int projection_res_y = projections->get_size(1);
+    int num_projections = projections->get_size(2);
+
+
+    // Allocate device memory for the backprojection result
+    //
+    // Allocate the angles, offsets and projections in device memory
+    //
+
+    thrust::device_vector<floatd3> detector_focal_cylVec(detector_focal_cyls);
+    thrust::device_vector<floatd2> centralElementVec(centralElements);
+    thrust::device_vector<floatd3> focal_offset_cylVec(focal_offset_cyls);
+    thrust::device_vector<intd2> proj_indicesVec(proj_indices);
+
+    auto raw_focal_cyl = thrust::raw_pointer_cast(detector_focal_cylVec.data());
+    auto raw_centralElements = thrust::raw_pointer_cast(centralElementVec.data());
+    auto raw_focal_offsets = thrust::raw_pointer_cast(focal_offset_cylVec.data());
+    auto raw_proj_indices = thrust::raw_pointer_cast(proj_indicesVec.data());
+
+    std::vector<size_t> dims;
+    dims.push_back(projection_res_x);
+    dims.push_back(projection_res_y);
+    dims.push_back(num_projections);
+
+    cudaStream_t mainStream, indyStream;
+    cudaStreamCreate(&mainStream);
+    cudaStreamCreate(&indyStream);
+
+
+    cuNDArray<float> cuImage;
+    if (!accumulate){
+        cuImage = cuNDArray<float>(image->get_dimensions());
+        clear(&cuImage);
+
+    } else {
+        cuImage = cuNDArray<float>(image);
+    }
+
+            //
+    // Iterate over batches
+    //
+
+    intd3 is_dims_in_pixels(matrix_size_x, matrix_size_y, matrix_size_z);
+    intd2 ps_dims_in_pixels(projection_res_x, projection_res_y);
+//	int batchsize = cudaDeviceManager::Instance()->max_texture3d()[2];
+    int batchsize = 2048;
+    size_t num_batches = (num_projections+batchsize-1)/batchsize;
+
+    float * proj_ptr = projections->get_data_ptr();
+    size_t elements_left = projections->get_number_of_elements();
+    // Build array for input texture
+    //
+    int offset = 0;
+    //cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
+    projections_tex.addressMode[0]=cudaAddressModeBorder;
+    projections_tex.addressMode[1]=cudaAddressModeClamp;
+
+    for (size_t batch = 0; batch < num_batches; batch++) {
+
+
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
+        cudaExtent extent;
+        extent.width = projection_res_x;
+        extent.height = projection_res_y;
+        extent.depth = std::min(size_t(batchsize),elements_left/(projection_res_x*projection_res_y));
+
+        //std::cout << "Extent " << extent.width << " " << extent.height << " " << extent.depth << std::endl;
+        //std::cout << "Elements left " << elements_left << std::endl;
+        //std::cout << "Pixels " << is_dims_in_pixels << std::endl;
+        cudaArray *projections_array;
+        cudaMalloc3DArray(&projections_array, &channelDesc, extent, cudaArrayLayered);CHECK_FOR_CUDA_ERROR();
+
+        cudaMemcpy3DParms cpy_params = {0};
+        cpy_params.extent = extent;
+        cpy_params.dstArray = projections_array;
+        cpy_params.kind = cudaMemcpyHostToDevice;
+        cpy_params.srcPtr =
+                make_cudaPitchedPtr((void *) proj_ptr, projection_res_x * sizeof(float),
+                                    projection_res_x, projection_res_y);
+        cudaMemcpy3DAsync(&cpy_params,mainStream);
+        CHECK_FOR_CUDA_ERROR();
+
+        cudaBindTextureToArray(projections_tex, projections_array, channelDesc);
+
+
+        // Upload projections for the next batch
+        // - to enable streaming
+        //
+        // Define dimensions of grid/blocks.
+        //
+
+        dim3 dimBlock, dimGrid;
+        setup_grid(matrix_size_x * matrix_size_y * matrix_size_z, &dimBlock, &dimGrid);
+
+        // Invoke kernel
+        //
+
+
+        ct_backwards_projection_kernel<<<dimGrid, dimBlock,0,mainStream >>>
+                                                  (cuImage.get_data_ptr(), raw_focal_cyl,raw_focal_offsets,raw_centralElements, raw_proj_indices,
+                                                          is_dims_in_pixels, is_dims_in_mm, ps_dims_in_pixels, ps_spacing,
+                                                          ADD,offset,extent.depth);
+
+        CHECK_FOR_CUDA_ERROR();
+
+        offset += extent.depth;
+        proj_ptr += extent.width*extent.depth*extent.height;
+        elements_left -= extent.width*extent.depth*extent.height;
+
+        // Cleanup
+        //
+
+        cudaUnbindTexture(projections_tex);
+        cudaFreeArray(projections_array);CHECK_FOR_CUDA_ERROR();
+        std::swap(mainStream,indyStream);
+    }
+    CUDA_CALL(cudaStreamDestroy(indyStream));
+    CUDA_CALL(cudaStreamDestroy(mainStream));
+    cuImage.to_host(image);
+}
 }

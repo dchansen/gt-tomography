@@ -23,7 +23,7 @@ public:
 	osMOMSolverD3() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 		_iterations=10;
 		_beta = REAL(1);
-		_alpha = 0.2;
+		_step_size = 1.0;
 		_gamma = 0;
 		non_negativity_=false;
 		reg_steps_=1;
@@ -44,6 +44,7 @@ public:
 	void set_beta(REAL beta){_beta = beta;}
 	void set_gamma(REAL gamma){_gamma = gamma;}
 	void set_kappa(REAL kappa){_kappa = kappa;}
+	void set_stepsize(REAL s){_step_size = s;}
 
 	void set_dump(bool d){dump = d;}
 	virtual void add_regularization_operator(boost::shared_ptr<linearOperator<ARRAY_TYPE>> op, boost::shared_ptr<ARRAY_TYPE> prior = boost::shared_ptr<ARRAY_TYPE>()){
@@ -136,7 +137,7 @@ public:
 
 		std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
 		REAL kappa_int = _kappa;
-		REAL step_size;
+
 		for (int i =0; i < _iterations; i++){
 			for (int isubset = 0; isubset < this->encoding_operator_->get_number_of_subsets(); isubset++){
 
@@ -149,7 +150,7 @@ public:
 				}
 
 				this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
-				tmp_image *= -REAL(this->encoding_operator_->get_number_of_subsets());
+				tmp_image *= -REAL(this->encoding_operator_->get_number_of_subsets())*_step_size;
 				//axpy(_beta,&d,&tmp_image);
 
 
@@ -369,7 +370,7 @@ protected:
 	std::vector<std::tuple<boost::shared_ptr<linearOperator<ARRAY_TYPE> >, boost::shared_ptr<ARRAY_TYPE>>> regularization_operators;
 
 	int _iterations;
-	REAL _beta, _gamma, _alpha, _kappa,tau0, denoise_alpha;
+	REAL _beta, _gamma, _kappa,tau0, denoise_alpha, _step_size;
 	bool non_negativity_, dump;
 	unsigned int reg_steps_;
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;

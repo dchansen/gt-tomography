@@ -26,7 +26,7 @@ MESSAGE("Include dir ${GDCM_INCLUDE_DIRS}")
 #endif(EIGEN_INCLUDE_DIR)
 
 cuda_add_library(Xray_kernels SHARED
-  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp dicomWriter.cpp  hoLinearResampleOperator_eigen.cpp hoCuOFPartialDerivativeOperator.cpp   CTSubsetOperator.cpp cuCTProjectionOperator.cpp ct_projection.cu CT_acquisition.cpp
+  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp dicomWriter.cpp  hoLinearResampleOperator_eigen.cpp hoCuOFPartialDerivativeOperator.cpp   CTSubsetOperator.cpp CTProjectionOperator.cpp ct_projection.cu CT_acquisition.cpp
   ${EIGEN_RESAMPLER}
   )
 
@@ -91,4 +91,6 @@ target_link_libraries(cuCT_reconstruct Xray_kernels tomography_solvers gadgetron
 add_executable(cuCTOS_reconstruct cuCTOS_reconstruct.cpp)
 target_link_libraries(cuCTOS_reconstruct Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
+add_executable(CTOS_reconstruct CTOS_reconstruct.cpp)
+target_link_libraries(CTOS_reconstruct Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #install(TARGETS Reconstruct DESTINATION bin)
