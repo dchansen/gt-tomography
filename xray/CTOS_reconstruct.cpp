@@ -200,13 +200,14 @@ int main(int argc, char** argv)
 	std::cout << "Image size " << imageDimensions << std::endl;
 
 	//osLALMSolver<hoCuNDArray<float> solver;
-	osMOMSolverD3<hoCuNDArray<float>> solver;
+	//osMOMSolverD3<hoCuNDArray<float>> solver;
+	osSPSSolver<hoCuNDArray<float>> solver;
 	//osMOMSolverL1<hoCuNDArray<float> solver;
 	//osAHZCSolver<hoCuNDArray<float> solver;
 	//osMOMSolverF<hoCuNDArray<float> solver;
 	//ADMMSolver<hoCuNDArray<float> solver;
-	solver.set_dump(true);
-	solver.set_stepsize(1);
+	//solver.set_dump(true);
+	//solver.set_stepsize(1);
 	//solver.set_beta(0.1);
 
 
@@ -220,10 +221,10 @@ int main(int argc, char** argv)
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<hoCuNDArray<float>>::OUTPUT_VERBOSE);
-	solver.set_tau(tau);
+	//solver.set_tau(tau);
 	solver.set_non_negativity_constraint(use_non_negativity);
-	solver.set_huber(huber);
-	solver.set_reg_steps(reg_iter);
+	//solver.set_huber(huber);
+	//solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
   if (tv_weight > 0) {
@@ -244,7 +245,7 @@ int main(int argc, char** argv)
 	  Dz->set_domain_dimensions(&is_dims);
 	  Dz->set_codomain_dimensions(&is_dims);
 
-	  solver.add_regularization_group({Dx, Dy, Dz});
+	  //solver.add_regularization_group({Dx, Dy, Dz});
   }
 
 

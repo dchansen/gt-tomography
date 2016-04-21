@@ -10,7 +10,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <algorithm>
-#include <cuCgSolver.h>
+#include <hoCuCgSolver.h>
 #include <cuGpBbSolver.h>
 #include <cuNlcgSolver.h>
 
@@ -84,11 +84,11 @@ int main(int argc, char** argv){
 
     std::cout << "Minimum angle " << *std::min_element(files->geometry.detectorFocalCenterAngularPosition.begin(),files->geometry.detectorFocalCenterAngularPosition.end())  << " max " << *std::max_element(files->geometry.detectorFocalCenterAngularPosition.begin(),files->geometry.detectorFocalCenterAngularPosition.end()) << std::endl;
 
-    auto E = boost::make_shared<CTProjectionOperator<cuNDArray>>();
+    auto E = boost::make_shared<CTProjectionOperator<hoCuNDArray>>();
     std::vector<size_t> imdims {imageSize[0],imageSize[1],imageSize[2]};
     cuNDArray<float> image(imdims);
 
-    cuNDArray<float> projections(files->projections );
+    hoCuNDArray<float> & projections = files->projections;
 
     std::cout << "Projection memory size " << projections.get_number_of_bytes()/(1024*1024) << "MB" << std::endl;
     E->set_domain_dimensions(image.get_dimensions().get());
@@ -102,13 +102,13 @@ int main(int argc, char** argv){
     write_nd_array(&projections,"projections.real");
     //cuGpBbSolver<float> solver;
     //cuNlcgSolver<float> solver;
-    cuCgSolver<float> solver;
+    hoCuCgSolver<float> solver;
     //solver.set_non_negativity_constraint(true);
-    solver.set_max_iterations(50);
+    solver.set_max_iterations(30);
     solver.set_tc_tolerance(1e-8);
 
     solver.set_encoding_operator(E);
-    solver.set_output_mode(cuCgSolver<float>::OUTPUT_VERBOSE);
+    solver.set_output_mode(hoCuCgSolver<float>::OUTPUT_VERBOSE);
     auto result = solver.solve(&projections);
 
     write_nd_array(result.get(),"test.real");

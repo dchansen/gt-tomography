@@ -115,7 +115,7 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
 
         gdcm::Attribute<0x7031,0x1033> centralElement;
         centralElement.Set(ds);
-        geometry->detectorCentralElement.push_back(floatd2(centralElement.GetValue(0),centralElement.GetValue(1)));
+        geometry->detectorCentralElement.push_back(floatd2(centralElement.GetValue(0)-1,centralElement.GetValue(1)-1)); //Real men start at index 0
 
         gdcm::Attribute<0x7033,0x100C> sourceAngularPositionShift;
         sourceAngularPositionShift.Set(ds);
@@ -157,9 +157,10 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
 
         const size_t xdim = result->projections.get_size(0);
         const size_t ydim = result->projections.get_size(1);
+        #pragma omp parallel for
         for (size_t y = 0; y <ydim; y++) {
             for (size_t x = 0; x < xdim; x++) {
-                projectionPtr[x+y*xdim] = double(bufferptr[y+x*ydim]) * slope + intercept;
+                projectionPtr[x+y*xdim] = float(bufferptr[y+x*ydim]) * slope + intercept;
             }
         }
 
