@@ -75,7 +75,7 @@ static inline
 
 	static inline __device__
 	floatd3 cylindrical_to_cartesian(const floatd3 & cyl){
-		return floatd3(-sin(cyl[0])*cyl[1],cos(cyl[0])*cyl[1],cyl[2]);
+		return floatd3(-sinf(cyl[0])*cyl[1],cos(cyl[0])*cyl[1],cyl[2]);
 	}
 
 
