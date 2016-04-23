@@ -116,6 +116,7 @@ public:
 
 
 
+
 	void set_kernel(std::vector<REAL> kernel_in){
 
 		kernel = thrust::device_vector<REAL>(kernel_in);

@@ -26,10 +26,19 @@ static std::vector<std::string> sort_dicoms(std::vector<std::string> files){
 
 }
 
-boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<std::string> files) {
+boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<std::string> files_in, unsigned int remove_projs) {
 
     using namespace boost::math::double_constants;
-    files = sort_dicoms(files);
+    auto files = sort_dicoms(files_in);
+
+    if (remove_projs > 0){
+        files = std::vector<std::string>(files.begin()+remove_projs,files.end()-remove_projs);
+    }
+
+    std::cout << "Number of dicoms " << files.size() << std::endl;
+
+
+
     boost::shared_ptr<CT_acquisition> result = boost::make_shared<CT_acquisition>();
     {
         gdcm::Reader reader;
@@ -85,6 +94,11 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
         gdcm::Attribute<0x0020,0x0011> SeriesNumber;
         SeriesNumber.Set(ds);
         result->SeriesNumber = SeriesNumber.GetValue();
+
+
+        gdcm::Attribute<0x0018,0x0090> FOV;
+        FOV.Set(ds);
+        std::cout << "Scan FOV " << FOV.GetValue() << std::endl;
     }
     CT_geometry * geometry = &result->geometry;
     float* projectionPtr = result->projections.get_data_ptr();

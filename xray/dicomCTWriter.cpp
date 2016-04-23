@@ -4,15 +4,13 @@
  *  Created on: Aug 5, 2015
  *      Author: dch
  */
+#include "dicomCTWriter.h"
 
 
-#include "dcmtk/config/osconfig.h"
-#include "dcmtk/dcmdata/dctk.h"
-#include "dcmtk/dcmdata/dcostrmb.h"
 #include <chrono>
 #include "hoNDArray_math.h"
+#include <hoNDArray_utils.h>
 #include "vector_td.h"
-#include "dicomWriter.h"
 #include <gdcmImage.h>
 #include <gdcmImageWriter.h>
 #include <gdcmFileDerivation.h>
@@ -22,26 +20,97 @@ using namespace Gadgetron;
 
 
 
+static hoNDArray<float> rollingAverageCT(hoNDArray<float> * image){
 
-static void write_dicomCT(hoNDArray<float>* image, floatd3 imageDimensions, CT_acquisition * acquisition){
-	std::vector<size_t > imgSize = * image->get_dimensions();
+    const auto dims = *image->get_dimensions();
+    auto newdims = dims;
+    //1 pixels per new slice
+
+    const int nslices = 3;
+    const int nskip = 2;
+    newdims[2] = (dims[2]-nslices+nskip)/nskip;
+
+
+
+    hoNDArray<float> result(newdims);
+
+
+    float* in_ptr = image->get_data_ptr();
+    float* out_ptr = result.get_data_ptr();
+    #pragma omp parallel for
+    for (int z = 0; z < newdims[2]; z++)
+        for (int y = 0; y < dims[1]; y++)
+            for (int x = 0; x < dims[0]; x++){
+                float val = 0;
+                for (int offset = 0; offset < nslices; offset++)
+                    val +=  in_ptr[x+y*dims[0]+(z*nskip+offset)*dims[1]*dims[0]];
+
+                out_ptr[x+y*dims[0]+z*dims[1]*dims[0]]= val/nslices;
+            }
+
+
+    return result;
 
 
 
 
-	uint16_t * pixel_data = new uint16_t[image->get_number_of_elements()];
-	size_t len = image->get_number_of_elements();
+}
 
 
-	float scaling = calculate_scaling(image);
+static hoNDArray<float> transpose(hoNDArray<float> * image){
+	auto dims = *image->get_dimensions();
+
+
+	hoNDArray<float> result(dims);
+
+	float* in_ptr = image->get_data_ptr();
+	float* out_ptr = result.get_data_ptr();
+
+	for (int z = 0; z < dims[2]; z++)
+		for (int y = 0; y < dims[1]; y++)
+			for (int x = 0; x < dims[0]; x++){
+				out_ptr[x+y*dims[0]+z*dims[1]*dims[0]]= in_ptr[dims[0]-x-1+(dims[1]-y-1)*dims[0]+z*dims[1]*dims[0]];
+			}
+
+	return result;
+}
+
+void Gadgetron::write_dicomCT(std::string dcmDir,hoNDArray<float>* input_image, floatd3 imageDimensions, CT_acquisition * acquisition, float offset){
+
+
+
+
+
+    hoNDArray<float> cropped({512,512,input_image->get_size(2)});
+    if (input_image->get_size(0) == 512 && input_image->get_size(1) == 512) {
+        cropped = *input_image;
+    } else {
+        auto cropped_dim = uint64d3{512,512,input_image->get_size(2)};
+        crop(cropped_dim,input_image,&cropped);
+    }
+
+
+    //Create moving average
+
+    auto image = rollingAverageCT(&cropped);
+	image = transpose(&image);
+
+    std::vector<size_t > imgSize = * image.get_dimensions();
+
+	uint16_t * pixel_data = new uint16_t[image.get_number_of_elements()];
+	size_t len = image.get_number_of_elements();
+
+
+    float* data = image.get_data_ptr();
 	float calibration = acquisition->calibration_factor;
+#pragma omp parallel for
 	for (size_t i = 0; i < len; i++)
-		pixel_data[i] = 1000*std::max((data[i]-calibration)/calibration,0.0f)+1024;
+		pixel_data[i] = 1000*(data[i]-calibration)/calibration+1024;
 
 
 	uint16_t * data_ptr = pixel_data;
 
-	for (size_t slice = 0; slice < image->get_size(2); slice++) {
+	for (size_t slice = 0; slice < image.get_size(2); slice++) {
 		gdcm::ImageWriter w;
 		gdcm::Image &im = w.GetImage();
 		gdcm::File &file = w.GetFile();
@@ -50,8 +119,8 @@ static void write_dicomCT(hoNDArray<float>* image, floatd3 imageDimensions, CT_a
 		im.SetDimension(0, imgSize[0]);
 		im.SetDimension(1, imgSize[1]);
 
-		im.SetSpacing(0, 1.0);
-		im.SetSpacing(1, 1.0);
+		im.SetSpacing(0, image.get_size(0)/imageDimensions[0]);
+		im.SetSpacing(1, image.get_size(1)/imageDimensions[1]);
 
 
 		gdcm::PixelFormat pixelFormat = gdcm::PixelFormat::UINT16;
@@ -66,10 +135,12 @@ static void write_dicomCT(hoNDArray<float>* image, floatd3 imageDimensions, CT_a
 
 		gdcm::Attribute<0x0018, 0x0050> sliceSpacing = {3};
 		ds.Replace(sliceSpacing.GetAsDataElement());
+        im.SetDataElement(sliceSpacing.GetAsDataElement());
 		//Dicom has two seperate tags for slice spacing?
 		gdcm::Attribute<0x0018, 0x0088> sliceSpace = {2};
 		ds.Replace(sliceSpace.GetAsDataElement());
-		im.SetDataElement(sliceSpacing.GetAsDataElement());
+
+        im.SetDataElement(sliceSpace.GetAsDataElement());
 		size_t sliceSize = imgSize[0] * imgSize[1];
 
 		std::cout << "Writing slice " << slice << std::endl;
@@ -82,24 +153,24 @@ static void write_dicomCT(hoNDArray<float>* image, floatd3 imageDimensions, CT_a
 		gdcm::Attribute<0x0020, 0x4000> imageComment = {"Site 3"};
 		ds.Replace(imageComment.GetAsDataElement());
 		std::stringstream ss;
-		ss << "DICOM_" << std::setfill('0') << std::setw(3) << slice+1;
+		ss << dcmDir << "/DICOM_" << std::setfill('0') << std::setw(3) << slice+1;
 		w.SetFileName(ss.str().c_str());
 
 
-		gdcm::Attribute<0x0020, 0x000D> SeriesInstanceUID = acquisition->SeriesInstanceUID;
+		gdcm::Attribute<0x0020, 0x000D> SeriesInstanceUID = {acquisition->SeriesInstanceUID};
 		ds.Replace(SeriesInstanceUID.GetAsDataElement());
 
-		gdcm::Attribute<0x0020, 0x000E> StudyInstanceUID = acquisition->StudyInstanceUID;
+		gdcm::Attribute<0x0020, 0x000E> StudyInstanceUID = {acquisition->StudyInstanceUID};
 		ds.Replace(StudyInstanceUID.GetAsDataElement());
 
-		gdcm::Attribute<0x0020, 0x0011> SeriesNumber = acquisition->SeriesNumber;
+		gdcm::Attribute<0x0020, 0x0011> SeriesNumber = {acquisition->SeriesNumber};
 		ds.Replace(SeriesNumber.GetAsDataElement());
 
 
-		gdcm::Attribute<0x0020,0x1041> sliceLocation = {0.0};
+		gdcm::Attribute<0x0020,0x1041> sliceLocation = {slice*3-imageDimensions[2]/2+offset};
 		ds.Replace(sliceLocation.GetAsDataElement());
 
-		gdcm::Attribute<0x0020,0x0032> imagePosition = {0.0,0.0,0.0};
+		gdcm::Attribute<0x0020,0x0032> imagePosition = {0.0,0.0,sliceLocation.GetValue()};
 		ds.Replace(imagePosition.GetAsDataElement());
 
 
@@ -112,15 +183,5 @@ static void write_dicomCT(hoNDArray<float>* image, floatd3 imageDimensions, CT_a
 	delete[] pixel_data;
 
 }
-
-void Gadgetron::write_dicom(hoNDArray<float>* image, const std::string& command_line, floatd3 imageDimensions){
-	for ( unsigned int i = 0; i < image->get_size(3); i++)
-		write_dicom_frame(image,command_line,imageDimensions,i);
-
-
-
-
-}
-
 
 

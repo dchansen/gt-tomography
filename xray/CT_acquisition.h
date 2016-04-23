@@ -48,7 +48,7 @@ namespace Gadgetron {
     };
 
 
-    boost::shared_ptr<CT_acquisition> read_dicom_projections(std::vector<std::string> files);
+    boost::shared_ptr<CT_acquisition> read_dicom_projections(std::vector<std::string> files, unsigned int remove_projs=0);
 
 
 }

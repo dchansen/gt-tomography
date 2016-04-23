@@ -13,7 +13,7 @@
 #define NLM_BLOCK_RADIUS    3
 
 #define NLM_WINDOW_AREA     ( (2 * NLM_WINDOW_RADIUS + 1) * (2 * NLM_WINDOW_RADIUS + 1)*(2 * NLM_WINDOW_RADIUS + 1) )
-#define INV_KNN_WINDOW_AREA ( 1.0f / (float)KNN_WINDOW_AREA )
+
 #define INV_NLM_WINDOW_AREA ( 1.0f / (float)NLM_WINDOW_AREA )
 
 #define NLM_WEIGHT_THRESHOLD    0.10f
@@ -65,9 +65,9 @@ __global__ static void NLM(
 
                 for (float n = -NLM_BLOCK_RADIUS; n <= NLM_BLOCK_RADIUS; n++)
                     for (float m = -NLM_BLOCK_RADIUS; m <= NLM_BLOCK_RADIUS; m++)
-                        for (float l = -NLM_BLOCK_RADIUS; l <= NLM_BLOCK_RADIUS; m++){
+                        for (float l = -NLM_BLOCK_RADIUS; l <= NLM_BLOCK_RADIUS; l++){
                             float diff =tex3D(nlmTex, x + j + m, y + i + n, z + l + k) -
-                                        tex3D(nlmTex, x + m, y + n, z + k);
+                                        tex3D(nlmTex, x + m, y + n, z + l);
                             weightIJK += diff*diff;
                         }
 
@@ -75,7 +75,9 @@ __global__ static void NLM(
 
 
                 //Derive final weight from color and geometric distance
-                weightIJK     = __expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
+                weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
+
+
 
                 //Accumulate (x + j, y + i) texel color with computed weight
                 float IJK = tex3D(nlmTex, x + j, y + i,z+k);
@@ -91,18 +93,18 @@ __global__ static void NLM(
             }
 
         //Normalize result color by sum of weights
-        sumWeights = 1.0f / sumWeights;
-        accum *= sumWeights;
 
+        accum /= sumWeights;
 
-        dst[imageW * iy + ix+imageD*imageW*iz] = accum ;
+        //if (fCount > NLM_LERP_THRESHOLD)
+        dst[imageW * iy + ix+imageH*imageW*iz] = accum ;
     }
 }
 
 
 
 
-void nonlocal_means(
+void Gadgetron::nonlocal_means(
     cuNDArray<float> *input, cuNDArray<float> *output ,
     float Noise
 )
@@ -115,6 +117,9 @@ void nonlocal_means(
     int imageD = input->get_size(2);
 
 
+    nlmTex.addressMode[0] = cudaAddressModeClamp;
+    nlmTex.addressMode[1] = cudaAddressModeClamp;
+    nlmTex.addressMode[2] = cudaAddressModeClamp;
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
     cudaExtent extent;
     extent.width = imageW;
@@ -139,6 +144,6 @@ void nonlocal_means(
 
     dim3 grid((imageW+threads.x-1)/threads.x, (imageH+threads.y-1)/threads.y,(imageD+threads.z-1)/threads.z);
 
-    NLM<<<grid, threads>>>(output->get_data_ptr(), imageW, imageH,imageD, Noise);
+    NLM<<<grid, threads>>>(output->get_data_ptr(), imageW, imageH,imageD, 1.0/(Noise*Noise));
 }
 

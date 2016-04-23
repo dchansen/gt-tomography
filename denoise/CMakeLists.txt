@@ -7,6 +7,15 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/proton
 )
 
+cuda_add_library(denoise_kernels SHARED
+        nonlocalMeans.cu
+        )
+
+target_link_libraries(denoise_kernels gadgetron_toolbox_gpucore gadgetron_toolbox_gpunfft gadgetron_toolbox_gpucore gadgetron_toolbox_gpufft gadgetron_toolbox_gpureg ${CUDA_LIBRARIES})
+
 
 add_executable(split_denoise split_denoise.cpp)
 target_link_libraries(split_denoise tomography_operators tomography_solvers gadgetron_toolbox_gpusolvers gadgetron_toolbox_gpuoperators gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})
+
+add_executable(denoise_NLM denoise_NLM.cpp)
+target_link_libraries(denoise_NLM denoise_kernels tomography_operators tomography_solvers gadgetron_toolbox_gpusolvers gadgetron_toolbox_gpuoperators gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_cpureg gadgetron_toolbox_gpucore gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES} ${Boost_LIBRARIES})

@@ -374,6 +374,9 @@ namespace Gadgetron {
         // Build texture from input image
         //
 
+        image_tex.addressMode[0] = cudaAddressModeBorder;
+        image_tex.addressMode[1] = cudaAddressModeBorder;
+        image_tex.addressMode[2] = cudaAddressModeBorder;
         //cudaFuncSetCacheConfig(ct_forwards_projection_kernel, cudaFuncCachePreferL1);
         cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
         cudaExtent extent;
@@ -384,6 +387,7 @@ namespace Gadgetron {
         cudaMemcpy3DParms cpy_params = {0};
         cpy_params.kind = cudaMemcpyHostToDevice;
         cpy_params.extent = extent;
+
 
         cudaArray *image_array;
         cudaMalloc3DArray(&image_array, &channelDesc, extent);

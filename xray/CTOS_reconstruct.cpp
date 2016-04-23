@@ -62,6 +62,8 @@
 #include "CTSubsetOperator.h"
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
+#include "dicomCTWriter.h"
+#include "nonlocalMeans.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -105,8 +107,10 @@ int main(int argc, char** argv)
 	float rho,tau;
 	float tv_weight, wavelet_weight,huber,sigma,dct_weight;
 
+
     bool use_non_negativity;
 	int reg_iter;
+    unsigned int skip_projections;
 
 	po::options_description desc("Allowed options");
 
@@ -128,8 +132,12 @@ int main(int argc, char** argv)
     				("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
     				("sigma",po::value<float>(&sigma)->default_value(0.1),"Sigma for billateral filter")
     				("DCT",po::value<float>(&dct_weight)->default_value(0),"DCT regularization")
-							("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
+							("offset",po::value<float>())
+
+										("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
 							("reg_iter",po::value<int>(&reg_iter)->default_value(2))
+                            ("skip_projections",po::value<unsigned int>(&skip_projections)->default_value(0))
+
     				;
 
 	po::variables_map vm;
@@ -166,14 +174,21 @@ int main(int argc, char** argv)
 	cudaDeviceManager::Instance()->lockHandle();
 	cudaDeviceManager::Instance()->unlockHandle();
 
-	auto files = read_dicom_projections(get_dcm_files(vm["dir"].as<string>()));
+	auto files = read_dicom_projections(get_dcm_files(vm["dir"].as<string>()),skip_projections);
 	std::vector<float>& axials =  files->geometry.detectorFocalCenterAxialPosition;
 	std::cout << "Axials size " << axials.size() << std::endl;
-	auto mean_offset = std::accumulate(axials.begin(),axials.end(),0.0f)/axials.size();
-	std::cout << "Mean offset " << mean_offset << std::endl;
-	for ( auto & z : axials)
-		z -= mean_offset;
+	float offset;
 
+	if (vm.count("offset")){
+		offset = vm["offset"].as<float>();
+	} else {
+		offset = std::accumulate(axials.begin(),axials.end(),0.0f)/axials.size();
+		std::cout << "Mean offset " << offset << std::endl;
+
+	}
+
+	for ( auto & z : axials)
+		z -= offset;
 
 
 	floatd3 imageDimensions;
@@ -200,13 +215,13 @@ int main(int argc, char** argv)
 	std::cout << "Image size " << imageDimensions << std::endl;
 
 	//osLALMSolver<hoCuNDArray<float> solver;
-	//osMOMSolverD3<hoCuNDArray<float>> solver;
-	osSPSSolver<hoCuNDArray<float>> solver;
+	osMOMSolverD3<hoCuNDArray<float>> solver;
+	//osSPSSolver<hoCuNDArray<float>> solver;
 	//osMOMSolverL1<hoCuNDArray<float> solver;
 	//osAHZCSolver<hoCuNDArray<float> solver;
 	//osMOMSolverF<hoCuNDArray<float> solver;
 	//ADMMSolver<hoCuNDArray<float> solver;
-	//solver.set_dump(true);
+	solver.set_dump(true);
 	//solver.set_stepsize(1);
 	//solver.set_beta(0.1);
 
@@ -221,10 +236,10 @@ int main(int argc, char** argv)
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<hoCuNDArray<float>>::OUTPUT_VERBOSE);
-	//solver.set_tau(tau);
+	solver.set_tau(tau);
 	solver.set_non_negativity_constraint(use_non_negativity);
-	//solver.set_huber(huber);
-	//solver.set_reg_steps(reg_iter);
+	solver.set_huber(huber);
+	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
   if (tv_weight > 0) {
@@ -245,7 +260,7 @@ int main(int argc, char** argv)
 	  Dz->set_domain_dimensions(&is_dims);
 	  Dz->set_codomain_dimensions(&is_dims);
 
-	  //solver.add_regularization_group({Dx, Dy, Dz});
+	  solver.add_regularization_group({Dx, Dy, Dz});
   }
 
 
@@ -280,8 +295,17 @@ int main(int argc, char** argv)
 
 
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
+
+
 //	write_nd_array(result.get(),"reconstruction.real");
-	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
+
+	write_dicomCT("output",result.get(),imageDimensions,files.get(),offset);
+
+	cuNDArray<float> tmp(result.get());
+	nonlocal_means(&tmp,&tmp,0.01);
+	tmp.to_host(result.get());
+
+	write_dicomCT("output2",result.get(),imageDimensions,files.get(),offset);
 
 
 
