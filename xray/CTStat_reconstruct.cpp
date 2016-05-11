@@ -22,7 +22,7 @@
 #include "hoCuNCGSolver.h"
 #include "hoCuCgDescentSolver.h"
 #include "hoNDArray_utils.h"
-#include "hoCuPartialDerivativeOperator.h"
+#include "cuPartialDerivativeOperator.h"
 #include "cuTvOperator.h"
 #include "cuTv1dOperator.h"
 #include "cuTvPicsOperator.h"
@@ -62,6 +62,9 @@
 #include "CTSubsetOperator.h"
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
+#include "dicomCTWriter.h"
+#include "nonlocalMeans.h"
+#include "hoCuOSNESTSolver.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -91,6 +94,36 @@ std::vector<string> get_dcm_files(std::string dir){
 	return files;
 }
 
+
+boost::shared_ptr<hoCuNDArray<float>> calculate_I0(hoCuNDArray<float>* projections,hoCuNDArray<float>* photonStats){
+
+    auto  I0 = boost::make_shared<hoCuNDArray<float>>(projections->get_dimensions());
+    clear(I0.get());
+    float* I0_ptr = I0->get_data_ptr();
+    float* proj_ptr = projections->get_data_ptr();
+    const size_t elements = I0->get_number_of_elements();
+
+    float * statPtr = photonStats->get_data_ptr();
+
+    const size_t nrows = projections->get_size(0);
+    const size_t ncols = projections->get_size(1);
+    const size_t nprojs = projections->get_size(2);
+#pragma omp parallel for
+    for (int proj = 0; proj < nprojs; proj++)
+        for (int col = 0; col < ncols; col++ )
+            for (int row = 0; row < nrows; row++) {
+                size_t i = row + col * nrows + proj * nrows * ncols;
+
+				I0_ptr[i] = statPtr[row+proj*nrows];
+                proj_ptr[i] = exp(-proj_ptr[i])*I0_ptr[i];
+            }
+
+
+    return I0;
+
+
+}
+
 int main(int argc, char** argv)
 {
 
@@ -105,32 +138,39 @@ int main(int argc, char** argv)
 	float rho,tau;
 	float tv_weight, wavelet_weight,huber,sigma,dct_weight;
 
-    bool use_non_negativity;
+
+	bool use_non_negativity,use_weights;
 	int reg_iter;
+	unsigned int skip_projections;
 
 	po::options_description desc("Allowed options");
 
 	desc.add_options()
-    				("help", "produce help message")
-    				("dir", po::value<string>(), "Dicom directory")
-    				("samples,n",po::value<unsigned int>(),"Number of samples per ray")
-    				("output,f", po::value<string>(&outputFile)->default_value("reconstruction.hdf5"), "Output filename")
-    				("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
-    				("voxelSize,v",po::value<floatd3>(&voxelSize)->default_value(floatd3(0.488f,0.488f,1.0f)),"Voxel size in mm")
-    				("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
-    				("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
-    				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    				("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
-    				("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight in spatial dimensions")
+			("help", "produce help message")
+			("dir", po::value<string>(), "Dicom directory")
+			("samples,n",po::value<unsigned int>(),"Number of samples per ray")
+	("output,f", po::value<string>(&outputFile)->default_value("reconstruction.hdf5"), "Output filename")
+			("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
+			("voxelSize,v",po::value<floatd3>(&voxelSize)->default_value(floatd3(0.488f,0.488f,1.0f)),"Voxel size in mm")
+			("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
+			("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
+	("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
+			("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
+	("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight in spatial dimensions")
 
-    				("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
-    				("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
-    				("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
-    				("sigma",po::value<float>(&sigma)->default_value(0.1),"Sigma for billateral filter")
-    				("DCT",po::value<float>(&dct_weight)->default_value(0),"DCT regularization")
-							("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
-							("reg_iter",po::value<int>(&reg_iter)->default_value(2))
-    				;
+			("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
+			("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
+			("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
+			("sigma",po::value<float>(&sigma)->default_value(0.1),"Sigma for billateral filter")
+			("DCT",po::value<float>(&dct_weight)->default_value(0),"DCT regularization")
+			("offset",po::value<float>())
+
+			("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
+			("reg_iter",po::value<int>(&reg_iter)->default_value(2))
+			("skip_projections",po::value<unsigned int>(&skip_projections)->default_value(0))
+
+
+	;
 
 	po::variables_map vm;
 	po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -153,7 +193,7 @@ int main(int argc, char** argv)
 		else if (a.type() == typeid(vector_td<float,3>)) command_line_string << it->second.as<vector_td<float,3> >();
 		else if (a.type() == typeid(vector_td<int,3>)) command_line_string << it->second.as<vector_td<int,3> >();
 		else if (a.type() == typeid(vector_td<unsigned int,3>)) command_line_string << it->second.as<vector_td<unsigned int,3> >();
-        else if (a.type() == typeid(bool)) command_line_string << it->second.as<bool>();
+		else if (a.type() == typeid(bool)) command_line_string << it->second.as<bool>();
 		else command_line_string << "Unknown type" << std::endl;
 		command_line_string << std::endl;
 	}
@@ -166,14 +206,21 @@ int main(int argc, char** argv)
 	cudaDeviceManager::Instance()->lockHandle();
 	cudaDeviceManager::Instance()->unlockHandle();
 
-	auto files = read_dicom_projections(get_dcm_files(vm["dir"].as<string>()));
+	auto files = read_dicom_projections(get_dcm_files(vm["dir"].as<string>()),skip_projections);
 	std::vector<float>& axials =  files->geometry.detectorFocalCenterAxialPosition;
 	std::cout << "Axials size " << axials.size() << std::endl;
-	auto mean_offset = std::accumulate(axials.begin(),axials.end(),0.0f)/axials.size();
-	std::cout << "Mean offset " << mean_offset << std::endl;
-	for ( auto & z : axials)
-		z -= mean_offset;
+	float offset;
 
+	if (vm.count("offset")){
+		offset = vm["offset"].as<float>();
+	} else {
+		offset = std::accumulate(axials.begin(),axials.end(),0.0f)/axials.size();
+		std::cout << "Mean offset " << offset << std::endl;
+
+	}
+
+	for ( auto & z : axials)
+		z -= offset;
 
 
 	floatd3 imageDimensions;
@@ -199,14 +246,15 @@ int main(int argc, char** argv)
 	std::cout << "IS dimensions " << is_dims[0] << " " << is_dims[1] << " " << is_dims[2] << std::endl;
 	std::cout << "Image size " << imageDimensions << std::endl;
 
-	//osLALMSolver<cuNDArray<float>> solver;
-	osMOMSolverD3<cuNDArray<float>> solver;
-	//osMOMSolverL1<cuNDArray<float>> solver;
-	//osAHZCSolver<cuNDArray<float>> solver;
-	//osMOMSolverF<cuNDArray<float>> solver;
-	//ADMMSolver<cuNDArray<float>> solver;
-	solver.set_dump(false);
-	//solver.set_stepsize(0.1);
+	//osLALMSolver<hoCuNDArray<float> solver;
+	hoCuOSNESTSolver<float> solver;
+	//osSPSSolver<hoCuNDArray<float>> solver;
+	//osMOMSolverL1<hoCuNDArray<float> solver;
+	//osAHZCSolver<hoCuNDArray<float> solver;
+	//osMOMSolverF<hoCuNDArray<float> solver;
+	//ADMMSolver<hoCuNDArray<float> solver;
+	solver.set_dump(true);
+	//solver.set_stepsize(1);
 	//solver.set_beta(0.1);
 
 
@@ -219,45 +267,52 @@ int main(int argc, char** argv)
 	//hoCuNCGSolver<float> solver;
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
-	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
+	solver.set_output_mode(osSPSSolver<hoCuNDArray<float>>::OUTPUT_VERBOSE);
 	solver.set_tau(tau);
 	solver.set_non_negativity_constraint(use_non_negativity);
 	solver.set_huber(huber);
 	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
-  if (tv_weight > 0) {
+	if (tv_weight > 0) {
 
-	  auto Dx = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(0);
-	  Dx->set_weight(tv_weight);
-	  Dx->set_domain_dimensions(&is_dims);
-	  Dx->set_codomain_dimensions(&is_dims);
+		auto Dx = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(0);
+		Dx->set_weight(tv_weight);
+		Dx->set_domain_dimensions(&is_dims);
+		Dx->set_codomain_dimensions(&is_dims);
 
-	  auto Dy = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(1);
-	  Dy->set_weight(tv_weight);
-	  Dy->set_domain_dimensions(&is_dims);
-	  Dy->set_codomain_dimensions(&is_dims);
+		auto Dy = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(1);
+		Dy->set_weight(tv_weight);
+		Dy->set_domain_dimensions(&is_dims);
+		Dy->set_codomain_dimensions(&is_dims);
 
 
-	  auto Dz = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(2);
-	  Dz->set_weight(tv_weight);
-	  Dz->set_domain_dimensions(&is_dims);
-	  Dz->set_codomain_dimensions(&is_dims);
+		auto Dz = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(2);
+		Dz->set_weight(tv_weight);
+		Dz->set_domain_dimensions(&is_dims);
+		Dz->set_codomain_dimensions(&is_dims);
 
-	  solver.add_regularization_group({Dx, Dy, Dz});
-  }
-	if (dct_weight > 0){
-		auto dctOp = boost::make_shared<cuDCTOperator<float>>();
-		dctOp->set_domain_dimensions(&is_dims);
-		dctOp->set_weight(dct_weight);
-		solver.add_regularization_operator(dctOp);
+		solver.add_regularization_group({Dx, Dy, Dz});
+		solver.set_beta(tv_weight);
 	}
+
 
 	auto E = boost::make_shared<CTSubsetOperator<cuNDArray> >(subsets);
 
 	E->set_domain_dimensions(&is_dims);
 	//E->setup(ps,binning,imageDimensions);
-	auto host_projections = E->setup(files,imageDimensions);
+
+    boost::shared_ptr<hoCuNDArray<float>> host_projections;
+	boost::shared_ptr<hoCuNDArray<float>> host_I0;
+
+	{
+		auto I0 = calculate_I0(&files->projections, &files->photonStatistics);
+
+
+		host_projections = E->setup(files, imageDimensions);
+		host_I0 = E->permute_projections(*I0, E->permutations);
+	}
+
 
 	E->set_codomain_dimensions(host_projections->get_dimensions().get());
 
@@ -265,13 +320,13 @@ int main(int argc, char** argv)
 
 
 
-	auto projections = boost::make_shared<cuNDArray<float>>(*host_projections);
-	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
-	write_nd_array(projections.get(),"projections.real");
-	boost::shared_ptr<cuNDArray<float>> result;
+
+	boost::shared_ptr<hoCuNDArray<float>> result;
 	{
+
 		GPUTimer tim("Solver");
-		result = solver.solve(projections.get());
+
+		result = solver.solve(host_projections.get(),host_I0.get());
 	}
 
 	std::cout << "Penguin" << nrm2(result.get()) << std::endl;
@@ -284,31 +339,22 @@ int main(int argc, char** argv)
 	//saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
 
 
-	if (wavelet_weight > 0){
-		osMOMSolverF<cuNDArray<float>> solverF;
-		solverF.set_max_iterations(10);
-		solverF.set_x0(result);
-		solverF.set_encoding_operator(E);
-		solverF.set_non_negativity_constraint(true);
-
-		auto wave = boost::make_shared<cuEdgeATrousOperator<float>>();
-
-		wave->set_sigma(sigma);
-		wave->set_domain_dimensions(&is_dims);
-
-		wave->set_levels({2,2,2});
-
-		wave->set_weight(wavelet_weight);
-		solverF.add_regularization_operator(wave);
-
-		result = solverF.solve(projections.get());
-
-	}
 
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
-//	write_nd_array(result.get(),"reconstruction.real");
-	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
 
+
+//	write_nd_array(result.get(),"reconstruction.real");
+
+	write_dicomCT("output",result.get(),imageDimensions,files.get(),offset);
+
+    /*
+	cuNDArray<float> tmp(result.get());
+	cuNDArray<float> tmp2(result.get());
+	nonlocal_means(&tmp,&tmp2,0.01);
+	auto result2 = tmp2.to_host();
+
+	write_dicomCT("output2",result2.get(),imageDimensions,files.get(),offset);
+*/
 
 
 }

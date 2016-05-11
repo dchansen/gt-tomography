@@ -131,10 +131,15 @@ int main(int argc, char** argv){
   	Dx->set_domain_dimensions(&double_dims);
   	Dx->set_codomain_dimensions(&double_dims);
 */
-  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
+  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,3>>(1);
   	Dy->set_weight(tv_weight);
   	Dy->set_domain_dimensions(&is_dims);
   	Dy->set_codomain_dimensions(&is_dims);
+
+	 auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,3>>(2);
+	 Dz->set_weight(tv_weight);
+	 Dz->set_domain_dimensions(&is_dims);
+	 Dz->set_codomain_dimensions(&is_dims);
 
   	auto Dx1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(Dx,0);
   	Dx1->set_domain_dimensions(&double_dims);
@@ -143,8 +148,13 @@ int main(int argc, char** argv){
   	Dy1->set_domain_dimensions(&double_dims);
   	Dy1->set_codomain_dimensions(&is_dims);
 
+	 auto Dz1 = boost::make_shared<subselectionOperator<cuNDArray<float>>>(Dz,0);
+	 Dz1->set_domain_dimensions(&double_dims);
+	 Dz1->set_codomain_dimensions(&is_dims);
+
   	Dx1->set_weight(tv_weight);
   	Dy1->set_weight(tv_weight);
+	 Dz1->set_weight(tv_weight);
 
   	solver.add_regularization_group({Dx1,Dy1});
   	/*

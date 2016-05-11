@@ -36,7 +36,7 @@ template<template<class> class ARRAY> void Gadgetron::CTSubsetOperator<ARRAY>::m
 
 
 template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float>> Gadgetron::CTSubsetOperator<ARRAY>::setup(
-		boost::shared_ptr<CT_acquisition> acq, floatd3 is_dims_in_mm) {
+		boost::shared_ptr<CT_acquisition> acq, floatd3 is_dims_in_mm, boost::shared_ptr<hoCuNDArray<float>> weights) {
 
 
 
@@ -81,21 +81,44 @@ template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float>> Gadg
 
 
 	//Calculate the required permutation to order the actual projection array.
-	std::vector<unsigned int> permutations;
+
 	for (auto &subset : subset_projections){
 		for (auto proj : subset){
 			permutations.push_back(proj);
 		}
 	}
 
+
+	boost::shared_ptr<hoCuNDArray<float>> permuted_weights;
+	float * weights_ptr;
+	if (weights) {
+		permuted_weights = permute_projections(*weights, permutations);
+		weights_ptr = permuted_weights->get_data_ptr();
+	}
+
+
+
 	for (int i = 0; i < this->number_of_subsets; i++){
+
 		std::vector<size_t> codims{ acq->projections.get_size(0),acq->projections.get_size(1),subset_acquisitions[i]->geometry.detectorFocalCenterAngularPosition.size()};
 
 		operators[i]->set_codomain_dimensions(&codims);
 
 		operators[i]->set_domain_dimensions(this->get_domain_dimensions().get());
-		operators[i]->setup(subset_acquisitions[i],is_dims_in_mm);
+		if (weights){
+			std::vector<size_t> weights_dim = {permuted_weights->get_size(0),permuted_weights->get_size(1),subset_acquisitions[i]->geometry.detectorFocalCenterAngularPosition.size()};
+			auto weights_view = hoCuNDArray<float>(weights_dim,weights_ptr);
+			weights_ptr += weights_view.get_number_of_elements();
+			auto  subset_weights = boost::make_shared<ARRAY<float>>(weights_view );
+			operators[i]->setup(subset_acquisitions[i],subset_weights,is_dims_in_mm);
+		} else {
+			operators[i]->setup(subset_acquisitions[i],is_dims_in_mm);
+		}
+
 	}
+
+
+
 
 	return 	permute_projections(acq->projections,permutations);
 
@@ -108,7 +131,6 @@ template<template<class> class ARRAY> boost::shared_ptr<std::vector<size_t> > Ga
 	return operators[subset]->get_codomain_dimensions();
 
 }
-
 
 
 

@@ -27,7 +27,9 @@ public:
 	virtual void mult_MH(ARRAY<float>* input, ARRAY<float>* output, bool accumulate=false);
 
 	void setup(boost::shared_ptr<CT_acquisition> acquisition, floatd3 is_dims_in_mm);
+	void setup(boost::shared_ptr<CT_acquisition> acquisition, boost::shared_ptr<ARRAY<float>> weights,floatd3 is_dims_in_mm);
 	void setup(boost::shared_ptr<CT_acquisition> acquisition, boost::shared_ptr<CBCT_binning> binnning,floatd3 is_dims_in_mm);
+
 
 protected:
 
@@ -46,6 +48,9 @@ protected:
     std::vector<std::vector<floatd3>> focal_offset_cyls;
     std::vector<std::vector<floatd2>> central_elements;
     std::vector<std::vector<intd2>> proj_indices;
+	boost::shared_ptr<ARRAY<float>> weights;
+
+
 };
 
 } /* namespace Gadgetron */

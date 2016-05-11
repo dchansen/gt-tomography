@@ -21,4 +21,8 @@ template<class T> void save_nd_array(hoNDArray<T>* array, std::string s){
 	write_nd_array(array,s.c_str());
 }
 
+	template <class T> void huber_norm(cuNDArray<T>*,cuNDArray<T>*,cuNDArray<T>*,T);
+
+	template< class T> void calcC(cuNDArray<T>* in_out,cuNDArray<T>* b);
+	template< class T> void exp_inv_inplace(cuNDArray<T>* in_out);
 }

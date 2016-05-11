@@ -60,6 +60,7 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
         projection_dims.push_back(files.size());
 
         result->projections = hoCuNDArray<float>(projection_dims);
+        result->photonStatistics = hoCuNDArray<float>({projection_dims[0],1,files.size()});
 
 
         gdcm::Attribute<0x7029, 0x1002> detectorsizeX;
@@ -100,8 +101,12 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
         FOV.Set(ds);
         std::cout << "Scan FOV " << FOV.GetValue() << std::endl;
     }
+
     CT_geometry * geometry = &result->geometry;
     float* projectionPtr = result->projections.get_data_ptr();
+
+    float* weightsPtr = result->photonStatistics.get_data_ptr();
+
     for (auto fileStr : files){
         gdcm::Reader reader;
 
@@ -131,6 +136,7 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
         centralElement.Set(ds);
         geometry->detectorCentralElement.push_back(floatd2(centralElement.GetValue(0)-1,centralElement.GetValue(1)-1)); //Real men start at index 0
 
+
         gdcm::Attribute<0x7033,0x100C> sourceAngularPositionShift;
         sourceAngularPositionShift.Set(ds);
         geometry->sourceAngularPositionShift.push_back(sourceAngularPositionShift.GetValue());
@@ -148,6 +154,17 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
         geometry->sourceRadialDistanceShift.push_back(sourceRadialDistanceShift.GetValue());
 
         //geometry->sourceRadialDistanceShift.push_back(0);
+
+
+        gdcm::Attribute<0x7033,0x1065> photonStatistics;
+        photonStatistics.Set(ds);
+
+        for (int i = 0; i < result->photonStatistics.get_size(0); i++){
+            weightsPtr[i] = photonStatistics[i];
+        }
+
+        weightsPtr += result->photonStatistics.get_size(0);
+
 
         gdcm::ImageReader imReader;
         imReader.SetFileName(fileStr.c_str());
@@ -183,5 +200,38 @@ boost::shared_ptr<CT_acquisition> Gadgetron::read_dicom_projections(std::vector<
     }
 
     return result;
+
+}
+
+void Gadgetron::downscale_projections(boost::shared_ptr<CT_acquisition> acq) {
+
+    hoCuNDArray<float>& projections = acq->projections;
+
+
+
+    const size_t nrows = projections.get_size(0);
+    const size_t ncols = projections.get_size(1);
+    const size_t nprojs = projections.get_size(2);
+    hoCuNDArray<float> proj2({nrows,ncols/2,nprojs});
+
+    float* proj2_ptr = proj2.get_data_ptr();
+    float* proj_ptr= projections.get_data_ptr();
+    #pragma omp parallel for
+    for (int proj = 0; proj < nprojs; proj++)
+        for (int col = 0; col < ncols/2; col++ )
+            for (int row = 0; row < nrows; row++) {
+                proj2_ptr[row+col*nrows+proj*nrows*ncols/2] = log(exp(proj_ptr[row+2*col*nrows+proj*nrows*ncols])+exp(proj_ptr[row+(2*col+1)*nrows+proj*nrows*ncols]))/2;
+            }
+
+
+    acq->projections = std::move(proj2);
+
+    acq->geometry.detectorSize[1] /= 2;
+
+    std::vector<floatd2>& centralElements = acq->geometry.detectorCentralElement;
+
+    for (auto & f : centralElements ){
+        f[1] /= 2.0f;
+    }
 
 }

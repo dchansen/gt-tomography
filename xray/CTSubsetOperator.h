@@ -44,14 +44,15 @@ public:
 			op->set_domain_dimensions(dims);
 	}
 
-	boost::shared_ptr<hoCuNDArray<float>> setup(boost::shared_ptr<CT_acquisition> acq, floatd3 is_dims_in_mm);
+	boost::shared_ptr<hoCuNDArray<float>> setup(boost::shared_ptr<CT_acquisition> acq, floatd3 is_dims_in_mm, boost::shared_ptr<hoCuNDArray<float>> weights= boost::shared_ptr<hoCuNDArray<float>>());
 
+	boost::shared_ptr<hoCuNDArray<float>> permute_projections(hoCuNDArray<float>& projections, std::vector<unsigned int > & permutations);
 
-
+	std::vector<unsigned int> permutations;
 
 protected:
 
-	boost::shared_ptr<hoCuNDArray<float>> permute_projections(hoCuNDArray<float>& projections, std::vector<unsigned int > & permutations);
+
 	std::vector<boost::shared_ptr<CTProjectionOperator<ARRAY>>> operators;
 	//std::vector<boost::shared_ptr<typename ctProjectionOperator<ARRAY>::type>> operators;
 

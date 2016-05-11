@@ -38,7 +38,10 @@ static texture<float, 3, cudaReadModeElementType>
 static texture<float, cudaTextureType2DLayered, cudaReadModeElementType>
         projections_tex(false, cudaFilterModeLinear, cudaAddressModeBorder);
 
-
+/*
+static texture<float, cudaTextureType2DLayered, cudaReadModeElementType>
+        projections_tex(false, cudaFilterModePoint, cudaAddressModeBorder);
+*/
 namespace Gadgetron {
 
     static inline
@@ -168,14 +171,19 @@ namespace Gadgetron {
 
             floatd3 dir = endPoint - startPoint;
 
+            for (int i = 0; i < 3; i++){
+                if (abs(dir[i]) < 1e-6f) dir[i] = 1e-6f;
+            }
             //if (co[0] == 350 && co[1] == 32) printf("End point %f %f %f %f \n",endPoint[0],endPoint[1],endPoint[2],norm(dir));
             // Perform integration only inside the bounding cylinder of the image volume
             //
 
             const floatd3 vec_over_dir = (is_dims_in_mm / 2 - startPoint) / dir;
             const floatd3 vecdiff_over_dir = (-is_dims_in_mm / 2 - startPoint) / dir;
-            const floatd3 start = amin(vecdiff_over_dir, vec_over_dir);
-            const floatd3 end = amax(vecdiff_over_dir, vec_over_dir);
+            floatd3 start = amin(vecdiff_over_dir, vec_over_dir);
+            floatd3 end = amax(vecdiff_over_dir, vec_over_dir);
+
+
 
             float a1 = fmax(max(start), 0.0f);
             float aend = fmin(min(end), 1.0f);
@@ -183,7 +191,8 @@ namespace Gadgetron {
 
             //if (co[0] == 350 && co[1] == 32) printf("Start point %f %f %f %f \n",startPoint[0],startPoint[1],startPoint[2],a1);
             const float sampling_distance = norm((aend - a1) * dir) / num_samples_per_ray;
-
+            //if (isnan(sampling_distance) || isinf(sampling_distance))
+             //   printf("Sampling distance %f %f %f %f %f %f\n",sampling_distance,a1,aend,dir[0],dir[1],dir[2]);
             //if (co[0] == 350 && co[1] == 32) printf("sampling distance %f \n",sampling_distance);
 
             // Now perform conversion of the line integral start/end into voxel coordinates
@@ -261,6 +270,11 @@ namespace Gadgetron {
         int matrix_size_x = image->get_size(0);
         int matrix_size_y = image->get_size(1);
         int matrix_size_z = image->get_size(2);
+
+
+        image_tex.addressMode[0] = cudaAddressModeBorder;
+        image_tex.addressMode[1] = cudaAddressModeBorder;
+        image_tex.addressMode[2] = cudaAddressModeBorder;
 
         // Build texture from input image
         //
@@ -565,7 +579,7 @@ namespace Gadgetron {
                 float test = fmod(atan2(-detectorPoint[0], detectorPoint[1]) - detector_focal_cyl[0] + 4 * CUDART_PI_F,
                                   2 * CUDART_PI_F) - CUDART_PI_F;
                 const floatd2 element_rad = floatd2(test * ADD / ps_spacing[0],
-                                                    detectorPoint[2] / ps_spacing[1]) + centralElements[projection];
+                                                    detectorPoint[2] / ps_spacing[1]) +centralElements[projection];
 
 
                 // Convert metric projection coordinates into pixel coordinates
@@ -575,9 +589,9 @@ namespace Gadgetron {
                 //
 
                 //if (co[0] == 255 && co[1] == 255 && co[2] == 100) printf("Element rad %f %f %f %f \n",element_rad[0],element_rad[1],atan2(detectorPoint[1],detectorPoint[0]),detector_focal_cyl[0]);
-
-                result += tex2DLayered(projections_tex, element_rad[0], ps_dims_in_pixels[1] - element_rad[1]-1.0f,
-                                       projection - offset);
+                if (element_rad[1] > 0 && element_rad[1] < ps_dims_in_pixels[1])
+                    result += tex2DLayered(projections_tex, element_rad[0], ps_dims_in_pixels[1] - element_rad[1]-1.0f,
+                                           projection - offset);
                 //result += pos[2];
 
             }
@@ -675,7 +689,7 @@ namespace Gadgetron {
         int offset = 0;
         //cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
         projections_tex.addressMode[0] = cudaAddressModeBorder;
-        projections_tex.addressMode[1] = cudaAddressModeClamp;
+        projections_tex.addressMode[1] = cudaAddressModeBorder;
         for (size_t batch = 0; batch < num_batches; batch++) {
             cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
             cudaExtent extent;
@@ -827,7 +841,7 @@ namespace Gadgetron {
         int offset = 0;
         //cudaFuncSetCacheConfig(ct_backwards_projection_kernel , cudaFuncCachePreferL1);
         projections_tex.addressMode[0] = cudaAddressModeBorder;
-        projections_tex.addressMode[1] = cudaAddressModeClamp;
+        projections_tex.addressMode[1] = cudaAddressModeBorder;
 
         for (size_t batch = 0; batch < num_batches; batch++) {
 

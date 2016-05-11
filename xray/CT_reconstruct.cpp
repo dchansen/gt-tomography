@@ -99,12 +99,12 @@ int main(int argc, char** argv){
 
     std::cout << "Projections size: " << projections.get_size(0) << " " << projections.get_size(1) << " " << projections.get_size(2) << std::endl;
     //E->mult_MH(&projections,&image,false);
-    write_nd_array(&projections,"projections.real");
+    //write_nd_array(&projections,"projections.real");
     //cuGpBbSolver<float> solver;
     //cuNlcgSolver<float> solver;
     hoCuCgSolver<float> solver;
     //solver.set_non_negativity_constraint(true);
-    solver.set_max_iterations(30);
+    solver.set_max_iterations(0);
     solver.set_tc_tolerance(1e-8);
 
     solver.set_encoding_operator(E);
@@ -112,7 +112,7 @@ int main(int argc, char** argv){
     auto result = solver.solve(&projections);
 
     write_nd_array(result.get(),"test.real");
-
+    std::cout << "Test written" << std::endl;
     //fill(result.get(),1.0f);
     auto proj2 = projections;
     E->mult_M(result.get(),&proj2,false);

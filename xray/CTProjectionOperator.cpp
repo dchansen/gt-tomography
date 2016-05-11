@@ -14,95 +14,121 @@ using namespace boost::math::float_constants;
 namespace Gadgetron {
 
 
-template<template<class> class ARRAY> CTProjectionOperator<ARRAY>::CTProjectionOperator() {
-    // TODO Auto-generated constructor stub
+    template<template<class> class ARRAY>
+    CTProjectionOperator<ARRAY>::CTProjectionOperator() {
+        // TODO Auto-generated constructor stub
 
-    samples_per_pixel_ = 1.5f;
+        samples_per_pixel_ = 1.5f;
 
-}
+    }
 
-    template<template<class> class ARRAY>CTProjectionOperator<ARRAY>::~CTProjectionOperator() {
-    // TODO Auto-generated destructor stub
-}
+    template<template<class> class ARRAY>
+    CTProjectionOperator<ARRAY>::~CTProjectionOperator() {
+        // TODO Auto-generated destructor stub
+    }
 
-    template<template<class> class ARRAY> void CTProjectionOperator<ARRAY>::mult_M(ARRAY<float>* input,
-                                    ARRAY<float> *output, bool accumulate) {
+    template<template<class> class ARRAY>
+    void CTProjectionOperator<ARRAY>::mult_M(ARRAY<float> *input,
+                                             ARRAY<float> *output, bool accumulate) {
 
-    auto dims = *input->get_dimensions();
-    std::vector<size_t> dims3d(dims);
+        auto dims = *input->get_dimensions();
+        std::vector<size_t> dims3d(dims);
 
-    if (dims3d.size() == 4) dims3d.pop_back();
-    auto outdims = *output->get_dimensions();
-    std::vector<size_t> outbindims(outdims);
-    float *input_ptr = input->get_data_ptr();
-    float *output_ptr = output->get_data_ptr();
-    for (int bin = 0; bin < binning->get_number_of_bins(); bin++) {
-        //Check for empty bins
-        if (binning->get_bin(bin).size() == 0)
-            continue;
-        ARRAY<float> input_view(dims3d, input_ptr);
-        outbindims.back() = detector_focal_cyls[bin].size();
-        auto output_view = ARRAY<float>(outbindims, output_ptr);
+        if (dims3d.size() == 4) dims3d.pop_back();
+        auto outdims = *output->get_dimensions();
+        std::vector<size_t> outbindims(outdims);
+        float *input_ptr = input->get_data_ptr();
+        ARRAY<float> *tmp_out = output;
+        if (accumulate)
+            tmp_out = new ARRAY<float>(output->get_dimensions());
+
+        float *output_ptr = tmp_out->get_data_ptr();
+        for (int bin = 0; bin < binning->get_number_of_bins(); bin++) {
+            //Check for empty bins
+            if (binning->get_bin(bin).size() == 0)
+                continue;
+            ARRAY<float> input_view(dims3d, input_ptr);
+            outbindims.back() = detector_focal_cyls[bin].size();
+            auto output_view = ARRAY<float>(outbindims, output_ptr);
 
 
-        ct_forwards_projection(&output_view,&input_view,detector_focal_cyls[bin],focal_offset_cyls[bin],central_elements[bin],is_dims_in_mm,ps_spacing,ADD,samples_per_pixel_,accumulate);
-        //conebeam_forwards_projection(output_view2.get(),&input_view,angles[bin],offsets[bin],samples_per_pixel_,is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),accumulate);
+            ct_forwards_projection(&output_view, &input_view, detector_focal_cyls[bin], focal_offset_cyls[bin],
+                                   central_elements[bin], is_dims_in_mm, ps_spacing, ADD, samples_per_pixel_, false);
+            //conebeam_forwards_projection(output_view2.get(),&input_view,angles[bin],offsets[bin],samples_per_pixel_,is_dims_in_mm_,acquisition_->get_geometry()->get_FOV(),acquisition_->get_geometry()->get_SDD(),acquisition_->get_geometry()->get_SAD(),accumulate);
 
-        std::cout << "Mult M1 bin " << nrm2(&input_view) << " " << nrm2(&output_view ) << " " << output_view.get_number_of_elements() <<  std::endl;
-        input_ptr += input_view.get_number_of_elements();
-        output_ptr += output_view.get_number_of_elements();
+            input_ptr += input_view.get_number_of_elements();
+            output_ptr += output_view.get_number_of_elements();
+
+
+        }
+        if (weights)
+            *tmp_out *= *weights;
+
+        if (accumulate) {
+            *output += *tmp_out;
+            delete tmp_out;
+        }
 
 
     }
 
-        std::cout << "Mult M " << nrm2(input) << " " << nrm2(output ) <<  std::endl;
 
-}
 
-    template<template<class> class ARRAY> void CTProjectionOperator<ARRAY>::mult_MH(ARRAY<float>* input,
-                                     ARRAY<float> *output, bool accumulate) {
-    auto dims = *output->get_dimensions();
-    std::vector<size_t> dims3d = dims;
-    if (dims3d.size() == 4) dims3d.pop_back();
+    template<template<class> class ARRAY>
+    void CTProjectionOperator<ARRAY>::mult_MH(ARRAY<float> *input,
+                                              ARRAY<float> *output, bool accumulate) {
 
-    auto indims = *input->get_dimensions();
-    std::vector<size_t> inbindims(indims);
-    float *input_ptr = input->get_data_ptr();
-    float *output_ptr = output->get_data_ptr();
-    if (!accumulate)
-        clear(output);
-    for (int bin = 0; bin < binning->get_number_of_bins(); bin++) {
-        //Check for empty bins
-        if (binning->get_bin(bin).size() == 0)
-            continue;
+        ARRAY<float> *tmp_in = input;
+        if (weights) {
+            tmp_in = new ARRAY<float>(input);
+            *tmp_in *= *weights;
+        }
+        auto dims = *output->get_dimensions();
+        std::vector<size_t> dims3d = dims;
+        if (dims3d.size() == 4) dims3d.pop_back();
 
-        ARRAY<float> output_view(dims3d, output_ptr);
-        inbindims.back() = detector_focal_cyls[bin].size();
-        auto input_view = ARRAY<float>(inbindims, input_ptr);
+        auto indims = *input->get_dimensions();
+        std::vector<size_t> inbindims(indims);
+        float *input_ptr = tmp_in->get_data_ptr();
+        float *output_ptr = output->get_data_ptr();
+        if (!accumulate)
+            clear(output);
+        for (int bin = 0; bin < binning->get_number_of_bins(); bin++) {
+            //Check for empty bins
+            if (binning->get_bin(bin).size() == 0)
+                continue;
 
-        vector_td<int, 3> is_dims_in_pixels{dims3d[0], dims3d[1], dims3d[2]};
+            ARRAY<float> output_view(dims3d, output_ptr);
+            inbindims.back() = detector_focal_cyls[bin].size();
+            auto input_view = ARRAY<float>(inbindims, input_ptr);
 
-        ct_backwards_projection(&input_view, &output_view, detector_focal_cyls[bin], focal_offset_cyls[bin],
-                                central_elements[bin], proj_indices[bin], is_dims_in_mm, ps_spacing, ADD, accumulate);
-        input_ptr += input_view.get_number_of_elements();
-        output_ptr += output_view.get_number_of_elements();
+            vector_td<int, 3> is_dims_in_pixels{dims3d[0], dims3d[1], dims3d[2]};
+
+            ct_backwards_projection(&input_view, &output_view, detector_focal_cyls[bin], focal_offset_cyls[bin],
+                                    central_elements[bin], proj_indices[bin], is_dims_in_mm, ps_spacing, ADD,
+                                    accumulate);
+            input_ptr += input_view.get_number_of_elements();
+            output_ptr += output_view.get_number_of_elements();
+        }
+
+        if (weights) {
+            delete tmp_in;
+        }
+
+
     }
-        std::cout << "Mult MH " << nrm2(input) << " " << nrm2(output ) <<  std::endl;
 
-
-
+    template<template<class> class ARRAY>
+    void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
+                                                       floatd3 is_dims_in_mm) {
+        std::vector<unsigned int> bins(acquisition->geometry.detectorFocalCenterAngularPosition.size());
+        std::iota(bins.begin(), bins.end(), 0);
+        auto tmp_binning = boost::make_shared<CBCT_binning>(std::vector<std::vector<unsigned int>>(1, bins));
+        this->setup(acquisition, tmp_binning, is_dims_in_mm);
     }
 
-    template<template<class> class ARRAY> void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
-                                                  floatd3 is_dims_in_mm)
-{
-    std::vector<unsigned int> bins(acquisition->geometry.detectorFocalCenterAngularPosition.size());
-    std::iota(bins.begin(), bins.end(), 0);
-    auto tmp_binning = boost::make_shared<CBCT_binning>(std::vector<std::vector<unsigned int>>(1, bins));
-    this->setup(acquisition, tmp_binning, is_dims_in_mm);
-}
-
-    template<template<class> class ARRAY> std::vector<intd2> Gadgetron::CTProjectionOperator<ARRAY>::calculate_slice_indices(CT_acquisition &acquisition) {
+    template<template<class> class ARRAY>
+    std::vector<intd2> Gadgetron::CTProjectionOperator<ARRAY>::calculate_slice_indices(CT_acquisition &acquisition) {
 
         floatd2 detectorSize = acquisition.geometry.detectorSize;
         auto &centralElements = acquisition.geometry.detectorCentralElement;
@@ -113,15 +139,15 @@ template<template<class> class ARRAY> CTProjectionOperator<ARRAY>::CTProjectionO
 
 
         std::vector<intd2> slice_indices(image_dims[2]);
-        std::fill(slice_indices.begin(),slice_indices.end(),intd2(0,0));
-        std::vector<float> start_point(centralElements.size()+1);
+        std::fill(slice_indices.begin(), slice_indices.end(), intd2(0, 0));
+        std::vector<float> start_point(centralElements.size() + 1);
 
         for (int i = 0; i < centralElements.size(); i++) {
-            start_point[i] = axialPosition[i] + (centralElements[i][1] - float(proj_dims[1])/2) * detectorSize[1] -
-                             detectorSize[1]*proj_dims[1] / 2;
+            start_point[i] = axialPosition[i] + (centralElements[i][1] - float(proj_dims[1]) / 2) * detectorSize[1] -
+                             detectorSize[1] * proj_dims[1] / 2;
             //std::cout << "Start point " << start_point[i] << std::endl;
         }
-        start_point.back() = 2*start_point[centralElements.size()-1]-start_point[centralElements.size()-2];
+        start_point.back() = 2 * start_point[centralElements.size() - 1] - start_point[centralElements.size() - 2];
 
         int projection_start = 0;
         int projection_stop = 0;
@@ -129,17 +155,17 @@ template<template<class> class ARRAY> CTProjectionOperator<ARRAY>::CTProjectionO
             float slice_start = is_dims_in_mm[2] / image_dims[2] * (i - 0.5f) - is_dims_in_mm[2] / 2;
             float slice_stop = is_dims_in_mm[2] / image_dims[2] * (i + 0.5f) - is_dims_in_mm[2] / 2;
             //std::cout << "Slice start " << slice_start << " slice end " << slice_stop << std::endl;
-            while (slice_start > (start_point[projection_start] + detectorSize[1]*proj_dims[1])) {
+            while (slice_start > (start_point[projection_start] + detectorSize[1] * proj_dims[1])) {
                 projection_start++;
-                if (projection_start >= centralElements.size()){
+                if (projection_start >= centralElements.size()) {
                     projection_start = centralElements.size();
                     break;
                 }
             }
-            while (slice_stop > start_point[projection_stop] ) {
+            while (slice_stop > start_point[projection_stop]) {
 
                 projection_stop++;
-                if (projection_stop >= centralElements.size()){
+                if (projection_stop >= centralElements.size()) {
                     projection_stop = centralElements.size();
                     break;
                 }
@@ -156,8 +182,16 @@ template<template<class> class ARRAY> CTProjectionOperator<ARRAY>::CTProjectionO
 
     }
 
-    template<template<class> class ARRAY> void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
-                                                  boost::shared_ptr<CBCT_binning> binning, floatd3 is_dims_in_mm) {
+    template<template<class> class ARRAY>
+    void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
+                                                       boost::shared_ptr<ARRAY<float>> weights, floatd3 is_dims_in_mm) {
+        this->weights = weights;
+        setup(acquisition, is_dims_in_mm);
+    }
+
+    template<template<class> class ARRAY>
+    void Gadgetron::CTProjectionOperator<ARRAY>::setup(boost::shared_ptr<CT_acquisition> acquisition,
+                                                       boost::shared_ptr<CBCT_binning> binning, floatd3 is_dims_in_mm) {
         this->binning = binning;
         auto bins = binning->get_bins();
         this->is_dims_in_mm = is_dims_in_mm;
@@ -189,12 +223,14 @@ template<template<class> class ARRAY> CTProjectionOperator<ARRAY>::CTProjectionO
             }
 
         }
-}
+    }
 
 
-    template class CTProjectionOperator<cuNDArray>;
-    template class CTProjectionOperator<hoCuNDArray>;
+    template
+    class CTProjectionOperator<cuNDArray>;
 
+    template
+    class CTProjectionOperator<hoCuNDArray>;
 
 
 } /* namespace Gadgetron */

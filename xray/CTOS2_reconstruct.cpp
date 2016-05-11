@@ -22,7 +22,7 @@
 #include "hoCuNCGSolver.h"
 #include "hoCuCgDescentSolver.h"
 #include "hoNDArray_utils.h"
-#include "hoCuPartialDerivativeOperator.h"
+#include "cuPartialDerivativeOperator.h"
 #include "cuTvOperator.h"
 #include "cuTv1dOperator.h"
 #include "cuTvPicsOperator.h"
@@ -64,6 +64,9 @@
 #include <boost/regex.hpp>
 #include "dicomCTWriter.h"
 #include "nonlocalMeans.h"
+#include "hoCuOSOMSolver.h"
+#include <boost/math/constants/constants.hpp>
+using namespace boost::math::float_constants;
 using namespace std;
 using namespace Gadgetron;
 
@@ -94,11 +97,12 @@ std::vector<string> get_dcm_files(std::string dir){
 }
 
 
-boost::shared_ptr<hoCuNDArray<float>> calculate_weights(hoCuNDArray<float>* projections,hoCuNDArray<float>* photonStats){
+boost::shared_ptr<hoCuNDArray<float>> calculate_weights(hoCuNDArray<float>* projections,hoCuNDArray<float>* photonStats,CT_acquisition* acq){
 
-    auto  weights = boost::make_shared<hoCuNDArray<float>>(*projections);
-
+    auto  weights = boost::make_shared<hoCuNDArray<float>>(projections->get_dimensions());
+    clear(weights.get());
     float* weights_ptr = weights->get_data_ptr();
+    float* proj_ptr = projections->get_data_ptr();
     const size_t elements = weights->get_number_of_elements();
 
     float * statPtr = photonStats->get_data_ptr();
@@ -106,12 +110,17 @@ boost::shared_ptr<hoCuNDArray<float>> calculate_weights(hoCuNDArray<float>* proj
     const size_t nrows = projections->get_size(0);
     const size_t ncols = projections->get_size(1);
     const size_t nprojs = projections->get_size(2);
+	auto & centre = acq->geometry.detectorCentralElement;
 #pragma omp parallel for
     for (int proj = 0; proj < nprojs; proj++)
         for (int col = 0; col < ncols; col++ )
             for (int row = 0; row < nrows; row++) {
                 size_t i = row + col * nrows + proj * nrows * ncols;
-                weights_ptr[i] = std::sqrt(exp(-weights_ptr[i])*statPtr[row+proj*nrows]);
+                float avg = (proj_ptr[i]);
+
+                weights_ptr[i] = std::sqrt(exp(-avg)*statPtr[row+proj*nrows]);
+				//weights_ptr[i] = cos((float(ncols)-col-centre[proj][1])*pi/float(ncols));
+
             }
 
 
@@ -135,9 +144,10 @@ int main(int argc, char** argv)
 	float tv_weight, wavelet_weight,huber,sigma,dct_weight;
 
 
-	bool use_non_negativity,use_weights;
+	bool use_non_negativity,use_weights,downscale;
 	int reg_iter;
 	unsigned int skip_projections;
+	int skip_slices;
 
 	po::options_description desc("Allowed options");
 
@@ -164,7 +174,10 @@ int main(int argc, char** argv)
 			("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
 			("reg_iter",po::value<int>(&reg_iter)->default_value(2))
 			("skip_projections",po::value<unsigned int>(&skip_projections)->default_value(0))
-	("use_weights",po::value<bool>(&use_weights)->default_value(false));
+	("skip_slices",po::value<int>(&skip_slices)->default_value(0))
+	("use_weights",po::value<bool>(&use_weights)->default_value(false))
+	("downscale",po::value<bool>(&downscale)->default_value(false))
+			("dump","Dump iterations")
 
 	;
 
@@ -203,6 +216,9 @@ int main(int argc, char** argv)
 	cudaDeviceManager::Instance()->unlockHandle();
 
 	auto files = read_dicom_projections(get_dcm_files(vm["dir"].as<string>()),skip_projections);
+	if (downscale)
+		downscale_projections(files);
+
 	std::vector<float>& axials =  files->geometry.detectorFocalCenterAxialPosition;
 	std::cout << "Axials size " << axials.size() << std::endl;
 	float offset;
@@ -243,13 +259,13 @@ int main(int argc, char** argv)
 	std::cout << "Image size " << imageDimensions << std::endl;
 
 	//osLALMSolver<hoCuNDArray<float> solver;
-	osMOMSolverD3<hoCuNDArray<float>> solver;
+	hoCuOSMOMSolver<float> solver;
 	//osSPSSolver<hoCuNDArray<float>> solver;
 	//osMOMSolverL1<hoCuNDArray<float> solver;
 	//osAHZCSolver<hoCuNDArray<float> solver;
 	//osMOMSolverF<hoCuNDArray<float> solver;
 	//ADMMSolver<hoCuNDArray<float> solver;
-	solver.set_dump(true);
+	solver.set_dump(vm.count("dump"));
 	//solver.set_stepsize(1);
 	//solver.set_beta(0.1);
 
@@ -272,18 +288,18 @@ int main(int argc, char** argv)
 
 	if (tv_weight > 0) {
 
-		auto Dx = boost::make_shared<hoCuPartialDerivativeOperator<float, 4>>(0);
+		auto Dx = boost::make_shared<cuPartialDerivativeOperator<float, 3>>(0);
 		Dx->set_weight(tv_weight);
 		Dx->set_domain_dimensions(&is_dims);
 		Dx->set_codomain_dimensions(&is_dims);
 
-		auto Dy = boost::make_shared<hoCuPartialDerivativeOperator<float, 4>>(1);
+		auto Dy = boost::make_shared<cuPartialDerivativeOperator<float, 3>>(1);
 		Dy->set_weight(tv_weight);
 		Dy->set_domain_dimensions(&is_dims);
 		Dy->set_codomain_dimensions(&is_dims);
 
 
-		auto Dz = boost::make_shared<hoCuPartialDerivativeOperator<float, 4>>(2);
+		auto Dz = boost::make_shared<cuPartialDerivativeOperator<float, 3>>(2);
 		Dz->set_weight(tv_weight);
 		Dz->set_domain_dimensions(&is_dims);
 		Dz->set_codomain_dimensions(&is_dims);
@@ -292,17 +308,22 @@ int main(int argc, char** argv)
 	}
 
 
-	auto E = boost::make_shared<CTSubsetOperator<hoCuNDArray> >(subsets);
+	auto E = boost::make_shared<CTSubsetOperator<cuNDArray> >(subsets);
 
 	E->set_domain_dimensions(&is_dims);
 	//E->setup(ps,binning,imageDimensions);
 
     boost::shared_ptr<hoCuNDArray<float>> host_projections;
+	boost::shared_ptr<hoCuNDArray<float>> host_weights;
+
     if (use_weights) {
-        auto weights = calculate_weights(&files->projections,&files->photonStatistics);
+        auto weights = calculate_weights(&files->projections,&files->photonStatistics,files.get());
+
         write_nd_array(weights.get(),"weights.real");
         files->projections *= *weights;
-        host_projections = E->setup(files, imageDimensions,weights);
+        host_projections = E->setup(files, imageDimensions);
+		host_weights = E->permute_projections(*weights,E->permutations);
+
 
     }else
 	    host_projections = E->setup(files,imageDimensions);
@@ -314,20 +335,17 @@ int main(int argc, char** argv)
 
 
 
-	boost::shared_ptr<hoCuNDArray<float>> result;
+	boost::shared_ptr<hoNDArray<float>> result;
 	{
 
 		GPUTimer tim("Solver");
-		result = solver.solve(host_projections.get());
+		if (use_weights)
+			result = solver.solve(host_projections.get(),host_weights.get());
+		else
+			result = solver.solve(host_projections.get());
 	}
 
-	std::cout << "Penguin" << nrm2(result.get()) << std::endl;
 
-	std::cout << "Result sum " << asum(result.get()) << std::endl;
-
-	//apply_mask(result.get(),mask.get());
-
-	std::cout << "Result sum " << asum(result.get()) << std::endl;
 	//saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
 
 
@@ -337,16 +355,16 @@ int main(int argc, char** argv)
 
 //	write_nd_array(result.get(),"reconstruction.real");
 
-	write_dicomCT("output",result.get(),imageDimensions,files.get(),offset);
+	write_dicomCT("output",result.get(),imageDimensions,files.get(),offset,skip_slices);
 
-    /*
+
 	cuNDArray<float> tmp(result.get());
 	cuNDArray<float> tmp2(result.get());
-	nonlocal_means(&tmp,&tmp2,0.01);
+	nonlocal_means(&tmp,&tmp2,0.015);
 	auto result2 = tmp2.to_host();
 
-	write_dicomCT("output2",result2.get(),imageDimensions,files.get(),offset);
-*/
+	write_dicomCT("output2",result2.get(),imageDimensions,files.get(),offset,skip_slices);
+
 
 
 }

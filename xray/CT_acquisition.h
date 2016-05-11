@@ -39,6 +39,7 @@ namespace Gadgetron {
 
         }
         hoCuNDArray<float> projections;
+        hoCuNDArray<float> photonStatistics;
         CT_geometry geometry;
         float calibration_factor;
         std::string StudyInstanceUID;
@@ -49,6 +50,7 @@ namespace Gadgetron {
 
 
     boost::shared_ptr<CT_acquisition> read_dicom_projections(std::vector<std::string> files, unsigned int remove_projs=0);
+    void downscale_projections(boost::shared_ptr<CT_acquisition> acq);
 
 
 }

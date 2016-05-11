@@ -26,6 +26,7 @@
 #include <sstream>
 #include <math_constants.h>
 #include <boost/make_shared.hpp>
+#include <operators/cuGaussianFilterOperator.h>
 #include "cuSolverUtils.h"
 #include "osPDsolver.h"
 #include "osLALMSolver.h"
@@ -42,9 +43,6 @@
 #include "subselectionOperator.h"
 #include "subsetConverter.h"
 #include "nonlocalMeans.h"
-#include "cuEdgeATrousOperator.h"
-
-#include "cuNDArray_math.h"
 using namespace std;
 using namespace Gadgetron;
 using namespace std;
@@ -55,7 +53,7 @@ int main(int argc, char** argv){
 	po::options_description desc("Allowed options");
 	unsigned int iterations;
 	int device;
-	float noise,alpha;
+	float noise;
 	string outputFile;
 	desc.add_options()
     				("help", "produce help message")
@@ -63,7 +61,6 @@ int main(int argc, char** argv){
     				("output,f", po::value<string>(&outputFile)->default_value("denoised.real"), "Output filename")
     				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     				("noise",po::value<float>(&noise)->default_value(1),"noise level")
-			        ("alpha",po::value<float>(&alpha)->default_value(1),"noise level")
 
     				;
 
@@ -100,49 +97,40 @@ int main(int argc, char** argv){
 
 	auto input = cuNDArray<float>(*hoInput);
 
+	auto output = hoCuNDArray<float>(input.get_dimensions());
+	clear(&output);
+
+	//auto output = input;
+	//nonlocal_means2D(&input,&input,noise);
+
+	cuGaussianFilterOperator<float,2> E;
+	std::vector<float> host_kernel= {1.0/16,1.0/4, 3.0/8, 1.0/4,1.0/16};
+	auto kernel = thrust::device_vector<float>(host_kernel);
+
+	E.set_sigma(noise);
+
+	std::vector<size_t> dims2D = {input.get_size(0),input.get_size(1)};
+	float* input_ptr = input.get_data_ptr();
+	float* output_ptr = output.get_data_ptr();
+	for (int i =0; i < input.get_size(2); i++){
 
 
+		cuNDArray<float> input_view(dims2D,input_ptr);
+		hoCuNDArray<float> output_view(dims2D,output_ptr);
+		cuNDArray<float> tmp(input_view);
 
-	auto dims = *input.get_dimensions();
-	cuEdgeATrousOperator<float> E;
-    E.set_sigma(noise);
-	E.set_domain_dimensions(&dims);
-    int levels = 3;
-	E.set_levels({levels,levels,levels});
-	auto wavelets = cuNDArray<float>(E.get_codomain_dimensions());
-    clear(&wavelets);
-	E.mult_M(&input,&wavelets);
+		//E.mult_M(&input_view,&tmp);
+		EdgeWavelet(&input_view,&tmp,&kernel,1,0,noise,false);
+		EdgeWavelet(&tmp,&input_view,&kernel,1,1,noise,false);
 
+		output_view = input_view;
 
-	auto d0 = cuNDArray<float>(dims,wavelets.get_data_ptr()); //Highest detail level
-
-	auto d0Host = abs(&d0)->to_host();
-	float sigma = median(d0Host.get())/0.6745;
-	float sigma2 = sigma*sigma;
-
-    std::cout << "Sigma 2" << sigma2 << " " << sigma <<std::endl;
-
-
-	for (int i = 0; i< levels; i++){
-		auto view = cuNDArray<float>(dims,wavelets.get_data_ptr()+input.get_number_of_elements()*i);
-		float view_norm = nrm2(&view);
-		float sigmaY2 = (view_norm*view_norm)/view.get_number_of_elements();
-
-		float sigmaX2 = sigma2*std::pow(std::pow(2.0f,-i),2);
-		float T = sigma2/std::sqrt(std::max(0.0f,sigmaY2-sigmaX2));
-        std::cout << "T " << T << " " << sigmaY2 << " " << sigmaX2 << std::endl;
-		shrink1(&view,alpha);
-
-
+		input_ptr += input_view.get_number_of_elements();
+		output_ptr += input_view.get_number_of_elements();
 
 	}
 
-    //write_nd_array(&wavelets,"wavelets.real");
-	E.inverse(&wavelets,&input);
-
-
-
-	write_nd_array(&input,outputFile);
+	write_nd_array(&output,outputFile.c_str());
 
 }
 
