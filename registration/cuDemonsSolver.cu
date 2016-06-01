@@ -90,6 +90,93 @@ template<class T, unsigned int D>  boost::shared_ptr<cuNDArray<T> > cuDemonsSolv
 }
 
 
+// Simple transformation kernel
+__global__ static void deform_imageKernel(float* output, float* vector_field, cudaTextureObject_t texObj, int width, int height, int depth){
+
+	const int ixo = blockDim.x * blockIdx.x + threadIdx.x;
+	const int iyo = blockDim.y * blockIdx.y + threadIdx.y;
+	const int izo = blockDim.z * blockIdx.z + threadIdx.z;
+
+
+	if (ixo < width && iyo < height && izo < depth){
+
+
+		const int idx = ixo+iyo*width+izo*width*height;
+		const int elements = width*height*depth;
+		float ux = vector_field[idx]+0.5f+ixo;
+		float uy = vector_field[idx+elements]+0.5f+iyo;
+		float uz = vector_field[idx+2*elements]+0.5f+izo;
+
+		output[idx] = tex3D<float>(texObj,ux,uy,uz);
+
+
+	}
+
+
+
+
+}
+
+
+
+cuNDArray<float> deform_image(cuNDArray<float>* image, cuNDArray<float>* vector_field){
+
+
+	cuNDArray<float> output(image->get_dimensions());
+	clear(&output);
+
+	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+	cudaExtent extent;
+	extent.width = image->get_size(0);
+	extent.height = image->get_size(1);
+	extent.depth = image->get_size(2);
+
+	cudaMemcpy3DParms cpy_params = {0};
+	cpy_params.kind = cudaMemcpyDeviceToDevice;
+	cpy_params.extent = extent;
+
+	cudaArray *image_array;
+	cudaMalloc3DArray(&image_array, &channelDesc, extent);
+	cpy_params.dstArray = image_array;
+	cpy_params.srcPtr = make_cudaPitchedPtr
+			((void*)image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
+	cudaMemcpy3D(&cpy_params);
+
+	struct cudaResourceDesc resDesc;
+	memset(&resDesc, 0, sizeof(resDesc));
+	resDesc.resType = cudaResourceTypeArray;
+	resDesc.res.array.array = image_array;
+
+
+	struct cudaTextureDesc texDesc;
+	memset(&texDesc, 0, sizeof(texDesc));
+	texDesc.addressMode[0] = cudaAddressModeClamp;
+	texDesc.addressMode[1] = cudaAddressModeClamp;
+	texDesc.addressMode[1] = cudaAddressModeClamp;
+	texDesc.filterMode = cudaFilterModeLinear;
+	texDesc.readMode = cudaReadModeElementType;
+	texDesc.normalizedCoords = 0;
+	cudaTextureObject_t texObj = 0;
+	cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
+
+	dim3 threads(8,8,8);
+
+	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
+
+	deform_imageKernel<<<grid,threads>>>(output.get_data_ptr(),vector_field->get_data_ptr(),texObj,extent.width,extent.height,extent.depth);
+
+	cudaDestroyTextureObject(texObj);
+
+	// Free device memory
+	cudaFreeArray(image_array);
+
+	return output;
+
+
+
+
+}
+
 template class EXPORTGPUREG cuDemonsSolver<float, 1>;
 template class EXPORTGPUREG cuDemonsSolver<float, 2>;
 template class EXPORTGPUREG cuDemonsSolver<float, 3>;

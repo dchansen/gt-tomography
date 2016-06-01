@@ -19,6 +19,7 @@ find_package(Gadgetron REQUIRED)
 
 
 include_directories(  "${GADGETRON_HOME}/include/gadgetron")
+include_directories(  "/home/dch/opt/include")
 link_directories("${GADGETRON_LIB_DIR}/")
 # build options for OpenMP support
 find_package(OpenMP)
@@ -34,28 +35,11 @@ if(USE_OPENMP)
   ADD_DEFINITIONS(-DUSE_OMP)
 endif(USE_OPENMP)
 
-find_package(DCMTK REQUIRED)
 
-FIND_PACKAGE(GDCM REQUIRED)
-    IF(GDCM_FOUND)
-        INCLUDE(${GDCM_USE_FILE})
-        SET(GDCM_LIBRARIES 
-            gdcmCommon
-            gdcmDICT
-            gdcmDSED
-            gdcmIOD
-            gdcmjpeg12
-            gdcmjpeg16
-            gdcmjpeg8
-            gdcmMEXD
-            gdcmMSFF
-            socketxx
-            )
-    ELSE(GDCM_FOUND)
-        MESSAGE(FATAL_ERROR "Cannot find GDCM, did you set GDCM_DIR?")
-    ENDIF(GDCM_FOUND)
+
+option(BUILDCT "Build the spiral CT recon" OFF)
 find_package(Boost COMPONENTS system thread program_options filesystem regex REQUIRED)
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11 -D_MWAITXINTRIN_H_INCLUDED")
 find_package(CUDA 4.0 REQUIRED)
 
 #ADD_DEFINITIONS(-D__STRICT_ANSI__)

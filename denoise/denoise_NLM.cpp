@@ -60,6 +60,7 @@ int main(int argc, char** argv){
     				("output,f", po::value<string>(&outputFile)->default_value("denoised.real"), "Output filename")
     				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     				("noise",po::value<float>(&noise)->default_value(1),"noise level")
+			        ("block","Use blockwise algorithm")
 
     				;
 
@@ -97,7 +98,10 @@ int main(int argc, char** argv){
 	auto input = cuNDArray<float>(*hoInput);
 
 	auto output = input;
-	nonlocal_means(&input,&output,noise);
+	if (vm.count("block"))
+		nonlocal_means_block(&input,&output,noise);
+	else
+		nonlocal_means(&input,&output,noise);
 
 	write_nd_array(&output,outputFile);
 

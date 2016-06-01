@@ -11,6 +11,26 @@ include_directories(
         ${CMAKE_SOURCE_DIR}/denoise
 )
 
+FIND_PACKAGE(GDCM REQUIRED)
+IF(GDCM_FOUND)
+    INCLUDE(${GDCM_USE_FILE})
+    SET(GDCM_LIBRARIES
+            gdcmCommon
+            gdcmDICT
+            gdcmDSED
+            gdcmIOD
+            gdcmjpeg12
+            gdcmjpeg16
+            gdcmjpeg8
+            gdcmMEXD
+            gdcmMSFF
+            socketxx
+            )
+
+ELSE(GDCM_FOUND)
+    MESSAGE(FATAL_ERROR "Cannot find GDCM, did you set GDCM_DIR?")
+ENDIF(GDCM_FOUND)
+
 MESSAGE("Include dir ${GDCM_INCLUDE_DIRS}")
 
 # The Armadillo sparse matrix suppport seems to be too slow be be a real alternative to the eigen version
@@ -57,6 +77,10 @@ target_link_libraries(CBOS_OF_reconstruct Xray_kernels tomography_solvers gadget
 add_executable(cuCBOS_reconstruct cuCBOS_reconstruct.cpp)
 target_link_libraries(cuCBOS_reconstruct Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
+add_executable(hoCuCBOS_reconstruct hoCuCBOS_reconstruct.cpp)
+target_link_libraries(hoCuCBOS_reconstruct Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+
+
 add_executable(cuCBOS2_reconstruct cuCBOS2_reconstruct.cpp)
 target_link_libraries(cuCBOS2_reconstruct Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
@@ -84,6 +108,8 @@ add_executable(CB_OF_reconstruct CB_OF_reconstruct.cpp)
 target_link_libraries(CB_OF_reconstruct Xray_kernels gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 
+if (BUILDCT)
+
 add_executable(cuCT_reconstruct cuCT_reconstruct.cpp)
 target_link_libraries(cuCT_reconstruct Xray_kernels tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
@@ -105,3 +131,4 @@ target_link_libraries(CTOS3_reconstruct denoise_kernels Xray_kernels tomography_
 add_executable(CTStat_reconstruct CTStat_reconstruct.cpp)
 target_link_libraries(CTStat_reconstruct denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #install(TARGETS Reconstruct DESTINATION bin)
+endif(BUILDCT)

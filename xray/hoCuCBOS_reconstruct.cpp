@@ -44,7 +44,6 @@
 #include <boost/program_options.hpp>
 #include <boost/make_shared.hpp>
 #include <GPUTimer.h>
-#include <operators/cuGaussianFilterOperator.h>
 #include "cuSolverUtils.h"
 #include "osPDsolver.h"
 #include "osLALMSolver.h"
@@ -60,122 +59,12 @@
 #include "hoNDArray_math.h"
 #include "cuNCGSolver.h"
 #include "CT_acquisition.h"
+#include "hoCuOSOMSolver.h"
+
 using namespace std;
 using namespace Gadgetron;
 
 namespace po = boost::program_options;
-
-boost::shared_ptr<hoCuNDArray<float>> downsample_projections(hoCuNDArray<float>* projections, unsigned int num_downsamples )
-{
-
-	if (num_downsamples == 0) return boost::make_shared<hoCuNDArray<float>>(*projections);
-
-	auto tmp = Gadgetron::downsample<float,2>(projections);
-
-	for (int k = 1; k < num_downsamples; k++)
-		tmp = Gadgetron::downsample<float,2>(tmp.get());
-
-	return boost::make_shared<hoCuNDArray<float>>(*tmp);
-}
-
-void scatter_correct(boost::shared_ptr<CBCT_binning>  binning, boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>* projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
-
-	auto ps2 = boost::make_shared<CBCT_acquisition>(*ps);
-	auto new_proj = boost::make_shared<hoCuNDArray<float>>(*projections);
-	ps2->set_projections(new_proj);
-	ps2->downsample(3);
-
-
-
-	std::vector<size_t> is_dims2 {is_dims[0]/4, is_dims[1]/4,is_dims[2]/4};
-
-	std::cout << "Scatter image size " <<  is_dims2[0] << " " << is_dims2[1] << " " << is_dims2[2] << std::endl;
-
-	int subsets = 6;
-	float tv_weight=10;
-
-
-	auto E = boost::make_shared<CBSubsetOperator<cuNDArray> >(subsets);
-
-
-	//E->setup(ps,binning,imageDimensions);
-	E->setup(ps2,binning,imageDimensions);
-	E->set_domain_dimensions(&is_dims2);
-	E->set_codomain_dimensions(new_proj->get_dimensions().get());
-
-	cuNDArray<float> cu_proj(*ps2->get_projections());
-
-	E->offset_correct(&cu_proj);
-
-	osMOMSolverD<cuNDArray<float>> solver;
-	solver.set_encoding_operator(E);
-	solver.set_max_iterations(10);
-	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
-	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
-	Dx->set_weight(tv_weight);
-	Dx->set_domain_dimensions(&is_dims2);
-	Dx->set_codomain_dimensions(&is_dims2);
-
-	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
-	Dy->set_weight(tv_weight);
-	Dy->set_domain_dimensions(&is_dims2);
-	Dy->set_codomain_dimensions(&is_dims2);
-
-
-	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
-	Dz->set_weight(tv_weight);
-	Dz->set_domain_dimensions(&is_dims2);
-	Dz->set_codomain_dimensions(&is_dims2);
-
-	solver.add_regularization_group({Dx,Dy,Dz});
-	hoCuNDArray<float> img;
-	img = *solver.solve(&cu_proj);
-
-	write_nd_array(&img,"scatterImage1.real");
-	float * data = img.get_data_ptr();
-	size_t nelements = img.get_number_of_elements();
-#pragma omp parallel for
-    for (size_t i = 0; i < nelements; i++)
-		if (data[i] < 0.05) data[i] = 0;
-
-
-	write_nd_array(&img,"scatterImage2.real");
-
-	boost::shared_ptr< hoCuConebeamProjectionOperator >
-			Ep( new hoCuConebeamProjectionOperator() );
-	Ep->setup(ps,binning,imageDimensions);
-	Ep->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
-	Ep->set_domain_dimensions(&is_dims);
-
-	Ep->set_use_offset_correction(false);
-
-	hoCuNDArray<float> proj2;
-	proj2 = *projections;
-	Ep->mult_M(&img,&proj2);
-
-	proj2 -= *projections;
-
-
-	write_nd_array(&proj2,"unfiltered.real");
-	cuNDArray<float> scatter_proj(proj2);
-	cuNDArray<float> filtered_proj(proj2.get_dimensions());
-
-	cuGaussianFilterOperator<float,2> G;
-	G.set_sigma(10.0);
-
-	G.mult_M(&scatter_proj,&filtered_proj);
-
-
-	write_nd_array(&filtered_proj,"filtered.real");
-	//*projections = filtered_proj;
-
-	*projections += *filtered_proj.to_host();
-
-
-
-
-}
-
 
 
 boost::shared_ptr<cuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binning>  binning,boost::shared_ptr<CBCT_acquisition> ps, hoCuNDArray<float>& projections, std::vector<size_t> is_dims, floatd3 imageDimensions){
@@ -338,7 +227,7 @@ int main(int argc, char** argv)
 	boost::shared_ptr<CBCT_acquisition> ps(new CBCT_acquisition());
 	ps->load(acquisition_filename);
 	ps->get_geometry()->print(std::cout);
-
+	ps->downsample(downsamples);
 
 	float SDD = ps->get_geometry()->get_SDD();
 	float SAD = ps->get_geometry()->get_SAD();
@@ -377,12 +266,8 @@ int main(int argc, char** argv)
 
 	is_dims.push_back(binning->get_number_of_bins());
 
-	//scatter_correct(binning,ps,ps->get_projections().get(),is_dims,imageDimensions);
-
-	ps->downsample(downsamples);
-
 	//osLALMSolver<cuNDArray<float>> solver;
-	osMOMSolverD<cuNDArray<float>> solver;
+	hoCuOSMOMSolver<float> solver;
 	//osMOMSolverL1<cuNDArray<float>> solver;
 	//osAHZCSolver<cuNDArray<float>> solver;
 	//osMOMSolverF<cuNDArray<float>> solver;
@@ -390,102 +275,6 @@ int main(int argc, char** argv)
 	solver.set_dump(false);
 
 
-	boost::shared_ptr<cuNDArray<float>> prior;
-	if (vm.count("use_prior") || pics_weight > 0) {
-		auto projections = *ps->get_projections();
-		prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
-		//prior = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
-		solver.set_x0(prior);
-	}
-
-/*
-	if (pics_weight > 0 ){
-			auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
-  	Dx->set_weight(pics_weight);
-  	Dx->set_domain_dimensions(&is_dims);
-  	Dx->set_codomain_dimensions(&is_dims);
-
-  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
-  	Dy->set_weight(pics_weight);
-  	Dy->set_domain_dimensions(&is_dims);
-  	Dy->set_codomain_dimensions(&is_dims);
-
-
-  	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
-  	Dz->set_weight(pics_weight);
-  	Dz->set_domain_dimensions(&is_dims);
-  	Dz->set_codomain_dimensions(&is_dims);
-		solver.add_regularization_group({Dx,Dy,Dz},prior);
-
-
-	}
- */
-	//osPDSolver<cuNDArray<float>> solver;
-	/*
-  {
-  hoCuConebeamProjectionOperator op;
-  	auto bin3D = boost::make_shared<CBCT_binning>(binning->get_3d_binning());
-  	op.setup(ps,bin3D,imageDimensions);
-  	hoCuNDArray<float> proj(*ps->get_projections());
-  	op.offset_correct(&proj);
-  	op.set_use_filtered_backprojection(true);
-
-  	std::vector<size_t> is_dims3D = to_std_vector((uint64d3)imageSize);
-
-  	hoCuNDArray<float> image(is_dims3D);
-
-  	op.mult_MH(&proj,&image,false);
-
-  	auto cuimage = boost::make_shared<cuNDArray<float>>(image);
-  	solver.set_x0(expand(cuimage.get(),is_dims.back()));
-  }
-	 */
-	//solver.set_regularization_iterations(1);
-	//osSPSSolver<cuNDArray<float>> solver;
-	/*
-  if (pics_weight > 0){
-  	std::cout << "Calculating PICS prior" << std::endl;
-  	hoCuConebeamProjectionOperator op;
-  	auto bin3D = boost::make_shared<CBCT_binning>(binning->get_3d_binning());
-  	op.setup(ps,bin3D,imageDimensions);
-  	hoCuNDArray<float> proj(*ps->get_projections());
-  	op.offset_correct(&proj);
-  	op.set_use_filtered_backprojection(true);
-
-  	std::vector<size_t> is_dims3D = to_std_vector((uint64d3)imageSize);
-
-  	hoCuNDArray<float> image(is_dims3D);
-
-  	op.mult_MH(&proj,&image,false);
-  	auto prior = boost::make_shared<cuNDArray<float>>(image);
-  	auto PICS = boost::make_shared<cuTvPicsOperator<float,3>>();
-  	PICS->set_prior(prior);
-  	PICS->set_weight(pics_weight);
-  	solver.add_nonlinear_operator(PICS);
-
-  	write_nd_array(prior.get(),"fdk_prior.real");
-  }
-
-
-
-
-	 */
-
-	// Define encoding matrix
-
-
-	/*auto weight_array = boost::make_shared<cuNDArray<float>>(is_dims);
-  {
-  	boost::shared_ptr<linearOperator<cuNDArray<float>>> E2(E);
-  	cuNDArray<float> tmp_proj(*ps->get_projections()->get_dimensions());
-  	fill(&tmp_proj,1.0f);
-  	E2->mult_MH(&tmp_proj,weight_array.get(),false);
-  	clamp_min(weight_array.get(),1.0f);
-  	reciprocal_inplace(weight_array.get());
-  	//*weight_array *= *weight_array;
-  }
-  write_nd_array(weight_array.get(),"weights.real");
-	 */
 
 
 	//hoCuCgDescentSolver<float> solver;
@@ -493,7 +282,6 @@ int main(int argc, char** argv)
 	//osSPSSolver<hoNDArray<float>> solver;
 	//hoCuNCGSolver<float> solver;
 	//solver.set_domain_dimensions(&is_dims);
-
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
 	solver.set_tau(tau);
@@ -621,22 +409,26 @@ int main(int argc, char** argv)
 	E->set_domain_dimensions(&is_dims);
 	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
-
 	solver.set_encoding_operator(E);
 
 
 
-	auto projections = boost::make_shared<cuNDArray<float>>(*ps->get_projections());
-	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
+	//auto projections = boost::make_shared<cuNDArray<float>>(*ps->get_projections());
+	hoCuNDArray<float> projections = *ps->get_projections();
+	ps->set_projections(boost::shared_ptr<hoCuNDArray<float>>());
+	std::cout << "Projection norm:" << nrm2(&projections) << std::endl;
 	//E->set_use_offset_correction(false);
 
 	//boost::shared_ptr<cuNDArray<bool>> mask;
 	//mask = E->calculate_mask(projections,0.03f);
 	//ps->set_projections(boost::shared_ptr<hoCuNDArray<float>>()); //Clear projections from host memory.
-
-	E->offset_correct(projections.get());
+	{
+		auto cu_proj = cuNDArray<float>(projections);
+		E->offset_correct(&cu_proj);
+		cu_proj.to_host(&projections);
+	}
 	//E->set_mask(mask);
-	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
+	std::cout << "Projection norm:" << nrm2(&projections) << std::endl;
 
 
 
@@ -650,10 +442,10 @@ int main(int argc, char** argv)
   	solver.set_x0(prior);
   }
 	 */
-	boost::shared_ptr<cuNDArray<float>> result;
+	boost::shared_ptr<hoNDArray<float>> result;
 	{
 		GPUTimer tim("Solver");
-		result = solver.solve(projections.get());
+		result = solver.solve(&projections);
 	}
 //	global_timer.reset();
 	std::cout << "Penguin" << nrm2(result.get()) << std::endl;
@@ -666,27 +458,6 @@ int main(int argc, char** argv)
 	//saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
 
 
-	if (wavelet_weight > 0){
-		osMOMSolverF<cuNDArray<float>> solverF;
-		solverF.set_max_iterations(10);
-		solverF.set_x0(result);
-		solverF.set_encoding_operator(E);
-		solverF.set_non_negativity_constraint(true);
-
-		auto wave = boost::make_shared<cuEdgeATrousOperator<float>>();
-
-		wave->set_sigma(sigma);
-		wave->set_domain_dimensions(&is_dims);
-		if (binning->get_number_of_bins() == 1)
-			wave->set_levels({2,2,2});
-		else
-			wave->set_levels({2,2,2,2});
-		wave->set_weight(wavelet_weight);
-		solverF.add_regularization_operator(wave);
-
-		result = solverF.solve(projections.get());
-
-	}
 
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
 //	write_nd_array(result.get(),"reconstruction.real");
