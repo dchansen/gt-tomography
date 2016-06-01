@@ -314,7 +314,7 @@ offset_correct_kernel_sqrt( float *projections,
 		const uintd3 co = idx_to_co<3>( idx, dims );
 		const floatd2 offset = offsets[co[2]];
 
-		const float t = (phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0])*offset[0]/abs(offset[0]);
+		const float t = (phys_dims[0]*((co[0]+0.5f)/(float(dims[0]))-0.5f)+abs(offset[0]))*offset[0]/abs(offset[0]);
 		//const float t = (phys_dims[0]*(float(co[0])/(float(dims[0]))-0.5f)+offset[0]);
 		const float omega = phys_dims[0]/2.0f-fabs(offset[0]);
 		//const float omega = phys_dims[0]*float(co[0])/(2.0f*float(dims[0]));
