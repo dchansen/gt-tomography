@@ -11,6 +11,7 @@ include_directories(
 
 
 cuda_add_library(gt_registration SHARED
-        cuDemonsSolver.cu)
+        cuDemonsSolver.cu
+        )
 
 

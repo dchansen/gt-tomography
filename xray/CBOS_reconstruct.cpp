@@ -216,6 +216,7 @@ int main(int argc, char** argv)
 	solver.set_non_negativity_constraint(true);
 	solver.set_tau(1e-4);
 	solver.set_reg_steps(2);
+	solver.set_dump(false);
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();

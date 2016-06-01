@@ -40,7 +40,7 @@ public:
 	inline void set_FOV( floatd2 v ) { FOV_ = v; }
 	inline floatd2 get_FOV() { return FOV_; }
 
-	inline void set_angles( std::vector<float> &angles ) { angles_ = angles; }
+	inline void set_angles( std::vector<float> angles ) { angles_ = angles; }
 	inline std::vector<float>& get_angles() { return angles_; }
 
 	inline void set_offsets( std::vector<floatd2> &offsets ) { offsets_ = offsets; }
@@ -195,9 +195,9 @@ public:
 		errCode = H5LTget_dataset_info(file_id,"/angles",&dim,NULL,NULL);
 		if (errCode < 0) 	throw std::runtime_error("Error getting /angles dataset info from file.");
 		std::cout <<"Number of angles " << dim << std::endl;
-		std::vector<float> angles (dim,0.0f);
+		std::vector<float> angles (dim);
+		errCode=H5LTread_dataset (file_id, "/angles", H5T_NATIVE_FLOAT, angles.data());
 		geometry_->set_angles(angles);
-		errCode=H5LTread_dataset (file_id, "/angles", H5T_NATIVE_FLOAT, &geometry_->get_angles()[0]);
 		if (errCode < 0) 	throw std::runtime_error("Error reading /angles from file.");
 
 		// Get offsets array

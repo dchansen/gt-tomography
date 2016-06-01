@@ -177,12 +177,8 @@ cuNDArray<float> deform_image(cuNDArray<float>* image, cuNDArray<float>* vector_
 
 }
 
-template class EXPORTGPUREG cuDemonsSolver<float, 1>;
-template class EXPORTGPUREG cuDemonsSolver<float, 2>;
-template class EXPORTGPUREG cuDemonsSolver<float, 3>;
-template class EXPORTGPUREG cuDemonsSolver<float, 4>;
+template class  cuDemonsSolver<float, 1>;
+template class  cuDemonsSolver<float, 2>;
+template class  cuDemonsSolver<float, 3>;
+template class  cuDemonsSolver<float, 4>;
 
-template class EXPORTGPUREG cuDemonsSolver<double, 1>;
-template class EXPORTGPUREG cuDemonsSolver<double, 2>;
-template class EXPORTGPUREG cuDemonsSolver<double, 3>;
-template class EXPORTGPUREG cuDemonsSolver<double, 4>;

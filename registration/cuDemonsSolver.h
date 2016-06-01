@@ -7,6 +7,8 @@
 #include "cuNDArray.h"
 
 namespace Gadgetron{
+
+	cuNDArray<float> deform_image(cuNDArray<float>* image, cuNDArray<float>* vector_field);
 template<class T, unsigned int D> class cuDemonsSolver : public multiresRegistrationSolver<cuNDArray<T>, D>{
 
 
@@ -46,7 +48,7 @@ public:
 
 
 
-			def_moving = *this->deform(moving_image,result);
+			def_moving = deform_image(moving_image,result.get());
 
 		}
 
@@ -73,4 +75,6 @@ protected:
 
 	T sigma,alpha,beta;
 };
+
+
 }
