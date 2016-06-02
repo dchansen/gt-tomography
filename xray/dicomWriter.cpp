@@ -6,9 +6,6 @@
  */
 
 
-#include "dcmtk/config/osconfig.h"
-#include "dcmtk/dcmdata/dctk.h"
-#include "dcmtk/dcmdata/dcostrmb.h"
 #include <chrono>
 #include "hoNDArray_math.h"
 #include "vector_td.h"
@@ -21,10 +18,7 @@
 using namespace Gadgetron;
 
 
-static void CALL_DCMTK(OFCondition s){
-	if (!s.good())
-		throw std::runtime_error(s.text());
-}
+
 static float calculate_scaling(hoNDArray<float>* image){
 	//float med = median(image);
 	float med = 0.026;
