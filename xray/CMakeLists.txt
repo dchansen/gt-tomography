@@ -47,7 +47,7 @@ MESSAGE("Include dir ${GDCM_INCLUDE_DIRS}")
 #endif(EIGEN_INCLUDE_DIR)
 
 cuda_add_library(Xray_kernels SHARED
-  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp dicomWriter.cpp  hoLinearResampleOperator_eigen.cpp hoCuOFPartialDerivativeOperator.cpp   CTSubsetOperator.cpp CTProjectionOperator.cpp ct_projection.cu CT_acquisition.cpp dicomCTWriter.cpp  ${EIGEN_RESAMPLER}
+  conebeam_projection.cu hoCuConebeamProjectionOperator.cpp cuConebeamProjectionOperator.cpp CBSubsetOperator.cpp dicomWriter.cpp  hoLinearResampleOperator_eigen.cpp hoCuOFPartialDerivativeOperator.cpp    ${EIGEN_RESAMPLER}
   )
 
 target_link_libraries(Xray_kernels gadgetron_toolbox_gpucore gadgetron_toolbox_gpunfft gadgetron_toolbox_gpucore gadgetron_toolbox_gpufft gadgetron_toolbox_gpureg ${CUDA_LIBRARIES} ${DCMTK_dcmdata_LIBRARY} ${DCMTK_oflog_LIBRARY} ${DCMTK_ofstd_LIBRARY} ${GDCM_LIBRARIES})
@@ -109,26 +109,27 @@ target_link_libraries(CB_OF_reconstruct Xray_kernels gadgetron_toolbox_log gadge
 
 
 if (${BUILDCT})
-
+    cuda_add_library(CTXray_kernels ct_projection.cu CT_acquisition.cpp dicomCTWriter.cpp CTSubsetOperator.cpp CTProjectionOperator.cpp)
+    target_link_libraries(CTXray_kernels gadgetron_toolbox_gpucore gadgetron_toolbox_gpunfft gadgetron_toolbox_gpucore gadgetron_toolbox_gpufft gadgetron_toolbox_gpureg ${CUDA_LIBRARIES} ${DCMTK_dcmdata_LIBRARY} ${DCMTK_oflog_LIBRARY} ${DCMTK_ofstd_LIBRARY} ${GDCM_LIBRARIES})
 add_executable(cuCT_reconstruct cuCT_reconstruct.cpp)
-target_link_libraries(cuCT_reconstruct Xray_kernels tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(cuCT_reconstruct CTXray_kernels Xray_kernels tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 add_executable(CT_reconstruct CT_reconstruct.cpp)
-target_link_libraries(CT_reconstruct Xray_kernels tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CT_reconstruct CTXray_kernels Xray_kernels tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_gpuoperators  gadgetron_toolbox_hostutils ${HDF5_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #endif(EIGEN_INCLUDE_DIR)
 
 add_executable(cuCTOS_reconstruct cuCTOS_reconstruct.cpp)
-target_link_libraries(cuCTOS_reconstruct Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(cuCTOS_reconstruct CTXray_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 add_executable(CTOS_reconstruct CTOS_reconstruct.cpp)
-target_link_libraries(CTOS_reconstruct denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CTOS_reconstruct CTXray_kernels denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 add_executable(CTOS2_reconstruct CTOS2_reconstruct.cpp)
-target_link_libraries(CTOS2_reconstruct denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CTOS2_reconstruct CTXray_kernels denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 add_executable(CTOS3_reconstruct CTOS3_reconstruct.cpp)
-target_link_libraries(CTOS3_reconstruct denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CTOS3_reconstruct CTXray_kernels denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 add_executable(CTStat_reconstruct CTStat_reconstruct.cpp)
-target_link_libraries(CTStat_reconstruct denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
+target_link_libraries(CTStat_reconstruct CTXray_kernels denoise_kernels Xray_kernels tomography_operators tomography_solvers gadgetron_toolbox_log gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils  ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 #install(TARGETS Reconstruct DESTINATION bin)
 endif(${BUILDCT})
