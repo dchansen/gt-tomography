@@ -97,7 +97,7 @@ int main(int argc, char** argv){
 
 	auto input = cuNDArray<float>(*hoInput);
 
-	auto output = hoCuNDArray<float>(input.get_dimensions());
+	auto output = cuNDArray<float>(input.get_dimensions());
 	clear(&output);
 
 	//auto output = input;
@@ -108,7 +108,7 @@ int main(int argc, char** argv){
 	auto kernel = thrust::device_vector<float>(host_kernel);
 
 	E.set_sigma(noise);
-
+/*
 	std::vector<size_t> dims2D = {input.get_size(0),input.get_size(1)};
 	float* input_ptr = input.get_data_ptr();
 	float* output_ptr = output.get_data_ptr();
@@ -129,7 +129,8 @@ int main(int argc, char** argv){
 		output_ptr += input_view.get_number_of_elements();
 
 	}
-
+*/
+	E.mult_M(&input,&output);
 	write_nd_array(&output,outputFile.c_str());
 
 }

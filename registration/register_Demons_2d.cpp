@@ -11,6 +11,7 @@
 #include "cuCGHSOFSolver.h"
 // Std includes
 #include <iostream>
+#include <cuLinearResampleOperator.h>
 
 using namespace Gadgetron;
 using namespace std;
@@ -107,7 +108,7 @@ int main(int argc, char** argv)
     return 1;
   }
   
-  boost::shared_ptr< cuNDArray<_real> > deformed_moving = HS.deform( &moving_image, result );
+  auto deformed_moving = deform_image( &moving_image, result.get() );
   
   // All done, write out the result
   //
@@ -115,7 +116,7 @@ int main(int argc, char** argv)
   boost::shared_ptr< hoNDArray<_real> > host_result = result->to_host();
   write_nd_array<_real>(host_result.get(), (char*)parms.get_parameter('r')->get_string_value());
 
-  host_result = deformed_moving->to_host();
+  host_result = deformed_moving.to_host();
   write_nd_array<_real>(host_result.get(), "def_moving.real" );
   
   return 0;

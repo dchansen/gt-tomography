@@ -37,7 +37,8 @@ endif(USE_OPENMP)
 
 
 
-option(BUILDCT "Build the spiral CT recon" OFF)
+option(BUILDCT "Build the spiral CT recon")
+
 find_package(Boost COMPONENTS system thread program_options filesystem regex REQUIRED)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11 -D_MWAITXINTRIN_H_INCLUDED")
 find_package(CUDA 4.0 REQUIRED)

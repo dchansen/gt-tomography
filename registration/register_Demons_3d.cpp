@@ -31,7 +31,10 @@ int main(int argc, char** argv)
   parms.add_parameter( 'm', COMMAND_LINE_STRING, 1, "Moving image file name (.real)", true );
   parms.add_parameter( 'r', COMMAND_LINE_STRING, 1, "Result file name", true, "displacement_field.real" );
   parms.add_parameter( 'a', COMMAND_LINE_FLOAT,  1, "Regularization weight (alpha)", true, "0.1" );
+  parms.add_parameter( 's', COMMAND_LINE_FLOAT,  1, "Simga fluid", true, "1.0" );
+  parms.add_parameter( 'd', COMMAND_LINE_FLOAT,  1, "Simga diff", true, "1.0" );
   parms.add_parameter( 'l', COMMAND_LINE_INT,    1, "Number of multiresolution levels", true, "3" );
+  parms.add_parameter( 'i', COMMAND_LINE_INT,    1, "Number of iterations", true, "30" );
   
   parms.parse_parameter_list(argc, argv);
   if( parms.all_required_parameters_set() ){
@@ -44,6 +47,9 @@ int main(int argc, char** argv)
     parms.print_usage();
     return 1;
   }
+
+  cudaSetDevice(0);
+  cudaDeviceReset();
   
   // Load sample data from disk
   //
@@ -85,17 +91,20 @@ int main(int argc, char** argv)
   // Use bilinear interpolation for resampling
   //
 
-  boost::shared_ptr< cuLinearResampleOperator<_real,2> > R( new cuLinearResampleOperator<_real,2>() );
+  boost::shared_ptr< cuLinearResampleOperator<_real,3> > R( new cuLinearResampleOperator<_real,3>() );
 
   // Setup solver
   //
   
-  cuDemonsSolver<_real,2> HS;
+  cuDemonsSolver<_real,3> HS;
   HS.set_interpolator( R );
-  HS.set_output_mode( cuDemonsSolver<_real,2>::OUTPUT_VERBOSE );
-  HS.set_max_num_iterations_per_level(100);
+  HS.set_output_mode( cuDemonsSolver<_real,3>::OUTPUT_VERBOSE );
+  HS.set_max_num_iterations_per_level( parms.get_parameter('i')->get_int_value());
   HS.set_num_multires_levels( multires_levels );
   HS.set_alpha(alpha);
+
+  HS.set_sigmaDiff(parms.get_parameter('d')->get_float_value());
+  HS.set_sigmaFluid(parms.get_parameter('s')->get_float_value());
   
 
   // Run registration
