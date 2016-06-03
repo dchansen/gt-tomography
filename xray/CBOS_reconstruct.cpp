@@ -218,7 +218,7 @@ int main(int argc, char** argv)
 	solver.set_reg_steps(2);
 	solver.set_dump(false);
 
-	E->set_use_offset_correction(false);
+	
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();

@@ -75,6 +75,7 @@ public:
 		if( allow_offset_correction_override_ && std::abs(mean_offset[0]) > ps_dims_in_mm[0]*0.1f )
 			use_offset_correction_ = true;
 
+		std::cout << "Mean offset " << mean_offset << " Use offset correct: " << (use_offset_correction_ ? "true" : "false") << std::endl;
 		preprocessed_ = true;
 
 		std::vector<unsigned int> bins(angles.size());
