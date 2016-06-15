@@ -45,6 +45,7 @@
 #include <boost/make_shared.hpp>
 #include <GPUTimer.h>
 #include <operators/cuGaussianFilterOperator.h>
+#include <multiplicationOperatorContainer.h>
 #include "cuSolverUtils.h"
 #include "osPDsolver.h"
 #include "osLALMSolver.h"
@@ -267,7 +268,7 @@ int main(int argc, char** argv)
 	unsigned int subsets;
 	float rho,tau;
 	float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight;
-	float tv_4d;
+	float tv_4d,atv_4d;
     bool use_non_negativity;
 	int reg_iter;
 
@@ -289,6 +290,7 @@ int main(int argc, char** argv)
     				("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     				("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight in spatial dimensions")
 							("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimensions")
+							("ATV4D",po::value<float>(&atv_4d)->default_value(0),"Advanced Total variation weight in temporal dimensions")
     				("PICS",po::value<float>(&pics_weight)->default_value(0),"PICS weight")
     				("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
     				("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
@@ -528,6 +530,50 @@ int main(int argc, char** argv)
         Dt->set_codomain_dimensions(&is_dims);
         solver.add_regularization_operator(Dt);
     }
+
+
+      if (atv_4d > 0) {
+          auto Dt = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(3);
+          Dt->set_domain_dimensions(&is_dims);
+          Dt->set_codomain_dimensions(&is_dims);
+
+
+
+          auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
+          Dx->set_domain_dimensions(&is_dims);
+          Dx->set_codomain_dimensions(&is_dims);
+
+          auto Dy = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(1);
+          Dy->set_domain_dimensions(&is_dims);
+          Dy->set_codomain_dimensions(&is_dims);
+
+
+          auto Dz = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(2);
+          Dz->set_domain_dimensions(&is_dims);
+          Dz->set_codomain_dimensions(&is_dims);
+
+
+
+          auto Dx2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+          Dx2->add_operator(Dx);
+          Dx2->add_operator(Dt);
+          Dx2->set_weight(atv_4d);
+
+          auto Dy2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+          Dy2->add_operator(Dy);
+          Dy2->add_operator(Dt);
+          Dy->set_weight(atv_4d);
+
+          auto Dz2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+          Dz2->add_operator(Dz);
+          Dz2->add_operator(Dt);
+          Dz2->set_weight(atv_4d);
+
+          solver.add_regularization_group({Dx2, Dy2, Dz2});
+
+
+      }
+
 /*
 	auto projections = *ps->get_projections();
   	auto prior_weight = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
@@ -690,7 +736,7 @@ int main(int argc, char** argv)
 
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);
 //	write_nd_array(result.get(),"reconstruction.real");
-	//write_dicom(result.get(),command_line_string.str(),imageDimensions);
+	write_dicom(result.get(),command_line_string.str(),imageDimensions);
 
 
 

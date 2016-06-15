@@ -37,7 +37,7 @@ template<class T> void hoCuOFPartialDerivativeOperator<T>::mult_M(hoCuNDArray<T>
     dims3d.pop_back();
     size_t elements = in->get_number_of_elements()/in->get_size(3);
     if (!accumulate) clear(out);
-    for (auto i = 0u; i < Rs.size(); i++){
+    for (int i = 0u; i < Rs.size(); i++){
         auto in_view = hoCuNDArray<T>(dims3d,in->get_data_ptr()+i*elements);
         auto cu_in = cuNDArray<T>(in_view);
         auto cu_in_copy = cu_in;
@@ -57,7 +57,7 @@ template<class T> void hoCuOFPartialDerivativeOperator<T>::mult_MH(hoCuNDArray<T
     auto dims3d = *in->get_dimensions();
     dims3d.pop_back();
     size_t elements = in->get_number_of_elements()/in->get_size(3);
-    for (auto i = 0u; i < Rs.size(); i++){
+    for (int i = 0u; i < Rs.size(); i++){
         auto in_view = hoCuNDArray<T>(dims3d,in->get_data_ptr()+i*elements);
         auto in_view2 = hoCuNDArray<T>(dims3d,in->get_data_ptr()+((i-1+Rs.size())%Rs.size())*elements);
         auto cu_in2 = cuNDArray<T>(in_view2);

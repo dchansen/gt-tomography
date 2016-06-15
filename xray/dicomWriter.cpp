@@ -21,7 +21,7 @@ using namespace Gadgetron;
 
 static float calculate_scaling(hoNDArray<float>* image){
 	//float med = median(image);
-	float med = 0.026;
+	float med = 0.02;
 	std::cout << "Median " << med  << std::endl;
 	return 1000/med;
 }

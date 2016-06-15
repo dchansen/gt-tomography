@@ -12,13 +12,16 @@
 // Std includes
 #include <iostream>
 #include <cuLinearResampleOperator.h>
+#include <boost/program_options.hpp>
+#include "cuNDArray_fileio.h"
 
 using namespace Gadgetron;
 using namespace std;
 
 // Define desired precision
-typedef float _real; 
 
+
+namespace po = boost::program_options;
 int main(int argc, char** argv)
 {
 
@@ -26,39 +29,47 @@ int main(int argc, char** argv)
   // Parse command line
   //
 
-  ParameterParser parms;
-  parms.add_parameter( 'f', COMMAND_LINE_STRING, 1, "Fixed image file name (.real)", true );
-  parms.add_parameter( 'm', COMMAND_LINE_STRING, 1, "Moving image file name (.real)", true );
-  parms.add_parameter( 'r', COMMAND_LINE_STRING, 1, "Result file name", true, "displacement_field.real" );
-  parms.add_parameter( 'a', COMMAND_LINE_FLOAT,  1, "Regularization weight (alpha)", true, "0.1" );
-  parms.add_parameter( 's', COMMAND_LINE_FLOAT,  1, "Simga fluid", true, "1.0" );
-  parms.add_parameter( 'd', COMMAND_LINE_FLOAT,  1, "Simga diff", true, "1.0" );
-  parms.add_parameter( 'l', COMMAND_LINE_INT,    1, "Number of multiresolution levels", true, "3" );
-  parms.add_parameter( 'i', COMMAND_LINE_INT,    1, "Number of iterations", true, "30" );
-  
-  parms.parse_parameter_list(argc, argv);
-  if( parms.all_required_parameters_set() ){
-    cout << " Running registration with the following parameters: " << endl;
-    parms.print_parameter_list();
-  }
-  else{
-    cout << " Some required parameters are missing: " << endl;
-    parms.print_parameter_list();
-    parms.print_usage();
+  string moving_filename,fixed_filename,vfield_filename;
+  float alpha, sigma_diff,sigma_fluid,sigma_int,sigma_vdiff;
+  int iterations,levels,device;
+  bool composite;
+  po::options_description desc("Allowed options");
+  desc.add_options()
+          ("help", "produce help message")
+          ("moving,m", po::value<string>(&moving_filename), "Moving image")
+          ("fixed,f", po::value<string>(&fixed_filename), "Fixed image")
+          ("output,o", po::value<string>(&vfield_filename)->default_value("deformation_field.real"), "Output filename")
+          ("alpha,a",po::value<float>(&alpha)->default_value(4.0),"Maximum step length per iteration")
+          ("sigma_diff",po::value<float>(&sigma_diff)->default_value(1),"Diffusion sigma for regularization")
+          ("sigma_fluid",po::value<float>(&sigma_fluid)->default_value(0),"Fluid sigma for regularization")
+          ("sigma_int",po::value<float>(&sigma_int)->default_value(0),"Intensity sigma for regularization (bilateral)")
+          ("iterations,i",po::value<int>(&iterations)->default_value(30),"Number of iterations to use")
+          ("levels",po::value<int>(&levels)->default_value(0),"Number of multiresolution levels to use")
+          ("sigma_vdiff",po::value<float>(&sigma_vdiff)->default_value(0),"Vector field difference sigma for regularization (bilateral)")
+          ("composite",po::value<bool>(&composite)->default_value(true),"Do proper vector composition when adding vector fields")
+          ("device",po::value<int>(&device)->default_value(0),"Cuda device to use")
+          ;
+
+  po::variables_map vm;
+  po::store(po::parse_command_line(argc, argv, desc), vm);
+  po::notify(vm);
+
+
+  if (vm.count("help")) {
+    cout << desc << "\n";
     return 1;
   }
-
-  cudaSetDevice(0);
+  cudaSetDevice(device);
   cudaDeviceReset();
   
   // Load sample data from disk
   //
   
-  boost::shared_ptr< hoNDArray<_real> > host_fixed = 
-    read_nd_array<_real>((char*)parms.get_parameter('f')->get_string_value());
+  boost::shared_ptr< hoNDArray<float> > host_fixed = 
+    read_nd_array<float>(fixed_filename.c_str());
 
-  boost::shared_ptr< hoNDArray<_real> > host_moving = 
-    read_nd_array<_real>((char*)parms.get_parameter('m')->get_string_value());
+  boost::shared_ptr< hoNDArray<float> > host_moving = 
+    read_nd_array<float>(moving_filename.c_str());
   
   if( !host_fixed.get() || !host_moving.get() ){
     cout << endl << "One of the input images is not found. Quitting!\n" << endl;
@@ -81,36 +92,40 @@ int main(int argc, char** argv)
   // Upload host data to device
   //
 
-  cuNDArray<_real> fixed_image(host_fixed.get());
-  cuNDArray<_real> moving_image(host_moving.get());
+  cuNDArray<float> fixed_image(host_fixed.get());
+  cuNDArray<float> moving_image(host_moving.get());
   
-  _real alpha = (_real) parms.get_parameter('a')->get_float_value();
 
-  unsigned int multires_levels = parms.get_parameter('l')->get_int_value();
+
+
 
   // Use bilinear interpolation for resampling
   //
 
-  boost::shared_ptr< cuLinearResampleOperator<_real,3> > R( new cuLinearResampleOperator<_real,3>() );
+  boost::shared_ptr< cuLinearResampleOperator<float,3> > R( new cuLinearResampleOperator<float,3>() );
 
   // Setup solver
   //
   
-  cuDemonsSolver<_real,3> HS;
+  cuDemonsSolver<float,3> HS;
   HS.set_interpolator( R );
-  HS.set_output_mode( cuDemonsSolver<_real,3>::OUTPUT_VERBOSE );
-  HS.set_max_num_iterations_per_level( parms.get_parameter('i')->get_int_value());
-  HS.set_num_multires_levels( multires_levels );
+  HS.set_output_mode( cuDemonsSolver<float,3>::OUTPUT_VERBOSE );
+  HS.set_max_num_iterations_per_level( iterations);
+  HS.set_num_multires_levels( levels );
   HS.set_alpha(alpha);
 
-  HS.set_sigmaDiff(parms.get_parameter('d')->get_float_value());
-  HS.set_sigmaFluid(parms.get_parameter('s')->get_float_value());
-  
+  HS.set_sigmaDiff(sigma_diff);
+  HS.set_sigmaFluid(sigma_fluid);
+  HS.set_sigmaInt(sigma_int);
+  HS.set_sigmaVDiff(sigma_vdiff);
+  HS.set_compositive(composite);
+  HS.set_exponential(true);
+  //HS.use_normalized_gradient_field(0.01);
 
   // Run registration
   //
 
-  boost::shared_ptr< cuNDArray<_real> > result = HS.solve( &fixed_image, &moving_image );
+  boost::shared_ptr< cuNDArray<float> > result = HS.solve( &fixed_image, &moving_image );
 
   if( !result.get() ){
     cout << endl << "Registration solver failed. Quitting!\n" << endl;
@@ -122,11 +137,16 @@ int main(int argc, char** argv)
   // All done, write out the result
   //
 
-  boost::shared_ptr< hoNDArray<_real> > host_result = result->to_host();
-  write_nd_array<_real>(host_result.get(), (char*)parms.get_parameter('r')->get_string_value());
+  boost::shared_ptr< hoNDArray<float> > host_result = result->to_host();
+  write_nd_array<float>(host_result.get(),vfield_filename.c_str() );
 
   host_result = deformed_moving.to_host();
-  write_nd_array<_real>(host_result.get(), "def_moving.real" );
+  write_nd_array<float>(host_result.get(), "def_moving.real" );
+
+  auto jac = Jacobian(result.get());
+  jac -= 1.0f;
+
+  write_nd_array<float>(&jac, "jacobian.real" );
   
   return 0;
 }

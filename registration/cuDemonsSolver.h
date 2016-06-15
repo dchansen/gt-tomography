@@ -11,11 +11,16 @@ namespace Gadgetron{
 	cuNDArray<float> deform_image(cuNDArray<float>* image, cuNDArray<float>* vector_field);
 	cuNDArray<float> deform_image(cudaTextureObject_t  texObj,std::vector<size_t> dimensions, cuNDArray<float>* vector_field);
 	void deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vector_field);
+
+	void bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* image, float sigma_spatial,float sigma_int, float sigma_diff);
+	cuNDArray<float> Jacobian(cuNDArray<float>* vfield);
+
+
 template<class T, unsigned int D> class cuDemonsSolver : public multiresRegistrationSolver<cuNDArray<T>, D>{
 
 
 public:
-	cuDemonsSolver() : alpha(1.0),beta(1e-6),sigmaDiff(1.0),sigmaFluid(1.0) {};
+	cuDemonsSolver() : alpha(1.0),beta(1e-6),sigmaDiff(1.0),sigmaFluid(1.0),compositive(false),epsilonNGF(0),exponential(false) {};
 	virtual ~cuDemonsSolver(){};
 
 	virtual void compute( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image, cuNDArray<T> *stencil_image, boost::shared_ptr<cuNDArray<T> > &result );
@@ -32,13 +37,34 @@ public:
 		alpha = _alpha;
 	}
 
+	void set_compositive(bool option){
+		compositive = option;
+	}
+
+	void set_exponential(bool option){
+		exponential = option;
+	}
+
+	void use_normalized_gradient_field(T epsilon){
+		epsilonNGF = epsilon;
+	}
+
+
+	void set_sigmaVDiff(T sigma){
+		sigmaVDiff = sigma;
+	}
+
+	void set_sigmaInt(T sigma){
+		sigmaInt = sigma;
+	}
 
 
 protected:
 	boost::shared_ptr<cuNDArray<T> > demonicStep(cuNDArray<T>*,cuNDArray<T>*);
 
 
-	T sigmaDiff, sigmaFluid,alpha,beta;
+	T sigmaDiff, sigmaFluid,sigmaInt,sigmaVDiff,alpha,beta,epsilonNGF;
+	bool compositive, exponential;
 };
 
 
