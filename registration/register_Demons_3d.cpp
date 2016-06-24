@@ -4,7 +4,6 @@
 
 // Gadgetron includes
 #include "cuDemonsSolver.h"
-#include "cuTextureResampleOperator.h"
 #include "cuNDArray.h"
 #include "hoNDArray_fileio.h"
 #include "parameterparser.h"
@@ -39,7 +38,7 @@ int main(int argc, char** argv)
           ("moving,m", po::value<string>(&moving_filename), "Moving image")
           ("fixed,f", po::value<string>(&fixed_filename), "Fixed image")
           ("output,o", po::value<string>(&vfield_filename)->default_value("deformation_field.real"), "Output filename")
-          ("alpha,a",po::value<float>(&alpha)->default_value(4.0),"Maximum step length per iteration")
+          ("alpha,a",po::value<float>(&alpha)->default_value(1.0),"Maximum step length per iteration")
           ("sigma_diff",po::value<float>(&sigma_diff)->default_value(1),"Diffusion sigma for regularization")
           ("sigma_fluid",po::value<float>(&sigma_fluid)->default_value(0),"Fluid sigma for regularization")
           ("sigma_int",po::value<float>(&sigma_int)->default_value(0),"Intensity sigma for regularization (bilateral)")
@@ -102,16 +101,15 @@ int main(int argc, char** argv)
   // Use bilinear interpolation for resampling
   //
 
-  boost::shared_ptr< cuLinearResampleOperator<float,3> > R( new cuLinearResampleOperator<float,3>() );
+
 
   // Setup solver
   //
   
   cuDemonsSolver<float,3> HS;
-  HS.set_interpolator( R );
-  HS.set_output_mode( cuDemonsSolver<float,3>::OUTPUT_VERBOSE );
-  HS.set_max_num_iterations_per_level( iterations);
-  HS.set_num_multires_levels( levels );
+
+  HS.set_iterations( iterations);
+
   HS.set_alpha(alpha);
 
   HS.set_sigmaDiff(sigma_diff);
@@ -120,12 +118,12 @@ int main(int argc, char** argv)
   HS.set_sigmaVDiff(sigma_vdiff);
   HS.set_compositive(composite);
   HS.set_exponential(true);
-  //HS.use_normalized_gradient_field(0.01);
+//  HS.use_normalized_gradient_field(20);
 
   // Run registration
   //
 
-  boost::shared_ptr< cuNDArray<float> > result = HS.solve( &fixed_image, &moving_image );
+  boost::shared_ptr< cuNDArray<float> > result = HS.registration( &fixed_image, &moving_image );
 
   if( !result.get() ){
     cout << endl << "Registration solver failed. Quitting!\n" << endl;

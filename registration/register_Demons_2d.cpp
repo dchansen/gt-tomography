@@ -4,7 +4,6 @@
 
 // Gadgetron includes
 #include "cuDemonsSolver.h"
-#include "cuTextureResampleOperator.h"
 #include "cuNDArray.h"
 #include "hoNDArray_fileio.h"
 #include "parameterparser.h"
@@ -91,17 +90,14 @@ int main(int argc, char** argv)
   //
   
   cuDemonsSolver<_real,2> HS;
-  HS.set_interpolator( R );
-  HS.set_output_mode( cuDemonsSolver<_real,2>::OUTPUT_VERBOSE );
-  HS.set_max_num_iterations_per_level(100);
-  HS.set_num_multires_levels( multires_levels );
+  HS.set_iterations(100);
   HS.set_alpha(alpha);
   
 
   // Run registration
   //
 
-  boost::shared_ptr< cuNDArray<_real> > result = HS.solve( &fixed_image, &moving_image );
+  boost::shared_ptr< cuNDArray<_real> > result = HS.registration( &fixed_image, &moving_image );
 
   if( !result.get() ){
     cout << endl << "Registration solver failed. Quitting!\n" << endl;

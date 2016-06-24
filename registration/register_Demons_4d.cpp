@@ -47,9 +47,7 @@ int main(int argc, char** argv){
         return 1;
     }
 
-    auto R = boost::make_shared< cuLinearResampleOperator<float,3> >();
     cuDemonsSolver<float,3> demonsSolver;
-    demonsSolver.set_interpolator(R);
 
     demonsSolver.set_sigmaDiff(sigma_diff);
     demonsSolver.set_sigmaFluid(sigma_fluid);
@@ -57,9 +55,8 @@ int main(int argc, char** argv){
     demonsSolver.set_sigmaVDiff(sigma_vdiff);
     demonsSolver.set_compositive(composite);
     demonsSolver.set_exponential(true);
-    demonsSolver.set_max_num_iterations_per_level(iterations);
-    demonsSolver.set_num_multires_levels(levels);
-    demonsSolver.set_alpha(alpha*2);
+    demonsSolver.set_iterations(iterations);
+    demonsSolver.set_alpha(alpha);
     //demonsSolver.use_normalized_gradient_field(0.01);
 
 
@@ -86,7 +83,7 @@ int main(int argc, char** argv){
         cuNDArray<float> cuMov(movingImage);
         cuNDArray<float> cuStat(staticImage);
 
-        auto cuVfield = demonsSolver.solve(&cuStat,&cuMov);
+        auto cuVfield = demonsSolver.registration(&cuStat,&cuMov);
 
         auto vfieldView = hoCuNDArray<float>(vdims3D,vfield.get_data_ptr()+i*elements*3);
         vfieldView = *cuVfield;

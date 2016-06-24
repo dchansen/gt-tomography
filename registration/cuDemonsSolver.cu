@@ -38,7 +38,7 @@ static void vfield_exponential(cuNDArray<float>* vfield){
 	int n = ceil(log2(sqrt(*msquare)/0.5));
 	n = std::max(n,0);
 
-	*vfield *= float(std::pow(float(n),-2));
+	*vfield *= float(std::pow(2,-float(n)));
 
 	for (int i =0; i < n; i++) {
 		cuNDArray<float> vfield_copy(*vfield);
@@ -202,9 +202,13 @@ template<class T, unsigned int D> static boost::shared_ptr<cuNDArray<T> > normal
 }
 
 
-template<class T, unsigned int D> void cuDemonsSolver<T,D>::compute( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image, cuNDArray<T> *stencil_image, boost::shared_ptr<cuNDArray<T> > &result ){
+template<class T, unsigned int D> boost::shared_ptr<cuNDArray<T>> cuDemonsSolver<T,D>::registration( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image){
 
 
+	auto vdims = *fixed_image->get_dimensions();
+	vdims.push_back(D);
+	auto result = boost::make_shared<cuNDArray<T>>(vdims);
+	clear(result.get());
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
 	cudaExtent extent;
 	extent.width = moving_image->get_size(0);
@@ -259,7 +263,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::compute( cuNDArray<T
 		clear(result.get());
 	}
 
-	for (int i = 0; i < this->max_num_iterations_per_level_; i++){
+	for (int i = 0; i < iterations; i++){
 		//Calculate the gradients
         boost::shared_ptr<cuNDArray<T> > update;
         if (epsilonNGF > 0) {
@@ -281,6 +285,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::compute( cuNDArray<T
 
         } else {
             update = demonicStep(fixed_image, &def_moving);
+			std::cout << "Updated norm " << nrm2(update.get()) << " " << nrm2(&def_moving) << " " << nrm2(fixed_image) << std::endl;
         }
 		if (sigmaFluid > 0){
 			cuNDArray<T> blurred_update(update->get_dimensions());

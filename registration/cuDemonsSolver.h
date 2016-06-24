@@ -16,14 +16,18 @@ namespace Gadgetron{
 	cuNDArray<float> Jacobian(cuNDArray<float>* vfield);
 
 
-template<class T, unsigned int D> class cuDemonsSolver : public multiresRegistrationSolver<cuNDArray<T>, D>{
+template<class T, unsigned int D> class cuDemonsSolver {
 
 
 public:
 	cuDemonsSolver() : alpha(1.0),beta(1e-6),sigmaDiff(1.0),sigmaFluid(1.0),compositive(false),epsilonNGF(0),exponential(false) {};
 	virtual ~cuDemonsSolver(){};
 
-	virtual void compute( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image, cuNDArray<T> *stencil_image, boost::shared_ptr<cuNDArray<T> > &result );
+	boost::shared_ptr<cuNDArray<T>> registration( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image);
+
+	void set_iterations(int i){
+		iterations = i;
+	}
 	void set_sigmaDiff(T _sigma){
 		sigmaDiff = _sigma;
 
@@ -65,6 +69,7 @@ protected:
 
 	T sigmaDiff, sigmaFluid,sigmaInt,sigmaVDiff,alpha,beta,epsilonNGF;
 	bool compositive, exponential;
+	int iterations;
 };
 
 
