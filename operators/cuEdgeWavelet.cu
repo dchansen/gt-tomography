@@ -40,7 +40,7 @@ static __device__ void atomicAdd(float_complext * ptr, float_complext val){
 	atomicAdd(((float*)ptr)+1,imag(val));
 }
 
-__device__ int float_modulo(const int &x, const int &n )
+static __device__ int float_modulo(const int &x, const int &n )
 
 {
 

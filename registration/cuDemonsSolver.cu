@@ -37,14 +37,14 @@ static void vfield_exponential(cuNDArray<float>* vfield){
 
 	int n = ceil(log2(sqrt(*msquare)/0.5));
 	n = std::max(n,0);
-
+	std::cout << " N " << n << std::endl;
 	*vfield *= float(std::pow(2,-float(n)));
 
 	for (int i =0; i < n; i++) {
 		cuNDArray<float> vfield_copy(*vfield);
-		deform_vfield(&vfield_copy, vfield);
-		*vfield += vfield_copy;
-
+//deform_vfield(&vfield_copy, vfield);
+//		*vfield += vfield_copy;
+		deform_vfield(vfield,&vfield_copy);
 	}
 
 
@@ -325,13 +325,14 @@ template<class T, unsigned int D> boost::shared_ptr<cuNDArray<T>> cuDemonsSolver
 	}
 
 
+
 	cudaDestroyTextureObject(texObj);
 
 	// Free device memory
 	cudaFreeArray(image_array);
 
 
-
+	return result;
 
 
 
@@ -641,7 +642,7 @@ bilateral_kernel3D(float* out,cudaTextureObject_t texX,cudaTextureObject_t texY,
 	if (ixo < width && iyo < height && izo < depth){
 
 
-		int steps = ceil(sigma_spatial*3);
+		int steps = 3;
 
 		float vec[3];
 		vec[0] = tex3D<float>(texX,x,y,z);

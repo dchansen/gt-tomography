@@ -151,6 +151,10 @@ public:
 		return projections_;
 	}
 
+	inline boost::shared_ptr< hoCuNDArray<float> > get_airscan() {
+		return I0_;
+	}
+
 	void downsample( unsigned int num_downsamples )
 	{
 		for (int k = 0; k < num_downsamples; k++)
@@ -239,17 +243,34 @@ public:
 			throw std::runtime_error(ss.str());
 		}
 
+
 		hsize_t vec_dim[3];
-		errCode=H5LTget_dataset_info(file_id,"/projections",vec_dim,NULL,NULL);
-		if (errCode < 0) 	throw std::runtime_error("Error getting /projections dataset info from file.");
+		errCode = H5LTget_dataset_info(file_id, "/projections", vec_dim, NULL, NULL);
+		if (errCode < 0) throw std::runtime_error("Error getting /projections dataset info from file.");
 		std::vector<size_t> dims;
 		dims.push_back(vec_dim[2]);
 		dims.push_back(vec_dim[1]);
 		dims.push_back(vec_dim[0]);
 
 		projections_ = boost::shared_ptr<hoCuNDArray<float> >(new hoCuNDArray<float>(&dims));
-		errCode=H5LTread_dataset (file_id,"/projections", H5T_NATIVE_FLOAT, projections_->get_data_ptr());
-		if (errCode < 0) 	throw std::runtime_error("Error reading /projections from file.");
+		errCode = H5LTread_dataset(file_id, "/projections", H5T_NATIVE_FLOAT, projections_->get_data_ptr());
+		if (errCode < 0) throw std::runtime_error("Error reading /projections from file.");
+
+
+		bool hasairscan = H5LTpath_valid(file_id,"/airscan",true);
+		if (hasairscan){
+			hsize_t vec_dim2[3];
+			errCode=H5LTget_dataset_info(file_id,"/airscan",vec_dim2,NULL,NULL);
+			if (errCode < 0) 	throw std::runtime_error("Error getting /projections dataset info from file.");
+			std::vector<size_t> dims2;
+			dims2.push_back(vec_dim2[2]);
+			dims2.push_back(vec_dim2[1]);
+			dims2.push_back(vec_dim2[0]);
+			I0_ = boost::make_shared<hoCuNDArray<float> >(&dims2);
+			errCode=H5LTread_dataset (file_id,"/airscan", H5T_NATIVE_FLOAT, I0_->get_data_ptr());
+			if (errCode < 0) 	throw std::runtime_error("Error reading /projections from file.");
+
+		}
 
 		// Get SAD / SDD / FOV
 		//
@@ -300,5 +321,6 @@ protected:
 
 	boost::shared_ptr<CBCT_geometry> geometry_;
 	boost::shared_ptr< hoCuNDArray<float> > projections_;
+	boost::shared_ptr<hoCuNDArray<float> > I0_;
 };
 }

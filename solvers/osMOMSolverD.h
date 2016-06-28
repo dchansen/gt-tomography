@@ -21,7 +21,7 @@ template <class ARRAY_TYPE> class osMOMSolverD : public solver< ARRAY_TYPE,ARRAY
 public:
 	osMOMSolverD() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 		_iterations=10;
-		_beta = REAL(1);
+		_beta = REAL(0);
 		_alpha = 0.2;
 		_gamma = 0;
 		non_negativity_=false;

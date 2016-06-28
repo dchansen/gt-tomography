@@ -38,7 +38,7 @@ int main(int argc, char** argv)
           ("moving,m", po::value<string>(&moving_filename), "Moving image")
           ("fixed,f", po::value<string>(&fixed_filename), "Fixed image")
           ("output,o", po::value<string>(&vfield_filename)->default_value("deformation_field.real"), "Output filename")
-          ("alpha,a",po::value<float>(&alpha)->default_value(1.0),"Maximum step length per iteration")
+          ("alpha,a",po::value<float>(&alpha)->default_value(10),"Maximum step length per iteration")
           ("sigma_diff",po::value<float>(&sigma_diff)->default_value(1),"Diffusion sigma for regularization")
           ("sigma_fluid",po::value<float>(&sigma_fluid)->default_value(0),"Fluid sigma for regularization")
           ("sigma_int",po::value<float>(&sigma_int)->default_value(0),"Intensity sigma for regularization (bilateral)")
@@ -135,10 +135,9 @@ int main(int argc, char** argv)
   // All done, write out the result
   //
 
-  boost::shared_ptr< hoNDArray<float> > host_result = result->to_host();
-  write_nd_array<float>(host_result.get(),vfield_filename.c_str() );
+  write_nd_array<float>(result.get(),vfield_filename.c_str() );
 
-  host_result = deformed_moving.to_host();
+  auto host_result = deformed_moving.to_host();
   write_nd_array<float>(host_result.get(), "def_moving.real" );
 
   auto jac = Jacobian(result.get());

@@ -168,9 +168,13 @@ public:
                     cudaStreamSynchronize(stream);
 
 					{
+						std::cout << "Tmp proj " << min(&tmp_proj) << " " << max(&tmp_proj) << std::endl;
 						cuNDArray<float> tmp_proj2(tmp_proj);
+						//clamp_min(&tmp_proj2,T(0));
 						exp_inv_inplace(&tmp_proj2);
+						std::cout << "Tmp proj2 " << asum(&tmp_proj2) << std::endl;
 						tmp_proj2 *= cu_I0;
+						std::cout << "Tmp proj2 " << nrm2(&tmp_proj2) << std::endl;
 						cu_proj -= tmp_proj2;
 					}
 
@@ -181,31 +185,45 @@ public:
 
 					cuNDArray <T> L(image_dims.get());
 					this->encoding_operator_->mult_MH(&cu_proj, &L, subset, false);
-
+					std::cout<< "L " << nrm2(&L) << std::endl;
 
 					calcC(&tmp_proj,&cu_I0);
+					std::cout << "Tmp_proj " << nrm2(&tmp_proj) << std::endl;
 					cudaStreamSynchronize(stream2);
 					tmp_proj *= cu_precon;
+					std::cout<< "Tmp_proj " << nrm2(&tmp_proj) << std::endl;
 
+
+					this->encoding_operator_->mult_MH(&tmp_proj, &tmp_image, subset, false);
+					std::cout<< "Tmp_image " << nrm2(&tmp_image) << std::endl;
+
+					//clamp_min(&tmp_image,1e-6);
+					/*
 					cuNDArray<float> numerator(image_dims.get());
 					cuNDArray<float> denominator(image_dims.get());
-
 					huber_norm(z,&numerator,&denominator,denoise_alpha);
 
-                    this->encoding_operator_->mult_MH(&tmp_proj, &tmp_image, subset, false);
-					//clamp_min(&tmp_image,1e-6);
+
 					std::cout << mean(&tmp_image) << std::endl;
 
 					axpy(_beta,&denominator,&tmp_image);
-					tmp_image += 1.0f;
+					//tmp_image += 1.0f;
 					axpy(_beta,&numerator,&L);
+*/
 
+					tmp_image += _beta;
+					L -= _beta;
 					L /= tmp_image;
+					std::cout<< "L " << nrm2(&L) << std::endl;
+					std::cout << "Min " << min(&L) << " max " << max(&L) << std::endl;
                     //axpy(_beta,&d,&tmp_image);
 
 
 
                     *z -= L;
+					std::cout<< "Z " << nrm2(z) << std::endl;
+
+					//denoise(*x,*z,1.0,avg_lambda);
                 }
 
 				/*
@@ -218,12 +236,12 @@ public:
 
 				}
 				 */
-				if (non_negativity_){
-					clamp_min(z,T(0));
-					clamp_max(z,T(0.5));
-				}
+
+
+
 				//axpy(REAL(_beta),&tmp_image,x);
 
+				clamp_min(z,T(0));
 
 				*x = *z;
 
@@ -233,38 +251,11 @@ public:
 
 				told = t;
 
-				/*
-				for (auto op : regularization_operators){
 
-					op->gradient(x,&tmp_image);
-					tmp_image /= nrm2(&tmp_image);
-					auto reg_val = op->magnitude(x);
-					std::cout << "Reg val: " << reg_val << std::endl;
-					hoCuNDArray<T> y = *x;
-					axpy(-kappa_int,&tmp_image,&y);
+				clamp_min(z,T(0));
 
 
-					while(op->magnitude(&y) > reg_val){
 
-						kappa_int /= 2;
-						axpy(kappa_int,&tmp_image,&y);
-						std::cout << "Kappa: " << kappa_int << std::endl;
-					}
-					reg_val = op->magnitude(&y);
-					*x = y;
-
-				}
-			*/
-
-				/**z = *x;
-
-				*z *= 1+(told-1)/t;
-				axpy(-(told-1)/t,xold,z);
-				std::swap(x,xold);
-				*x = *z;
-				told = t;
-				*/
-				//step_size *= 0.99;
 
 			}
 			//std::reverse(isubsets.begin(),isubsets.end());

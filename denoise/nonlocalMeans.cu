@@ -9,7 +9,7 @@
  *
  */
 
-#define NLM_WINDOW_RADIUS   3
+#define NLM_WINDOW_RADIUS   5
 #define NLM_BLOCK_RADIUS    3
 
 #define NLM_WINDOW_AREA     ( (2 * NLM_WINDOW_RADIUS + 1) * (2 * NLM_WINDOW_RADIUS + 1)*(2 * NLM_WINDOW_RADIUS + 1) )
@@ -284,7 +284,7 @@ __global__ static void NLM3DPoisson(
 
 
                     //Derive final weight from color and geometric distance
-                    weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
+                    weightIJK     = expf(-(weightIJK * Noise ));
                     //weightIJK     = expf(-(weightIJK * Noise ));
 
 
@@ -431,7 +431,7 @@ __global__ static void NLM2DPoisson(
 
 
                 //Derive final weight from color and geometric distance
-                weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j) * INV_NLM_WINDOW_AREA2D));
+                weightIJK     = expf(-(weightIJK * Noise) );
                 //weightIJK     = expf(-(weightIJK * Noise ));
 
 
