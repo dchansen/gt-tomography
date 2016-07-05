@@ -1,8 +1,8 @@
 #include "cuGaussianFilterOperator.h"
-#include "setup_grid.h"
+
 #include "gpuoperators_export.h"
 #include "vector_td_utilities.h"
-#include "math_constants.h"
+
 using namespace Gadgetron;
 
 
@@ -21,7 +21,7 @@ gauss_kernel(cudaTextureObject_t texObj,  T* out, int width, int height, int dep
 	vector_td<float,3> coord2(x,y,z);
 	if (ixo < width && iyo < height && izo < depth){
 
-		int steps = ceil(sigma*3);
+		int steps = max(ceil(sigma*3),1.0f);
 
 		T res = T(0);
 
@@ -53,7 +53,7 @@ gauss_kernel_simpel(T* __restrict__ in,  T* __restrict__ out, vector_td<int,3> d
 	vector_td<int,3> coord2(ixo,iyo,izo);
 	if (ixo < dims[0] && iyo < dims[1] && izo < dims[2]){
 
-		int steps = ceil(sigma*6);
+		int steps = max(ceil(sigma*4),T(1));
 
 		T res = T(0);
 
@@ -87,7 +87,7 @@ gauss_kernel3D(cudaTextureObject_t texObj,  T* out, int width, int height, int d
 	if (ixo < width && iyo < height && izo < depth){
 
 
-		int steps = ceil(sigma*3);
+		int steps = max(ceil(sigma*3),1);
 
 		T res = T(0);
 
@@ -172,11 +172,11 @@ template<class T, unsigned int D> void cuGaussianFilterOperator<T,D>::mult_M(cuN
 			cuNDArray<T> tmp(elements);
 			cudaMemcpy(tmp.get_data_ptr(),outptr,elements*sizeof(T),cudaMemcpyDeviceToDevice);
 			if (d == 0)
-				gauss_kernel_simpel<T,0><<<grid,threads>>>(tmp.get_data_ptr(),outptr,vector_td<int,3>(extent.width,extent.height,extent.depth),_sigma);
+				gauss_kernel_simpel<T,0><<<grid,threads>>>(tmp.get_data_ptr(),outptr,vector_td<int,3>(extent.width,extent.height,extent.depth),_sigma[d]);
 			else if (d == 1)
-				gauss_kernel_simpel<T,1><<<grid,threads>>>(tmp.get_data_ptr(),outptr,vector_td<int,3>(extent.width,extent.height,extent.depth),_sigma);
+				gauss_kernel_simpel<T,1><<<grid,threads>>>(tmp.get_data_ptr(),outptr,vector_td<int,3>(extent.width,extent.height,extent.depth),_sigma[d]);
 			else if (d == 2)
-				gauss_kernel_simpel<T,2><<<grid,threads>>>(tmp.get_data_ptr(),outptr,vector_td<int,3>(extent.width,extent.height,extent.depth),_sigma);
+				gauss_kernel_simpel<T,2><<<grid,threads>>>(tmp.get_data_ptr(),outptr,vector_td<int,3>(extent.width,extent.height,extent.depth),_sigma[d]);
 			else throw std::runtime_error("Unsupported number of dimensions for Gaussian kernel");
 
 

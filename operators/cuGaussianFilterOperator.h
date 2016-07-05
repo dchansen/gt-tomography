@@ -10,10 +10,11 @@ template<class T, unsigned int D> class cuGaussianFilterOperator : public linear
 public:
 	void mult_M( cuNDArray<T>* in, cuNDArray<T>* out, bool accumulate = false);
 	void mult_MH( cuNDArray<T>* in, cuNDArray<T>* out, bool accumulate = false);
-	void set_sigma(REAL sigma){ _sigma=sigma;}
+	void set_sigma(REAL sigma){ _sigma= vector_td<REAL,D>(sigma);}
+	void set_sigma(vector_td<REAL,D> sigma){ _sigma= sigma;}
 protected:
 
-	REAL _sigma;
+	vector_td<REAL,D> _sigma;
 
 
 };

@@ -12,7 +12,7 @@ namespace Gadgetron{
 	cuNDArray<float> deform_image(cudaTextureObject_t  texObj,std::vector<size_t> dimensions, cuNDArray<float>* vector_field);
 	void deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vector_field);
 
-	void bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* image, float sigma_spatial,float sigma_int, float sigma_diff);
+	void bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* image, floatd3 sigma_spatial,float sigma_int, float sigma_diff);
 	cuNDArray<float> Jacobian(cuNDArray<float>* vfield);
 
 
@@ -24,14 +24,19 @@ public:
 	virtual ~cuDemonsSolver(){};
 
 	boost::shared_ptr<cuNDArray<T>> registration( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image);
+	boost::shared_ptr<cuNDArray<T>> multi_level_reg( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image,int levels, float scale = 1.0f);
 
 	void set_iterations(int i){
 		iterations = i;
 	}
 	void set_sigmaDiff(T _sigma){
-		sigmaDiff = _sigma;
+		sigmaDiff = vector_td<T,D>(_sigma);
 
 			}
+	void set_sigmaDiff(vector_td<T,D> _sigma){
+		sigmaDiff = _sigma;
+
+	}
 
 	void set_sigmaFluid(T _sigma){
 		sigmaFluid = _sigma;
@@ -63,11 +68,16 @@ public:
 	}
 
 
+
 protected:
 	boost::shared_ptr<cuNDArray<T> > demonicStep(cuNDArray<T>*,cuNDArray<T>*);
+	void single_level_reg( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image,cuNDArray<T>* result, float scale=1.0f);
 
 
-	T sigmaDiff, sigmaFluid,sigmaInt,sigmaVDiff,alpha,beta,epsilonNGF;
+
+	void upscale_vfield(cuNDArray<T> *in,cuNDArray<T> *out);
+	T  sigmaFluid,sigmaInt,sigmaVDiff,alpha,beta,epsilonNGF;
+	vector_td<T,D> sigmaDiff;
 	bool compositive, exponential;
 	int iterations;
 };
