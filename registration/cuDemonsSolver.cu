@@ -6,6 +6,7 @@
 #include "gpureg_export.h"
 #include "vector_td_utilities.h"
 #include <thrust/extrema.h>
+#include "morphon.h"
 using namespace Gadgetron;
 
 
@@ -341,6 +342,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 
 		} else {
 			update = demonicStep(fixed_image, &def_moving);
+			//update = morphon(&def_moving,fixed_image);
 			std::cout << "Updated norm " << nrm2(update.get()) << std::endl;
 		}
 		if (sigmaFluid > 0){
@@ -794,7 +796,7 @@ bilateral_kernel3D(float* out,cudaTextureObject_t texX,cudaTextureObject_t texY,
 	if (ixo < width && iyo < height && izo < depth){
 
 
-		int steps = 3;
+		int steps = 4;
 
 		float vec[3];
 		vec[0] = tex3D<float>(texX,x,y,z);
@@ -901,9 +903,9 @@ void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* im
 	resDescX.res.array.array = x_array;
 	struct cudaTextureDesc texDesc;
 	memset(&texDesc, 0, sizeof(texDesc));
-	texDesc.addressMode[0] = cudaAddressModeClamp;
-	texDesc.addressMode[1] = cudaAddressModeClamp;
-	texDesc.addressMode[2] = cudaAddressModeClamp;
+	texDesc.addressMode[0] = cudaAddressModeBorder;
+	texDesc.addressMode[1] = cudaAddressModeBorder;
+	texDesc.addressMode[2] = cudaAddressModeBorder;
 	texDesc.filterMode = cudaFilterModeLinear;
 	texDesc.readMode = cudaReadModeElementType;
 	texDesc.normalizedCoords = 0;
