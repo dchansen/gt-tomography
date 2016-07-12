@@ -782,48 +782,41 @@ cuNDArray<float> Gadgetron::Jacobian(cuNDArray<float>* vfield){
 
 
 static __global__ void
-bilateral_kernel3D(float* out,cudaTextureObject_t texX,cudaTextureObject_t texY,cudaTextureObject_t texZ,cudaTextureObject_t image, int width, int height, int depth,floatd3 sigma_spatial,float sigma_int,float sigma_diff){
+bilateral_kernel3D(float* __restrict__ out, const float* __restrict__ vfield, const float* __restrict__ image, int width, int height, int depth,floatd3 sigma_spatial,float sigma_int,float sigma_diff){
 
 	const int ixo = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iyo = blockDim.y * blockIdx.y + threadIdx.y;
 	const int izo = blockDim.z * blockIdx.z + threadIdx.z;
 
-	const float x = ixo+0.5f;
-	const float y = iyo+0.5f;
-	const float z = izo+0.5f;
+	const int idx = ixo+iyo*width+izo*width*height;
+	int elements= width*height*depth;
+
 
 
 	if (ixo < width && iyo < height && izo < depth){
 
 
-		int steps = 4;
+		int steps = 8;
 
-		float vec[3];
-		vec[0] = tex3D<float>(texX,x,y,z);
-		vec[1] = tex3D<float>(texY,x,y,z);
-		vec[2] = tex3D<float>(texZ,x,y,z);
-		float image_value = tex3D<float>(image,x,y,z);
-		float res[3];
-		res[0] = 0;
-		res[1] = 0;
-		res[2] = 0;
+		vector_td<float,3> vec(vfield[idx],vfield[idx+elements],vfield[idx+elements*2]);
 
-		float norm = 0;
+		vector_td<float,3> res(0);
+		float image_value = image[idx];
+		float norm =0;
 		for (int dz = -steps; dz <= steps; dz++) {
-			const float z2 = z+dz;
+			int z = (izo+dz+depth)%depth;
+
 			for (int dy = -steps; dy <= steps; dy++) {
-				const float y2 = y+dy;
+				int y = (iyo+dy+height)%height;
 				for (int dx = -steps; dx <= steps; dx++) {
-
-					const float x2 = x+dx;
-
+					int x = (ixo+dx+width)%width;
 
 
-					float vec2[3];
-					vec2[0] = tex3D<float>(texX,x2,y2,z2);
-					vec2[1] = tex3D<float>(texY,x2,y2,z2);
-					vec2[2] = tex3D<float>(texZ,x2,y2,z2);
-					float image_diff = image_value-tex3D<float>(image,x2,y2,z2);
+					const int idx2 = x+y*width+z*width*height;
+
+					vector_td<float,3> vec2 (vfield[idx2],vfield[idx2+elements],vfield[idx2+elements*2]);
+
+					float image_diff = image_value-image[idx2];
 					float vdiff = (vec2[0]-vec[0])*(vec2[0]-vec[0])+(vec2[1]-vec[1])*(vec2[1]-vec[1])+(vec2[2]-vec[2])*(vec2[2]-vec[2]);
 					float weight = expf(-float(dx*dx) / (2 * sigma_spatial[0] * sigma_spatial[0])
 										-float(dy*dy) / (2 * sigma_spatial[1] * sigma_spatial[1])
@@ -849,119 +842,111 @@ bilateral_kernel3D(float* out,cudaTextureObject_t texX,cudaTextureObject_t texY,
 }
 
 
+template<int D> static __global__ void
+bilateral_kernel1D(float* __restrict__ out, const float* __restrict__ vfield, const float* __restrict__ image, vector_td<int,3> dims,float sigma_spatial,float sigma_int,float sigma_diff){
+
+	const int ixo = blockDim.x * blockIdx.x + threadIdx.x;
+	const int iyo = blockDim.y * blockIdx.y + threadIdx.y;
+	const int izo = blockDim.z * blockIdx.z + threadIdx.z;
+
+
+
+	if (ixo < dims[0] && iyo < dims[1] && izo < dims[2]){
+		vector_td<int,3> coord(ixo,iyo,izo);
+		vector_td<int,3> coord2(ixo,iyo,izo);
+		int elements = prod(dims);
+		int steps = max(ceil(sigma_spatial*4),1.0f);
+
+		int idx = co_to_idx<3>(coord,dims);
+		vector_td<float,3> res(0);
+		float image_value = image[idx];
+		vector_td<float,3> vec(vfield[idx],vfield[idx+elements],vfield[idx+2*elements]);
+
+		float norm = 0;
+
+		for (int i = -steps; i < steps; i++){
+			coord2[D] = coord[D]+ i;
+
+			int idx2 = co_to_idx<3>((coord2+dims)%dims,dims);
+			vector_td<float,3> vec2(vfield[idx2],vfield[idx2+elements],vfield[idx2+2*elements]);
+			float image_diff = image_value-image[idx2];
+			float vdiff = (vec2[0]-vec[0])*(vec2[0]-vec[0])+(vec2[1]-vec[1])*(vec2[1]-vec[1])+(vec2[2]-vec[2])*(vec2[2]-vec[2]);
+			float weight = expf(-0.5f*float(i*i)/(2*sigma_spatial*sigma_spatial)
+								-image_diff*image_diff/(2*sigma_int*sigma_int)
+								- vdiff/(2*sigma_diff*sigma_diff));
+			norm += weight;
+
+
+
+			res += weight*vec2;
+
+		}
+
+		//atomicAdd(&out[co_to_idx<3>(coord,dims)],res/norm);
+
+
+
+		out[idx] = res[0]/norm;
+		out[idx+elements] = res[1]/norm;
+		out[idx+2*elements] = res[2]/norm;
+	}
+
+}
+
+
 
 
 void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* image, floatd3  sigma_spatial,float sigma_int, float sigma_diff){
-
-
-
-
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+	cudaExtent extent;
+	extent.width = vfield1->get_size(0);
+	extent.height = vfield1->get_size(1);
+	extent.depth = vfield1->get_size(2);
+/*
 	cudaExtent extent;
 	extent.width = vfield1->get_size(0);
 	extent.height = vfield1->get_size(1);
 	extent.depth = vfield1->get_size(2);
 
-	size_t elements = extent.height*extent.depth*extent.width;
-
-	cudaMemcpy3DParms cpy_params = {0};
-	cpy_params.kind = cudaMemcpyDeviceToDevice;
-	cpy_params.extent = extent;
-
-	cudaArray *x_array;
-	cudaArray *y_array;
-	cudaArray *z_array;
-	cudaArray *image_array;
-	cudaMalloc3DArray(&x_array, &channelDesc, extent);
-	cudaMalloc3DArray(&y_array, &channelDesc, extent);
-	cudaMalloc3DArray(&z_array, &channelDesc, extent);
-	cudaMalloc3DArray(&image_array, &channelDesc, extent);
-
-
-	//Copy x, y and z coordinates into their own textures.
-	cpy_params.dstArray = x_array;
-	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)vfield1->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
-	cudaMemcpy3D(&cpy_params);
-	cpy_params.dstArray = y_array;
-	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)(vfield1->get_data_ptr()+elements), extent.width*sizeof(float), extent.width, extent.height);
-	cudaMemcpy3D(&cpy_params);
-	cpy_params.dstArray = z_array;
-	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)(vfield1->get_data_ptr()+2*elements), extent.width*sizeof(float), extent.width, extent.height);
-	cudaMemcpy3D(&cpy_params);
-
-	cpy_params.dstArray = image_array;
-	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
-	cudaMemcpy3D(&cpy_params);
-
-	struct cudaResourceDesc resDescX;
-	memset(&resDescX, 0, sizeof(resDescX));
-	resDescX.resType = cudaResourceTypeArray;
-	resDescX.res.array.array = x_array;
-	struct cudaTextureDesc texDesc;
-	memset(&texDesc, 0, sizeof(texDesc));
-	texDesc.addressMode[0] = cudaAddressModeBorder;
-	texDesc.addressMode[1] = cudaAddressModeBorder;
-	texDesc.addressMode[2] = cudaAddressModeBorder;
-	texDesc.filterMode = cudaFilterModeLinear;
-	texDesc.readMode = cudaReadModeElementType;
-	texDesc.normalizedCoords = 0;
-	cudaTextureObject_t texX = 0;
-	cudaCreateTextureObject(&texX, &resDescX, &texDesc, NULL);
-
-
-
-
-
-	struct cudaResourceDesc resDescY;
-	memset(&resDescY, 0, sizeof(resDescY));
-	resDescY.resType = cudaResourceTypeArray;
-	resDescY.res.array.array = y_array;
-
-
-	cudaTextureObject_t texY = 0;
-	cudaCreateTextureObject(&texY, &resDescY, &texDesc, NULL);
-
-
-	struct cudaResourceDesc resDescZ;
-	memset(&resDescZ, 0, sizeof(resDescZ));
-	resDescZ.resType = cudaResourceTypeArray;
-	resDescZ.res.array.array = z_array;
-
-	cudaTextureObject_t texZ = 0;
-	cudaCreateTextureObject(&texZ, &resDescZ, &texDesc, NULL);
-
-
-	struct cudaResourceDesc resDescImg;
-	memset(&resDescImg, 0, sizeof(resDescImg));
-	resDescImg.resType = cudaResourceTypeArray;
-	resDescImg.res.array.array = image_array;
-
-	cudaTextureObject_t texImage = 0;
-	cudaCreateTextureObject(&texImage, &resDescImg, &texDesc, NULL);
-
 
 	cudaDeviceSynchronize();
 	dim3 threads(8,8,8);
 
+	auto vfield_copy = *vfield1;
 	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
 
-	bilateral_kernel3D<<<grid,threads>>>(vfield1->get_data_ptr(),texX,texY,texZ,texImage,extent.width,extent.height,extent.depth,sigma_spatial,sigma_int,sigma_diff);
+	bilateral_kernel3D<<<grid,threads>>>(vfield1->get_data_ptr(),vfield_copy.get_data_ptr(),image->get_data_ptr(),extent.width,extent.height,extent.depth,sigma_spatial,sigma_int,sigma_diff);
+*/
 
+	/*
+	dim3 threads;
+	dim3 grid;
+	setup_grid(image->get_number_of_elements(),&threads,&grid);
+*/
+	dim3 threads(8,8,8);
+	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
+	auto vfield_copy = *vfield1;
+
+	vector_td<int, 3> image_dims(image->get_size(0),image->get_size(1), image->get_size(2));
+
+
+
+	bilateral_kernel1D<0><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[0], sigma_int, sigma_diff);
+	vfield_copy = *vfield1;
+	bilateral_kernel1D<1><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
+	vfield_copy = *vfield1;
+	bilateral_kernel1D<2><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
+	/*
 	cudaDeviceSynchronize();
-	cudaDestroyTextureObject(texX);
-	cudaDestroyTextureObject(texY);
-	cudaDestroyTextureObject(texZ);
-	cudaDestroyTextureObject(texImage);
+	bilateral_kernel1D<1><<<grid,threads>>>(vfield_copy.get_data_ptr(),vfield1->get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
+	cudaDeviceSynchronize();
+	bilateral_kernel1D<2><<<grid,threads>>>(vfield1->get_data_ptr(),vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
+	cudaDeviceSynchronize();
+*/
 
-	// Free device memory
-	cudaFreeArray(x_array);
-	cudaFreeArray(y_array);
-	cudaFreeArray(z_array);
-	cudaFreeArray(image_array);
+
+
+
+
 
 
 
