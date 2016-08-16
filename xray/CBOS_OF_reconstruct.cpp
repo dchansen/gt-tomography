@@ -176,6 +176,7 @@ int main(int argc, char** argv)
 	unsigned int downsamples;
 	unsigned int iterations;
 	unsigned int subsets;
+	int reg_iter;
 	float rho;
 	float tv_weight;
     float tv_weight4d;
@@ -199,6 +200,7 @@ int main(int argc, char** argv)
     		("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
             ("TV4D",po::value<float>(&tv_weight4d)->default_value(0),"Total variation in temporal direction")
                     ("tau",po::value<float>(&tau)->default_value(1e-5),"Solver tau")
+					("reg_iter",po::value<int>(&reg_iter)->default_value(2),"Regularization iterations")
     		("use_prior","Use an FDK prior")
     		("TV-prior",po::value<string>(&tv_prior_filename)->default_value("reconstructionTV.real"),"TV prior for registration")
                     ("vector-field",po::value<string>(),"Stored vector field")
@@ -291,7 +293,7 @@ int main(int argc, char** argv)
 	//hoCuGPBBSolver<float> solver;
 	//hoCuCgDescentSolver<float> solver;
 //	osSPSSolver<hoCuNDArray<float>> solver;
-	osMOMSolverD3<hoCuNDArray<float>> solver;
+	osMOMSolverD<hoCuNDArray<float>> solver;
 	//osSPSSolver<hoCuNDArray<float>> solver;
 	//hoCuNCGSolver<float> solver;
 	solver.set_encoding_operator(E);
@@ -300,7 +302,7 @@ int main(int argc, char** argv)
 	solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
 	solver.set_non_negativity_constraint(true);
     solver.set_tau(tau);
-	solver.set_reg_steps(2);
+	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
 	hoCuNDArray<float> projections = *ps->get_projections();

@@ -345,6 +345,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 			//update = morphon(&def_moving,fixed_image);
 			std::cout << "Updated norm " << nrm2(update.get()) << std::endl;
 		}
+		cuNDArray<T> tmp(*result);
 		if (sigmaFluid > 0){
 			cuNDArray<T> blurred_update(update->get_dimensions());
 			gaussFluid.mult_M(update.get(),&blurred_update);
@@ -375,6 +376,10 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 				gaussDiff.mult_M(&blurred_result, result);
 			}
 		}
+		//*result -= tmp;
+
+		//if (exponential) vfield_exponential(result);
+		//*result += tmp;
 
 
 
@@ -901,13 +906,9 @@ void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* im
 	extent.width = vfield1->get_size(0);
 	extent.height = vfield1->get_size(1);
 	extent.depth = vfield1->get_size(2);
+
+	
 /*
-	cudaExtent extent;
-	extent.width = vfield1->get_size(0);
-	extent.height = vfield1->get_size(1);
-	extent.depth = vfield1->get_size(2);
-
-
 	cudaDeviceSynchronize();
 	dim3 threads(8,8,8);
 
@@ -922,6 +923,7 @@ void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* im
 	dim3 grid;
 	setup_grid(image->get_number_of_elements(),&threads,&grid);
 */
+
 	dim3 threads(8,8,8);
 	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
 	auto vfield_copy = *vfield1;
@@ -935,6 +937,7 @@ void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* im
 	bilateral_kernel1D<1><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
 	vfield_copy = *vfield1;
 	bilateral_kernel1D<2><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
+
 	/*
 	cudaDeviceSynchronize();
 	bilateral_kernel1D<1><<<grid,threads>>>(vfield_copy.get_data_ptr(),vfield1->get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);

@@ -13,9 +13,13 @@ include_directories(
 cuda_add_library(gt_registration SHARED
         cuDemonsSolver.cu
         quadratureKernels.cpp
+        morphon.cu
         )
 
 
+
+add_executable(register_Demons_3dV2 register_Demons_3dV2.cpp)
+target_link_libraries(register_Demons_3dV2 gt_registration Xray_kernels tomography_solvers gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_log tomography_operators gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils gadgetron_toolbox_gpureg ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
 add_executable(register_Demons_3d register_Demons_3d.cpp)
 target_link_libraries(register_Demons_3d gt_registration Xray_kernels tomography_solvers gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_log tomography_operators gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils gadgetron_toolbox_gpureg ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})

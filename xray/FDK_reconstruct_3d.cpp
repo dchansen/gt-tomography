@@ -130,6 +130,7 @@ po::options_description desc("Allowed options");
   boost::shared_ptr< hoCuConebeamProjectionOperator > E( new hoCuConebeamProjectionOperator() );
 
   E->setup( acquisition, binning, is_dims_in_mm );
+
   E->set_use_filtered_backprojection(true);
 
  

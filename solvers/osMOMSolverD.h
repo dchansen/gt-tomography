@@ -21,7 +21,7 @@ template <class ARRAY_TYPE> class osMOMSolverD : public solver< ARRAY_TYPE,ARRAY
 public:
 	osMOMSolverD() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 		_iterations=10;
-		_beta = REAL(0);
+		_beta = REAL(1);
 		_alpha = 0.2;
 		_gamma = 0;
 		non_negativity_=false;
@@ -81,7 +81,6 @@ public:
 		//boost::shared_ptr<ARRAY_TYPE> rhs = compute_rhs(in);
 		if( this->encoding_operator_.get() == 0 ){
 			throw std::runtime_error( "Error: cgSolver::compute_rhs : no encoding operator is set" );
-			return boost::shared_ptr<ARRAY_TYPE>();
 		}
 
 		// Get image space dimensions from the encoding operator
@@ -90,7 +89,6 @@ public:
 		boost::shared_ptr< std::vector<size_t> > image_dims = this->encoding_operator_->get_domain_dimensions();
 		if( image_dims->size() == 0 ){
 			throw std::runtime_error( "Error: cgSolver::compute_rhs : encoding operator has not set domain dimension" );
-			return boost::shared_ptr<ARRAY_TYPE>();
 		}
 
 		ARRAY_TYPE * z = new ARRAY_TYPE(*image_dims);
@@ -140,7 +138,7 @@ public:
 				int subset = isubsets[isubset];
 				this->encoding_operator_->mult_M(x,tmp_projections[subset].get(),subset,false);
 				*tmp_projections[subset] -= *subsets[subset];
-				*tmp_projections[subset] *= ELEMENT_TYPE(-1);
+
 				if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 					std::cout << "Iteration " <<i << " Subset " << subset << " Update norm: " << nrm2(tmp_projections[subset].get()) << std::endl;
 				}
@@ -151,7 +149,8 @@ public:
 
 					this->encoding_operator_->mult_MH(tmp_projections[subset].get(),&tmp_image,subset,false);
 					tmp_image *= *precon_image;
-					axpy(REAL(_beta/(1+_gamma*i))*this->encoding_operator_->get_number_of_subsets(),&tmp_image,z);
+					axpy(-REAL(_beta/(1+_gamma*i))*this->encoding_operator_->get_number_of_subsets(),&tmp_image,z);
+
 				}
 
 
@@ -285,6 +284,7 @@ protected:
 					reg_group[i]->mult_M(&x,&datas[i]);
 					reg_val += asum(&datas[i])*reg_group[i]->get_weight();
 					datas[i] *= sigma*reg_group[i]->get_weight()/avg_lambda;
+
 				}
 
 				std::cout << "Reg val: " << reg_val << " Scaling " << scaling*avg_lambda  << std::endl;

@@ -81,7 +81,7 @@ template<class T>  __global__ void edgeAtrous_kernel(const T* __restrict__ image
   	const int offset = idx-dim_pos*stride;
   	for (int i = -kernel_length/2; i <= kernel_length/2; i++){
   		//int pos = (dim_pos+i*stepsize+dim_length)%dim_length;
-  		int pos = float_modulo(dim_pos+i*stepsize+dim_length,dim_length);
+  		int pos = (dim_pos+i*stepsize+dim_length)%dim_length;
 		T img_val = image[pos*stride+offset];
 		T k = kernel[i+kernel_length/2];
 		T weight = __expf(-(val-img_val)*(val-img_val)/sigma2)*k;

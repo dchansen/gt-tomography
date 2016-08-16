@@ -160,7 +160,7 @@ po::options_description desc("Allowed options");
 	float scaler = dot(&diff_proj,&projections)/dot(&diff_proj,&diff_proj);
 	std::cout << "Scale: " << scaler << std::endl;
 	diff_proj *= scaler;
-	//projections -= diff_proj;
+	projections -= diff_proj;
 	//projections *= -1.0f;
 
 	hoCuNDArray<float> result(&is_dims);

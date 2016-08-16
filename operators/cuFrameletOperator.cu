@@ -52,11 +52,11 @@ template<class T,unsigned int D, unsigned int N> __global__ void frameletKernel(
 	vector_td<T,N> elements;
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
 	typename intd<D>::Type co = idx_to_co<D>(idx, dims);
-	co[dir] = (co[dir]-N)%dims[dir];
+	co[dir] = (co[dir]-N+dims[dir])%dims[dir];
 
 	for (int i = 0; i < N; i++){
 		elements[i] = in[co_to_idx<D>(co,dims)];
-		co[dir] = (co[dir]+1)%dims[dir];
+		co[dir] = (co[dir]+1+dims[dir])%dims[dir];
 	}
 	out[idx] = dot(elements,stencil);
 
@@ -68,11 +68,11 @@ template<class T,unsigned int D, unsigned int N> __global__ void iframeletKernel
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
 	T val = in[idx];
 	typename intd<D>::Type co = idx_to_co<D>(idx, dims);
-	co[dir] = (co[dir]-N)%dims[dir];
+	co[dir] = (co[dir]-N+dims[dir])%dims[dir];
 
 	for (int i = 0; i < N; i++){
 		in[co_to_idx<D>(co,dims)] += stencil[i]*val;
-		co[dir] = (co[dir]+1)%dims[dir];
+		co[dir] = (co[dir]+1+dims[dir])%dims[dir];
 	}
 
 }

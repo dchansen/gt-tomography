@@ -22,7 +22,7 @@
 #include "hoCuNCGSolver.h"
 #include "hoCuCgDescentSolver.h"
 #include "hoNDArray_utils.h"
-#include "hoCuPartialDerivativeOperator.h"
+#include "cuPartialDifferenceOperator.h"
 #include "cuTvOperator.h"
 #include "cuTv1dOperator.h"
 #include "cuTvPicsOperator.h"
@@ -46,6 +46,9 @@
 #include <GPUTimer.h>
 #include <operators/cuGaussianFilterOperator.h>
 #include <multiplicationOperatorContainer.h>
+#include <cuDownsampleOperator.h>
+#include <operators/cuSmallConvOperator.h>
+#include <denoise/nonlocalMeans.h>
 #include "cuSolverUtils.h"
 #include "osPDsolver.h"
 #include "osLALMSolver.h"
@@ -61,6 +64,7 @@
 #include "hoNDArray_math.h"
 #include "cuNCGSolver.h"
 #include "CT_acquisition.h"
+#include "cuScaleOperator.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -112,18 +116,18 @@ void scatter_correct(boost::shared_ptr<CBCT_binning>  binning, boost::shared_ptr
 	solver.set_encoding_operator(E);
 	solver.set_max_iterations(10);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
-	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
+	auto Dx = boost::make_shared<cuPartialDifferenceOperator<float,4>>(0);
 	Dx->set_weight(tv_weight);
 	Dx->set_domain_dimensions(&is_dims2);
 	Dx->set_codomain_dimensions(&is_dims2);
 
-	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
+	auto Dy = boost::make_shared<cuPartialDifferenceOperator<float,4>>(1);
 	Dy->set_weight(tv_weight);
 	Dy->set_domain_dimensions(&is_dims2);
 	Dy->set_codomain_dimensions(&is_dims2);
 
 
-	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
+	auto Dz = boost::make_shared<cuPartialDifferenceOperator<float,4>>(2);
 	Dz->set_weight(tv_weight);
 	Dz->set_domain_dimensions(&is_dims2);
 	Dz->set_codomain_dimensions(&is_dims2);
@@ -197,8 +201,7 @@ boost::shared_ptr<cuNDArray<float> > calculate_prior(boost::shared_ptr<CBCT_binn
 	Ep->mult_M(prior3d.get(),&tmp_proj);
 	float s = dot(ps->get_projections().get(),&tmp_proj)/dot(&tmp_proj,&tmp_proj);
 	*prior3d *= s;
-	boost::shared_ptr<cuNDArray<float> > prior(new cuNDArray<float>(*expand( prior3d.get(), is_dims.back() )));
-	std::cout << "Prior complete" << std::endl;
+	auto prior = boost::make_shared<cuNDArray<float>>(*prior3d);
 	return prior;
 }
 
@@ -266,8 +269,8 @@ int main(int argc, char** argv)
 	unsigned int downsamples;
 	unsigned int iterations;
 	unsigned int subsets;
-	float rho,tau;
-	float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight;
+	float rho,tau,nlm_noise;
+	float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight,framelet_weight,atv_weight;
 	float tv_4d,atv_4d;
     bool use_non_negativity;
 	int reg_iter;
@@ -291,8 +294,10 @@ int main(int argc, char** argv)
     				("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight in spatial dimensions")
 							("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimensions")
 							("ATV4D",po::value<float>(&atv_4d)->default_value(0),"Advanced Total variation weight in temporal dimensions")
+							("ATV",po::value<float>(&atv_weight)->default_value(0),"Advanced Total variation weight ")
     				("PICS",po::value<float>(&pics_weight)->default_value(0),"PICS weight")
     				("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
+							("Framelet",po::value<float>(&framelet_weight)->default_value(0),"Weight of the framelet operator")
     				("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
     				("use_prior","Use an FDK prior")
     				("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
@@ -301,6 +306,7 @@ int main(int argc, char** argv)
     				("3D","Only use binning for selecting valid projections")
 							("tau",po::value<float>(&tau)->default_value(1e-5),"Tau value for solver")
 							("reg_iter",po::value<int>(&reg_iter)->default_value(2))
+							("NLM",po::value<float>(&nlm_noise)->default_value(0),"Use non-local means based on the 3d image")
     				;
 
 	po::variables_map vm;
@@ -336,6 +342,7 @@ int main(int argc, char** argv)
 	//Really weird stuff. Needed to initialize the device?? Should find real bug.
 	cudaDeviceManager::Instance()->lockHandle();
 	cudaDeviceManager::Instance()->unlockHandle();
+
 
 	boost::shared_ptr<CBCT_acquisition> ps(new CBCT_acquisition());
 	ps->load(acquisition_filename);
@@ -376,7 +383,7 @@ int main(int argc, char** argv)
 
 	std::cout << "IS dimensions " << is_dims[0] << " " << is_dims[1] << " " << is_dims[2] << std::endl;
 	std::cout << "Image size " << imageDimensions << std::endl;
-
+    std::cout << "FRAMELET WEIGHT " << framelet_weight << std::endl;
 	is_dims.push_back(binning->get_number_of_bins());
 
 	//scatter_correct(binning,ps,ps->get_projections().get(),is_dims,imageDimensions);
@@ -393,27 +400,28 @@ int main(int argc, char** argv)
 
 
 	boost::shared_ptr<cuNDArray<float>> prior;
-	if (vm.count("use_prior") || pics_weight > 0) {
+	if (vm.count("use_prior") || pics_weight > 0 || nlm_noise > 0) {
 		auto projections = *ps->get_projections();
 		prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
+		write_nd_array(prior.get(),"prior.real");
 		//prior = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
-		solver.set_x0(prior);
+		//solver.set_x0(prior);
 	}
 
 /*
 	if (pics_weight > 0 ){
-			auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
+			auto Dx = boost::make_shared<cuPartialDifferenceOperator<float,4>>(0);
   	Dx->set_weight(pics_weight);
   	Dx->set_domain_dimensions(&is_dims);
   	Dx->set_codomain_dimensions(&is_dims);
 
-  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
+  	auto Dy = boost::make_shared<cuPartialDifferenceOperator<float,4>>(1);
   	Dy->set_weight(pics_weight);
   	Dy->set_domain_dimensions(&is_dims);
   	Dy->set_codomain_dimensions(&is_dims);
 
 
-  	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
+  	auto Dz = boost::make_shared<cuPartialDifferenceOperator<float,4>>(2);
   	Dz->set_weight(pics_weight);
   	Dz->set_domain_dimensions(&is_dims);
   	Dz->set_codomain_dimensions(&is_dims);
@@ -504,51 +512,127 @@ int main(int argc, char** argv)
 	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
 
-  if (tv_weight > 0){
 
-  	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
-  	Dx->set_weight(tv_weight);
-  	Dx->set_domain_dimensions(&is_dims);
-  	Dx->set_codomain_dimensions(&is_dims);
+	if (atv_weight > 0) {
+		auto is_dims_half = std::vector<size_t>{is_dims[0]/2,is_dims[1]/2,is_dims[2]/2,is_dims[3]};
+		auto Dx = boost::make_shared<cuPartialDifferenceOperator<float,3>>(0);
 
-  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
-  	Dy->set_weight(tv_weight);
-  	Dy->set_domain_dimensions(&is_dims);
-  	Dy->set_codomain_dimensions(&is_dims);
+		Dx->set_domain_dimensions(&is_dims_half);
+		Dx->set_codomain_dimensions(&is_dims_half);
 
+		auto Dy = boost::make_shared<cuPartialDifferenceOperator<float,3>>(1);
 
-  	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
-  	Dz->set_weight(tv_weight);
-  	Dz->set_domain_dimensions(&is_dims);
-  	Dz->set_codomain_dimensions(&is_dims);
-
-  	solver.add_regularization_group({Dx,Dy,Dz});
-    if (tv_4d > 0) {
-        auto Dt = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(3);
-        Dt->set_weight(tv_4d);
-        Dt->set_domain_dimensions(&is_dims);
-        Dt->set_codomain_dimensions(&is_dims);
-        solver.add_regularization_operator(Dt);
-    }
+		Dy->set_domain_dimensions(&is_dims_half);
+		Dy->set_codomain_dimensions(&is_dims_half);
 
 
+		auto Dz = boost::make_shared<cuPartialDifferenceOperator<float,3>>(2);
+
+		Dz->set_domain_dimensions(&is_dims_half);
+		Dz->set_codomain_dimensions(&is_dims_half);
+
+		auto Dt = boost::make_shared<cuPartialDifferenceOperator<float,4>>(3);
+
+		Dt->set_domain_dimensions(&is_dims_half);
+		Dt->set_codomain_dimensions(&is_dims_half);
+
+		auto downS = boost::make_shared<cuScaleOperator<float,3>>();
+		//auto downS = boost::make_shared<cuDownsampleOperator<float,3>>();
+		downS->set_domain_dimensions(&is_dims);
+		downS->set_codomain_dimensions(&is_dims_half);
+
+
+		auto Dx2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+		Dx2->add_operator(downS);
+		Dx2->add_operator(Dx);
+		Dx2->set_weight(atv_weight);
+
+		auto Dy2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+		Dy2->add_operator(downS);
+		Dy2->add_operator(Dy);
+		Dy2->set_weight(atv_weight);
+
+		auto Dz2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+		Dz2->add_operator(downS);
+		Dz2->add_operator(Dz);
+		Dz2->set_weight(atv_weight);
+
+		auto Dt2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+		Dt2->add_operator(downS);
+		Dt2->add_operator(Dz);
+		Dt2->set_weight(atv_weight);
+
+		solver.add_regularization_group({Dx2, Dy2, Dz2});
+	}
+
+
+	if (tv_weight > 0) {
+
+      auto Dx = boost::make_shared<cuPartialDifferenceOperator<float, 3>>(0);
+      Dx->set_weight(tv_weight);
+      Dx->set_domain_dimensions(&is_dims);
+      Dx->set_codomain_dimensions(&is_dims);
+
+      auto Dy = boost::make_shared<cuPartialDifferenceOperator<float, 3>>(1);
+      Dy->set_weight(tv_weight);
+      Dy->set_domain_dimensions(&is_dims);
+      Dy->set_codomain_dimensions(&is_dims);
+
+
+      auto Dz = boost::make_shared<cuPartialDifferenceOperator<float, 3>>(2);
+      Dz->set_weight(tv_weight);
+      Dz->set_domain_dimensions(&is_dims);
+      Dz->set_codomain_dimensions(&is_dims);
+      solver.add_regularization_group({Dx, Dy, Dz});
+
+
+
+
+
+      if (tv_4d > 0) {
+
+          auto Dt = boost::make_shared<cuPartialDifferenceOperator<float, 4>>(3);
+          Dt->set_weight(tv_4d);
+          Dt->set_domain_dimensions(&is_dims);
+          Dt->set_codomain_dimensions(&is_dims);
+          solver.add_regularization_operator(Dt);
+
+
+      }
+
+  }
       if (atv_4d > 0) {
-          auto Dt = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(3);
+		  auto is_dims_half = std::vector<size_t>{is_dims[0]/2,is_dims[1]/2,is_dims[2]/2,is_dims[3]/2};
+		  auto downS = boost::make_shared<cuScaleOperator<float,4>>();
+		  //auto downS = boost::make_shared<cuDownsampleOperator<float,3>>();
+		  downS->set_domain_dimensions(&is_dims);
+		  downS->set_codomain_dimensions(&is_dims_half);
+
+		  auto Dt = boost::make_shared<cuPartialDifferenceOperator<float,4>>(3);
+		  Dt->set_domain_dimensions(&is_dims_half);
+		  Dt->set_codomain_dimensions(&is_dims_half);
+		  auto Dt2 = boost::make_shared<multiplicationOperatorContainer<cuNDArray<float>>>();
+		  Dt2->add_operator(downS);
+		  Dt2->add_operator(Dt);
+		  Dt2->set_weight(atv_4d);
+		  solver.add_regularization_operator(Dt2);
+		  /*
+          auto Dt = boost::make_shared<cuPartialDifferenceOperator<float, 4>>(3);
           Dt->set_domain_dimensions(&is_dims);
           Dt->set_codomain_dimensions(&is_dims);
 
 
 
-          auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
+          auto Dx = boost::make_shared<cuPartialDifferenceOperator<float,4>>(0);
           Dx->set_domain_dimensions(&is_dims);
           Dx->set_codomain_dimensions(&is_dims);
 
-          auto Dy = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(1);
+          auto Dy = boost::make_shared<cuPartialDifferenceOperator<float, 4>>(1);
           Dy->set_domain_dimensions(&is_dims);
           Dy->set_codomain_dimensions(&is_dims);
 
 
-          auto Dz = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(2);
+          auto Dz = boost::make_shared<cuPartialDifferenceOperator<float, 4>>(2);
           Dz->set_domain_dimensions(&is_dims);
           Dz->set_codomain_dimensions(&is_dims);
 
@@ -570,87 +654,46 @@ int main(int argc, char** argv)
           Dz2->set_weight(atv_4d);
 
           solver.add_regularization_group({Dx2, Dy2, Dz2});
-
+*/
 
       }
 
-/*
-	auto projections = *ps->get_projections();
-  	auto prior_weight = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
-  	//sqrt_inplace(prior_weight.get());
-  	std::cout << "Prior min " << min(prior_weight.get()) << std::endl;
-  	//*prior_weight -= min(prior_weight.get());
-  	*prior_weight /= asum(prior_weight.get())/prior_weight->get_number_of_elements();
-  	*prior_weight -= max(prior_weight.get());
-  	*prior_weight *= float(-1);
-  	//clamp_min(prior_weight.get(),float(1e-2));
-  	//reciprocal_inplace(prior_weight.get());
+      std::cout << "PENGUIN? " << std::endl;
+	  if (framelet_weight > 0){
+		  auto stencils = std::vector<vector_td<float,3>>({
+				  vector_td<float,3>(-1,0,1),vector_td<float,3>(-1,2,-1),vector_td<float,3>(1,2,1) });
+
+          std::cout << "Framelet weight " << framelet_weight << std::endl;
+		  for (auto stencil : stencils) {
+              std::cout << "Adding operators " << std::endl;
+			  auto Rx = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 0);
+			  Rx->set_weight(framelet_weight);
+			  Rx->set_domain_dimensions(&is_dims);
+			  Rx->set_codomain_dimensions(&is_dims);
 
 
-  	write_nd_array(prior_weight.get(),"prior.real");
-  	//cudaDeviceReset();
-  	auto Wt = boost::make_shared<weightingOperator<cuNDArray<float>>>(prior_weight,Dt);
-	Wt->set_weight(tv_weight);
-  	Wt->set_domain_dimensions(&is_dims);
-  	Wt->set_codomain_dimensions(&is_dims);
-*/
-  	//lver.add_regularization_operator(Dt);
+			  auto Ry = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 1);
+			  Ry->set_weight(framelet_weight);
+			  Ry->set_domain_dimensions(&is_dims);
+			  Ry->set_codomain_dimensions(&is_dims);
 
 
+			  auto Rz = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 2);
+			  Rz->set_weight(framelet_weight);
+			  Rz->set_domain_dimensions(&is_dims);
+			  Rz->set_codomain_dimensions(&is_dims);
+			  solver.add_regularization_group({Rx, Ry, Rz});
 
-
-  }
-  /*
-  if (pics_weight > 0){
-
-  	auto Dx = boost::make_shared<cuPartialDerivativeOperator<float,4>>(0);
-  	Dx->set_weight(pics_weight);
-  	Dx->set_domain_dimensions(&is_dims);
-  	Dx->set_codomain_dimensions(&is_dims);
-
-  	auto Dy = boost::make_shared<cuPartialDerivativeOperator<float,4>>(1);
-  	Dy->set_weight(pics_weight);
-  	Dy->set_domain_dimensions(&is_dims);
-  	Dy->set_codomain_dimensions(&is_dims);
-
-
-  	auto Dz = boost::make_shared<cuPartialDerivativeOperator<float,4>>(2);
-  	Dz->set_weight(pics_weight);
-  	Dz->set_domain_dimensions(&is_dims);
-  	Dz->set_codomain_dimensions(&is_dims);
-
-  	solver.add_regularization_group({Dx,Dy,Dz},prior);
-
-
-  }*/
-
-/*
-	if (tv_weight > 0){
-
-		auto Dx = boost::make_shared<cuDCTDerivativeOperator<float>>(0);
-		Dx->set_weight(tv_weight);
-		Dx->set_domain_dimensions(&is_dims);
-		Dx->set_codomain_dimensions(&is_dims);
-
-		auto Dy = boost::make_shared<cuDCTDerivativeOperator<float>>(1);
-		Dy->set_weight(tv_weight);
-		Dy->set_domain_dimensions(&is_dims);
-		Dy->set_codomain_dimensions(&is_dims);
-
-
-		auto Dz = boost::make_shared<cuDCTDerivativeOperator<float>>(2);
-		Dz->set_weight(tv_weight);
-		Dz->set_domain_dimensions(&is_dims);
-		Dz->set_codomain_dimensions(&is_dims);
+              auto Rt = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 3);
+              Rt->set_weight(framelet_weight);
+              Rt->set_domain_dimensions(&is_dims);
+              Rt->set_codomain_dimensions(&is_dims);
+              solver.add_regularization_operator(Rt);
+		  }
+	  }
 
 
 
-		solver.add_regularization_group({Dx,Dy,Dz});
-
-
-	}
-
-*/
 
 	if (dct_weight > 0){
 		auto dctOp = boost::make_shared<cuDCTOperator<float>>();
@@ -711,6 +754,8 @@ int main(int argc, char** argv)
 	std::cout << "Result sum " << asum(result.get()) << std::endl;
 	//saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
 
+	write_nd_array(result.get(),"reconstruction.real");
+
 
 	if (wavelet_weight > 0){
 		osMOMSolverF<cuNDArray<float>> solverF;
@@ -732,6 +777,19 @@ int main(int argc, char** argv)
 
 		result = solverF.solve(projections.get());
 
+	}
+
+	if (nlm_noise > 0){
+
+		float* result_data = result->get_data_ptr();
+
+
+		for (int i = 0; i < result->get_size(3); i++){
+			cuNDArray<float> result_view(prior->get_dimensions(),result_data);
+
+//			nonlocal_means_ref(&result_view,prior.get(),nlm_noise);
+			result_data += result_view.get_number_of_elements();
+		}
 	}
 
 	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,floatd3(0,0,0),command_line_string.str(),iterations);

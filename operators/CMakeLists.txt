@@ -9,9 +9,13 @@ cuda_add_library( tomography_operators SHARED
   cuATrousWavelet.cu
   cuEdgeWavelet.cu
   cuDCT.cu
+		cuPartialDifferenceOperator.cu
+		cuSmallConvOperator.cu
+		cuScaleOperator.cu
 )
 
-install(FILES 	
+install(FILES
+		cuPartialDifferenceOperator.h
 	hoCuPartialDerivativeOperator.h
 	cuGaussianFilterOperator.h
 	subsetOperator.h
