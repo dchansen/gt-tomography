@@ -29,7 +29,7 @@
 #include "CBSubsetOperator.h"
 #include "osSPSSolver.h"
 #include "osMOMSolver.h"
-#include "osMOMSolverD.h"
+#include "cuOSMOMSolverD.h"
 #include "osMOMSolverD2.h"
 #include "hoCuNCGSolver.h"
 #include "osMOMSolverD3.h"
@@ -65,6 +65,7 @@
 #include "cuNCGSolver.h"
 #include "CT_acquisition.h"
 #include "cuScaleOperator.h"
+#include "cuTVPrimalDualOperator.h"
 using namespace std;
 using namespace Gadgetron;
 
@@ -112,7 +113,7 @@ void scatter_correct(boost::shared_ptr<CBCT_binning>  binning, boost::shared_ptr
 
 	E->offset_correct(&cu_proj);
 
-	osMOMSolverD<cuNDArray<float>> solver;
+	cuOSMOMSolverD<float> solver;
 	solver.set_encoding_operator(E);
 	solver.set_max_iterations(10);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
@@ -515,6 +516,7 @@ int main(int argc, char** argv)
 
 	if (atv_weight > 0) {
 		auto is_dims_half = std::vector<size_t>{is_dims[0]/2,is_dims[1]/2,is_dims[2]/2,is_dims[3]};
+
 		auto Dx = boost::make_shared<cuPartialDifferenceOperator<float,3>>(0);
 
 		Dx->set_domain_dimensions(&is_dims_half);
@@ -568,6 +570,11 @@ int main(int argc, char** argv)
 
 	if (tv_weight > 0) {
 
+		auto TV = boost::make_shared<cuTVPrimalDualOperator<float>>();
+		TV->set_weight(tv_weight);
+		solver.add_regularization_operator(TV);
+
+		/*
       auto Dx = boost::make_shared<cuPartialDifferenceOperator<float, 3>>(0);
       Dx->set_weight(tv_weight);
       Dx->set_domain_dimensions(&is_dims);
@@ -585,7 +592,7 @@ int main(int argc, char** argv)
       Dz->set_codomain_dimensions(&is_dims);
       solver.add_regularization_group({Dx, Dy, Dz});
 
-
+*/
 
 
 

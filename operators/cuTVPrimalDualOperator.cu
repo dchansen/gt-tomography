@@ -1,11 +1,10 @@
 
-
-
-
 #include <vector_td_utilities.h>
+#include "cuTVPrimalDualOperator.h"
+#include <cuNDArray_math.h>
 
-
-template<class T> __global__ static void cuTVPrimalKernel(float* in, float* out, vector_td<float,3> dims){
+using namespace Gadgetron;
+template<class T> __global__ static void cuTVPrimalKernel(T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims, T omega,T weight){
 
     const int elements = prod(dims);
 	
@@ -24,7 +23,8 @@ template<class T> __global__ static void cuTVPrimalKernel(float* in, float* out,
 			result[i] = in[co_to_idx(co2,dims)]-val1;
 			co2[i] = co[i];
 		}
-		result /= max(1,norm(result));
+		result *= weight/(T(1.0)+omega);
+		result /= max(T(1),norm(result));
         const int idx = ix+iy*dims[0]+iz*dims[0]*dims[1];
 		for (int i =0; i < 3; i++)
 			atomicAdd(&out[idx+i*elements],result[i]);
@@ -34,7 +34,7 @@ template<class T> __global__ static void cuTVPrimalKernel(float* in, float* out,
 };
 
 
-template<class T> __global__ static void cuTVDualKernel(float* in, float* out, vector_td<float,3> dims){
+template<class T> __global__ static void cuTVDualKernel(T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims,T weight){
 
     const int elements = prod(dims);
 	
@@ -53,11 +53,52 @@ template<class T> __global__ static void cuTVDualKernel(float* in, float* out, v
 			co2[i] = (co[i]+dims[i]-1)%dims[i];
 			auto result = in[co_to_idx(co2,dims)]-val1;
 			co2[i] = co[i];
-			atomicAdd(&out[idx+i*elements],result);
+			atomicAdd(&out[idx+i*elements],result*weight);
 		}
-		
-			
-		
     }
 
 };
+
+
+template<class T> void Gadgetron::cuTVPrimalDualOperator<T>::primalDual(cuNDArray<T>* in, cuNDArray<T>* out, T sigma, bool accumulate){
+
+	if (!in->dimensions_equal(out))
+	throw std::runtime_error("Input and reference dimensions must agree");
+
+	if (!accumulate) clear(out);
+
+	auto dims3D = std::vector<size_t>{in->get_size(0),in->get_size(1),in->get_size(2)};
+	vector_td<int,3> dims = vector_td<int,3>(from_std_vector<size_t,3>(dims3D));
+
+
+	dim3 threads(8, 8,8);
+	dim3 grid((dims[0]+threads.x-1)/threads.x, (dims[1]+threads.y-1)/threads.y,(dims[2]+threads.z-1)/threads.z);
+
+	T* data_in = in->get_data_ptr();
+	T* data_out = out->get_data_ptr();
+
+	auto dimsGrad3d = dims3D;
+	dims3D.push_back(3);
+
+	cuNDArray<T> grad3D(dims3D);
+
+
+
+
+	for (int i = 0; i < in->get_size(3); i++){
+		clear(&grad3D);
+		cuTVPrimalKernel<<<grid,threads>>>(data_in,grad3D.get_data_ptr(),dims,sigma*alpha,weight);
+		cudaDeviceSynchronize();
+		cuTVDualKernel<<<grid,threads>>>(grad3D.get_data_ptr(),data_out,dims,weight);
+		data_in += prod(dims);
+		data_out += prod(dims);
+	}
+
+
+};
+
+
+
+
+
+template class Gadgetron::cuTVPrimalDualOperator<float>;

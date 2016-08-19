@@ -12,6 +12,7 @@ cuda_add_library( tomography_operators SHARED
 		cuPartialDifferenceOperator.cu
 		cuSmallConvOperator.cu
 		cuScaleOperator.cu
+		cuTVPrimalDualOperator.cu
 )
 
 install(FILES

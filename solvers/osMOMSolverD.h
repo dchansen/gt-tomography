@@ -13,6 +13,7 @@
 #include <functional>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
+#include "primalDualOperator.h"
 
 namespace Gadgetron{
 template <class ARRAY_TYPE> class osMOMSolverD : public solver< ARRAY_TYPE,ARRAY_TYPE> {
@@ -46,16 +47,17 @@ public:
 
 	void set_dump(bool d){dump = d;}
 	virtual void add_regularization_operator(boost::shared_ptr<linearOperator<ARRAY_TYPE>> op){
+		regularization_operators.push_back(boost::make_shared<linearPrimalDualOperator>(op));
+	}
+
+	virtual void add_regularization_operator(boost::shared_ptr<primalDualOperator<ARRAY_TYPE>> op){
 		regularization_operators.push_back(op);
 	}
 
 	virtual void add_regularization_group(std::initializer_list<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops){
-		regularization_groups.push_back(std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>>(ops));
+		regularization_operators.push_back(boost::make_shared<linearGroupPrimalDualOperator>(ops));
 	}
 
-	virtual void add_regularization_group(std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops){
-		regularization_groups.push_back(ops);
-	}
 
 
 	virtual void set_tau(REAL tau){
@@ -121,7 +123,6 @@ public:
 
 
 
-		REAL avg_lambda = calc_avg_lambda();
 		REAL t = 1;
 		REAL told = 1;
 		if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
@@ -154,7 +155,7 @@ public:
 				}
 
 
-				denoise(*x,*z,*precon_image,1.0,avg_lambda);
+				denoise(*x,*z,*precon_image,1.0);
 				//*x = *z;
 
 				//axpy(REAL(_beta),&tmp_image,x);
@@ -228,35 +229,15 @@ public:
 
 protected:
 
-	REAL calc_avg_lambda(){
-		REAL result = 0;
-		auto num = 0u;
-		for (auto op : regularization_operators){
-			auto w = op->get_weight();
-			result += w;
-			num++;
-		}
 
-		for (auto & group : regularization_groups)
-			for (auto op : group){
-				auto w = op->get_weight();
-				std::cout << "Weight " << w << std::endl;
-				result += w;
-				num++;
-			}
 
-		result /= num;
-
-		return result;
-
-	}
-	void denoise(ARRAY_TYPE& x, ARRAY_TYPE& s, ARRAY_TYPE& precon,REAL scaling,REAL avg_lambda ){
-		REAL gam=0.35/(scaling*avg_lambda)/(precon.get_number_of_elements()/asum(&precon));
+	void denoise(ARRAY_TYPE& x, ARRAY_TYPE& s, ARRAY_TYPE& precon,REAL avg_lambda ){
+		REAL gam=0.35/(avg_lambda)/(precon.get_number_of_elements()/asum(&precon));
 		REAL L = 4; //Hmm.. this seems a little..well... guessy?
 		REAL tau = tau0;
 		REAL sigma = 1/(tau*L*L);
 		ARRAY_TYPE g(x.get_dimensions());
-		if (regularization_groups.empty() && regularization_operators.empty()){
+		if (regularization_operators.empty()){
 			x = s;
 			return;
 		}
@@ -265,52 +246,10 @@ protected:
 		for (auto it = 0u; it < reg_steps_; it++){
 			clear(&g);
 			for (auto reg_op : regularization_operators){
-				ARRAY_TYPE data(reg_op->get_codomain_dimensions());
-				reg_op->mult_M(&x,&data);
-				data *= sigma*reg_op->get_weight()/avg_lambda;
-				//updateF is the resolvent operator on the regularization
-				updateF(data, denoise_alpha, sigma);
-				data *= reg_op->get_weight()/avg_lambda;
-				std::cout << "Reg val: " << asum(&data) << std::endl;
-				reg_op->mult_MH(&data,&g,true);
-			}
-
-			for (auto & reg_group : regularization_groups){
-				std::vector<ARRAY_TYPE> datas(reg_group.size());
-				REAL val = 0;
-				REAL reg_val = 0;
-				for (auto i = 0u; i < reg_group.size(); i++){
-					datas[i] = ARRAY_TYPE(reg_group[i]->get_codomain_dimensions());
-					reg_group[i]->mult_M(&x,&datas[i]);
-					reg_val += asum(&datas[i])*reg_group[i]->get_weight();
-					datas[i] *= sigma*reg_group[i]->get_weight()/avg_lambda;
-
-				}
-
-				std::cout << "Reg val: " << reg_val << " Scaling " << scaling*avg_lambda  << std::endl;
-				//updateFgroup is the resolvent operators on the group
-				updateFgroup(datas,denoise_alpha,sigma);
-
-				for (auto i = 0u; i < reg_group.size(); i++){
-					datas[i] *= reg_group[i]->get_weight()/avg_lambda;
-					reg_group[i]->mult_MH(&datas[i],&g,true);
-
-				}
-
+					reg_op->primalDual(&x,&g,sigma,true);
 			}
 			//updateG is the resolvent operator on the |x-s| part of the optimization
-			axpy(-tau,&g,&x);
-			g = s;
-			g /= precon;
-
-			axpy(tau/(scaling*avg_lambda),&g,&x);
-
-			g = precon;
-
-			reciprocal_inplace(&g);
-			g *= tau/(scaling*avg_lambda);
-			g += REAL(1);
-			x /= g;
+			this->updateG(g,x,s,precon,tau,avg_lambda);
 			//x *= 1/(1+tau/(scaling*avg_lambda));
 			REAL theta = 1/std::sqrt(1+2*gam*tau);
 			tau *= theta;
@@ -319,8 +258,24 @@ protected:
 		}
 	}
 
-	std::vector<std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>>> regularization_groups;
-	std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE> >> regularization_operators;
+
+	virtual void updateG(ARRAY_TYPE& g, ARRAY_TYPE& x,ARRAY_TYPE& s, ARRAY_TYPE& precon, REAL tau, REAL avg_lambda )
+	{
+		axpy(-tau,&g,&x);
+		g = s;
+		g /= precon;
+
+		axpy(tau/(avg_lambda),&g,&x);
+
+		g = precon;
+
+		reciprocal_inplace(&g);
+		g *= tau/(avg_lambda);
+		g += REAL(1);
+		x /= g;
+	}
+	std::vector<boost::shared_ptr<primalDualOperator<ARRAY_TYPE>>> regularization_operators;
+
 
 	int _iterations;
 	REAL _beta, _gamma, _alpha, _kappa,tau0, denoise_alpha;
@@ -329,5 +284,66 @@ protected:
 	boost::shared_ptr<subsetOperator<ARRAY_TYPE> > encoding_operator_;
 	boost::shared_ptr<ARRAY_TYPE> preconditioning_image_;
 
+
+private:
+	class linearPrimalDualOperator : public primalDualOperator<ARRAY_TYPE>{
+
+	public:
+
+		linearPrimalDualOperator(boost::shared_ptr<linearOperator<ARRAY_TYPE>> in_op, REAL alpha = 0) :
+		op(in_op), denoise_alpha(alpha){}
+
+		virtual void primalDual(ARRAY_TYPE* in, ARRAY_TYPE* out,REAL sigma, bool accumulate){
+			auto data = ARRAY_TYPE(out->get_dimensions());
+			op->mult_M(in,&data,false);
+			data *= sigma*op->get_weight();
+			updateF(data,denoise_alpha,sigma);
+			op->mult_MH(&data,out,accumulate);
+
+		}
+
+
+	private:
+		boost::shared_ptr<linearOperator<ARRAY_TYPE>> op;
+		REAL denoise_alpha;
+
+	};
+
+	class linearGroupPrimalDualOperator : public primalDualOperator<ARRAY_TYPE>{
+
+	public:
+
+		linearGroupPrimalDualOperator(std::initializer_list<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> in_ops, REAL alpha = 0) :
+				ops(in_ops), denoise_alpha(alpha){}
+
+		virtual void primalDual(ARRAY_TYPE* in, ARRAY_TYPE* out,REAL sigma, bool accumulate){
+			if (!accumulate) clear(out);
+			std::vector<ARRAY_TYPE> datas(ops.size());
+			REAL reg_val = 0;
+			for (auto i = 0u; i < ops.size(); i++){
+				datas[i] = ARRAY_TYPE(ops[i]->get_codomain_dimensions());
+				ops[i]->mult_M(in,&datas[i]);
+				reg_val += asum(&datas[i])*ops[i]->get_weight();
+				datas[i] *= sigma*ops[i]->get_weight();
+
+			}
+
+			std::cout << "Reg val: " << reg_val << std::endl;
+			updateFgroup(datas,denoise_alpha,sigma);
+			for (auto i = 0u; i < ops.size(); i++){
+				datas[i] *= ops[i]->get_weight();
+				ops[i]->mult_MH(&datas[i],out,true);
+
+			}
+
+
+		}
+
+
+	private:
+		std::vector<boost::shared_ptr<linearOperator<ARRAY_TYPE>>> ops;
+		REAL denoise_alpha;
+
+	};
 };
 }
