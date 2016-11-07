@@ -152,7 +152,7 @@ po::options_description desc("Allowed options");
 	E4D->setup(acquisition,ps_bd4d,is_dims_in_mm);
 	E4D->set_use_filtered_backprojection(true);
 	E4D->set_domain_dimensions(&is_dims);
-
+/*
 	hoCuNDArray<float> fdk(*expand(&fdk_3d,numBins));
 	hoCuNDArray<float> diff_proj(projections.get_dimensions());
 
@@ -162,12 +162,12 @@ po::options_description desc("Allowed options");
 	diff_proj *= scaler;
 	projections -= diff_proj;
 	//projections *= -1.0f;
-
+*/
 	hoCuNDArray<float> result(&is_dims);
 	E4D->mult_MH(&projections,&result);
 	//result *= 10.0f;
 	//axpy(scaler,&fdk,&result);
-	result += fdk;
+	//result += fdk;
 
 	//write_nd_array<float>( &result, image_filename.c_str() );
 	write_dicom(&result,"",is_dims_in_mm);

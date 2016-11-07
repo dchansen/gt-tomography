@@ -230,7 +230,7 @@ int main(int argc, char** argv)
 	solver.set_huber(huber);
 	solver.set_reg_steps(reg_iter);
 	//solver.set_rho(rho);
-
+	solver.set_beta(1e-6);
   if (tv_weight > 0) {
 
 	  auto Dx = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(0);
@@ -250,7 +250,7 @@ int main(int argc, char** argv)
 	  Dz->set_codomain_dimensions(&is_dims);
 
 	  solver.add_regularization_group({Dx, Dy, Dz});
-	  solver.set_beta(tv_weight);
+
 	  if (tv_4d > 0) {
 		  auto Dt = boost::make_shared<cuPartialDerivativeOperator<float, 4>>(3);
 		  Dt->set_weight(tv_4d);
@@ -320,7 +320,7 @@ int main(int argc, char** argv)
 
 	auto projections = ps->get_projections();
 	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
-	E->set_use_offset_correction(false);
+	//E->set_use_offset_correction(false);
 
 	//boost::shared_ptr<cuNDArray<bool>> mask;
 	//mask = E->calculate_mask(projections,0.03f);
@@ -356,6 +356,7 @@ int main(int argc, char** argv)
   }
 	 */
 	auto airscan = downsample_projections(ps->get_airscan().get(),downsamples);
+
 	boost::shared_ptr<hoCuNDArray<float>> result;
 	{
 		GPUTimer tim("Solver");

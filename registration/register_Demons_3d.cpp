@@ -140,7 +140,7 @@ int main(int argc, char** argv)
   HS.set_sigmaVDiff(sigma_vdiff);
   HS.set_compositive(composite);
   HS.set_exponential(true);
- // HS.use_normalized_gradient_field(50);
+  HS.use_normalized_gradient_field(0.01);
 
   // Run registration
   //

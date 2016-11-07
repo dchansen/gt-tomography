@@ -1,7 +1,10 @@
 
 #include <vector_td_utilities.h>
 #include "cuTVPrimalDualOperator.h"
+#include "cuPartialDifferenceOperator.h"
 #include <cuNDArray_math.h>
+#include <cuSolverUtils.h>
+#include <cuNDArray_fileio.h>
 
 using namespace Gadgetron;
 template<class T> __global__ static void cuTVPrimalKernel(T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims, T omega,T weight){
@@ -37,24 +40,25 @@ template<class T> __global__ static void cuTVPrimalKernel(T* __restrict__ in, T*
 template<class T> __global__ static void cuTVDualKernel(T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims,T weight){
 
     const int elements = prod(dims);
-	
+
     const int ix = blockIdx.x*blockDim.x+threadIdx.x;
 	const int iy = blockIdx.y*blockDim.y+threadIdx.y;
 	const int iz = blockIdx.z*blockDim.z+threadIdx.z;
 	const auto co = vector_td<int,3>(ix,iy,iz);
-	
+
     if (co < dims){
 		const int idx = ix+iy*dims[0]+iz*dims[0]*dims[1];
-		auto val1 = in[co_to_idx(co,dims)];
+		T result = 0;
 		auto co2 = co;
         for (int i = 0; i < 3; i++){
-			//co[DIM] = (co[DIM]+SKIP+dims[DIM])%dims[DIM];
-			
+			auto val1 = in[idx+i*elements];
+
 			co2[i] = (co[i]+dims[i]-1)%dims[i];
-			auto result = in[co_to_idx(co2,dims)]-val1;
+			result += in[co_to_idx(co2,dims)+i*elements]-val1;
 			co2[i] = co[i];
-			atomicAdd(&out[idx+i*elements],result*weight);
+
 		}
+		atomicAdd(&out[idx],result*weight);
     }
 
 };
@@ -78,18 +82,17 @@ template<class T> void Gadgetron::cuTVPrimalDualOperator<T>::primalDual(cuNDArra
 	T* data_out = out->get_data_ptr();
 
 	auto dimsGrad3d = dims3D;
-	dims3D.push_back(3);
+	dimsGrad3d.push_back(3);
 
-	cuNDArray<T> grad3D(dims3D);
-
-
-
+	cuNDArray<T> grad3D(dimsGrad3d);
 
 	for (int i = 0; i < in->get_size(3); i++){
 		clear(&grad3D);
-		cuTVPrimalKernel<<<grid,threads>>>(data_in,grad3D.get_data_ptr(),dims,sigma*alpha,weight);
+
+		cuTVPrimalKernel<<<grid,threads>>>(data_in,grad3D.get_data_ptr(),dims,sigma*alpha,this->weight*sigma);
 		cudaDeviceSynchronize();
-		cuTVDualKernel<<<grid,threads>>>(grad3D.get_data_ptr(),data_out,dims,weight);
+
+		cuTVDualKernel<<<grid,threads>>>(grad3D.get_data_ptr(),data_out,dims,this->weight);
 		data_in += prod(dims);
 		data_out += prod(dims);
 	}

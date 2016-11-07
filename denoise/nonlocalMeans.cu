@@ -207,9 +207,9 @@ __global__ static void NLM3DBLOCKPRIOR(
         //Normalized counter for the NLM weight threshold
         //float fCount = 0;
         //Total sum of pixel weights
-        float sumWeights = 1;
+        float sumWeights = 0.1;
         //Result accumulator
-        float accum = pixel;
+        float accum = pixel*sumWeights;
 
         //Cycle through NLM window, surrounding (x, y) texel
         for (int i = -NLM_WINDOW_RADIUS; i <= NLM_WINDOW_RADIUS; i++)

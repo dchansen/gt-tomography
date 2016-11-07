@@ -166,8 +166,8 @@ int main(int argc, char** argv)
   E->set_domain_dimensions(&is_dims);
   E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
-  //hoCuGPBBSolver<float> solver;
-  hoCuNCGSolver<float> solver;
+  hoCuGPBBSolver<float> solver;
+  //hoCuNCGSolver<float> solver;
   //hoCuCgDescentSolver<float> solver;
 
   solver.set_encoding_operator(E);
@@ -175,7 +175,7 @@ int main(int argc, char** argv)
   solver.set_max_iterations(iterations);
   solver.set_output_mode(hoCuGPBBSolver<float>::OUTPUT_VERBOSE);
   solver.set_non_negativity_constraint(true);
-  solver.set_rho(rho);
+  //solver.set_rho(rho);
 
 
   hoCuNDArray<float> projections = *ps->get_projections();

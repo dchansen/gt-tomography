@@ -288,7 +288,7 @@ offset_correct( cuNDArray<float> *projections,
 
 	dim3 dimBlock, dimGrid;
 	setup_grid( prod(dims), &dimBlock, &dimGrid );
-	std::cout << "Calling offset correct" << std::endl;
+
 	offset_correct_kernel<<< dimGrid, dimBlock >>>( projections->get_data_ptr(), offsets, dims, phys_dims, SAD, SDD );
 	CHECK_FOR_CUDA_ERROR();
 }
@@ -488,9 +488,15 @@ conebeam_forwards_projection_kernel( float * __restrict__ projections,
 
 		startPoint /= is_dims_in_mm;
 
+
+
 		startPoint += 0.5f;
+
 		dir /= is_dims_in_mm;
-		dir /= float(num_samples_per_ray); // now in step size units
+		//dir /= float(num_samples_per_ray); // now in step size units
+		dir *= (aend-a1)/float(num_samples_per_ray); // now in step size units
+		//dir *= (1.0f-a1)/float(num_samples_per_ray); // now in step size units
+
 
 		//
 		// Perform line integration
@@ -1230,7 +1236,8 @@ void conebeam_backwards_projection( cuNDArray<float> *projections,
 
 
 	if (use_offset_correction)
-		offset_correct_sqrt( projections, raw_offsets, ps_dims_in_mm, SAD, SDD );
+		//offset_correct_sqrt( projections, raw_offsets, ps_dims_in_mm, SAD, SDD );
+		offset_correct( projections, raw_offsets, ps_dims_in_mm, SAD, SDD );
 
 	// Build array for input texture
 	//

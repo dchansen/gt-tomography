@@ -13,8 +13,8 @@ namespace Gadgetron {
         cuScaleOperator() : linearOperator<cuNDArray<T>>() {
 
         }
-        virtual void mult_M(cuNDArray<T>* in, cuNDArray<T>* out, bool accumulate) override;
-        virtual void mult_MH(cuNDArray<T>* in, cuNDArray<T>* out, bool accumulate) override;
+        virtual void mult_M(cuNDArray<T>* in, cuNDArray<T>* out, bool accumulate=false) override;
+        virtual void mult_MH(cuNDArray<T>* in, cuNDArray<T>* out, bool accumulate=false) override;
 
     };
 }

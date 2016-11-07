@@ -43,6 +43,7 @@
 
 #include "hdf5_utils.h"
 #include "hoCuOFPartialDerivativeOperator.h"
+#include "hoCuTVOFPartialDerivativeOperator.h"
 
 using namespace std;
 using namespace Gadgetron;
@@ -338,12 +339,16 @@ int main(int argc, char** argv)
             displacements = perform_registration(tv_recon, 0.01, 1, 3);
         }
         //clear(displacements.get());
-        auto DtOF = boost::make_shared<hoCuOFPartialDerivativeOperator<float>>();
+        //auto DtOF = boost::make_shared<hoCuOFPartialDerivativeOperator<float>>();
+
+		auto DtOF = boost::make_shared<hoCuTVOFPartialDerivativeOperator<float>>();
 		//auto DtOF = boost::make_shared<hoCuPartialDerivativeOperator<float,4>>(3);
         DtOF->set_weight(tv_weight4d);
         DtOF->set_displacement_field(displacements);
         DtOF->set_domain_dimensions(&is_dims);
-        DtOF->set_codomain_dimensions(&is_dims);
+		auto is_dimsTV = is_dims;
+		is_dimsTV.push_back(3);
+        DtOF->set_codomain_dimensions(&is_dimsTV);
         solver.add_regularization_operator(DtOF);
     }
 

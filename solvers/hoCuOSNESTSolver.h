@@ -188,14 +188,15 @@ public:
 					std::cout<< "L " << nrm2(&L) << std::endl;
 
 					calcC(&tmp_proj,&cu_I0);
-					std::cout << "Tmp_proj " << nrm2(&tmp_proj) << std::endl;
+					//std::cout << "Tmp_proj " << nrm2(&tmp_proj) << std::endl;
 					cudaStreamSynchronize(stream2);
 					tmp_proj *= cu_precon;
-					std::cout<< "Tmp_proj " << nrm2(&tmp_proj) << std::endl;
+					//std::cout<< "Tmp_proj " << nrm2(&tmp_proj) << std::endl;
 
 
 					this->encoding_operator_->mult_MH(&tmp_proj, &tmp_image, subset, false);
-					std::cout<< "Tmp_image " << nrm2(&tmp_image) << std::endl;
+					//std::cout<< "Tmp_image " << nrm2(&tmp_image) << std::endl;
+
 
 					//clamp_min(&tmp_image,1e-6);
 					/*
@@ -210,12 +211,15 @@ public:
 					//tmp_image += 1.0f;
 					axpy(_beta,&numerator,&L);
 */
+					std::cout << "Beta " << _beta << std::endl;
+                    std::cout <<"Tmp image " << mean(&tmp_image) << std::endl;
+                    tmp_image += _beta;
 
-					tmp_image += _beta;
-					L -= _beta;
+//					L += _beta;
+					axpy(_beta,z,&L);
 					L /= tmp_image;
-					std::cout<< "L " << nrm2(&L) << std::endl;
-					std::cout << "Min " << min(&L) << " max " << max(&L) << std::endl;
+					//std::cout<< "L " << nrm2(&L) << std::endl;
+					//std::cout << "Min " << min(&L) << " max " << max(&L) << std::endl;
                     //axpy(_beta,&d,&tmp_image);
 
 
@@ -226,7 +230,7 @@ public:
 					//denoise(*x,*z,1.0,avg_lambda);
                 }
 
-				/*
+
 				{
 
 
@@ -235,15 +239,16 @@ public:
 					denoise(*x,*z,1.0,avg_lambda);
 
 				}
-				 */
+
 
 
 
 				//axpy(REAL(_beta),&tmp_image,x);
 
-				clamp_min(z,T(0));
+				clamp_min(x,T(0));
+				clamp(x,0.0f,0.2f,0.0f,0.0f);
 
-				*x = *z;
+				*z = *x;
 
 				*z *= 1+(told-1)/t;
 				axpy(-(told-1)/t,uold,z);

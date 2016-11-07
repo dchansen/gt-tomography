@@ -33,7 +33,10 @@
 #include <sstream>
 #include <math_constants.h>
 #include <boost/program_options.hpp>
+#include <cuTv1dOperator.h>
 #include "dicomWriter.h"
+#include "cuDWTOperator.h"
+#include "cuATvOperator.h"
 
 using namespace std;
 using namespace Gadgetron;
@@ -88,6 +91,8 @@ int main(int argc, char** argv)
     		("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
     		("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
     		("TV,T",po::value<float>(),"TV Weight ")
+					("ATV",po::value<float>(),"TV Weight ")
+					("TV4D",po::value<float>(),"Total variation weight in temporal dimensions")
     		("PICS",po::value<float>(),"TV Weight of the prior image (Prior image compressed sensing)")
     		("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
     		("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
@@ -162,6 +167,7 @@ int main(int argc, char** argv)
 	is_dims.push_back(binning->get_number_of_bins());
 
 	cuNCGSolver<float> solver;
+	//gpBbSolver<cuNDArray<float>> solver;
 
 	hoCuNDArray<float>* projections = ps->get_projections().get();
 	std::cout << "Projection nrm" << nrm2(projections) << std::endl;
@@ -201,7 +207,7 @@ int main(int argc, char** argv)
 
 	if (vm.count("TV")){
 		std::cout << "Total variation regularization in use" << std::endl;
-		boost::shared_ptr<cuTvOperator<float,4> > tv(new cuTvOperator<float,4>);
+		boost::shared_ptr<cuTvOperator<float,3> > tv(new cuTvOperator<float,3>);
 		tv->set_weight(vm["TV"].as<float>());
 		solver.add_nonlinear_operator(tv);
 		/*
@@ -217,10 +223,41 @@ int main(int argc, char** argv)
 
 	}
 
+
+	if (vm.count("ATV")){
+		std::cout << "Advanced Total variation regularization in use" << std::endl;
+		boost::shared_ptr<cuATvOperator<float,3> > tv(new cuATvOperator<float,3>);
+		tv->set_weight(vm["ATV"].as<float>());
+		solver.add_nonlinear_operator(tv);
+		/*
+    boost::shared_ptr<hoCuTvOperator<float,4> > tv2(new hoCuTvOperator<float,4>);
+    tv2->set_step(2);
+    tv2->set_weight(vm["TV"].as<float>());
+    solver.add_nonlinear_operator(tv2);
+    boost::shared_ptr<hoCuTvOperator<float,4> > tv3(new hoCuTvOperator<float,4>);
+    tv3->set_step(3);
+    tv3->set_weight(vm["TV"].as<float>());
+    solver.add_nonlinear_operator(tv3);
+		 */
+
+	}
+
+	if (vm.count("TV4D")) {
+		std::cout << "Total variation 4d regularization in use" << std::endl;
+		boost::shared_ptr<cuTv1DOperator<float, 4> > tv4d(new cuTv1DOperator<float, 4>);
+		tv4d->set_weight(vm["TV4D"].as<float>());
+		solver.add_nonlinear_operator(tv4d);
+	}
+
+
 	if (vm.count("Wavelet")){
-		auto wave=  boost::make_shared<cuATrousOperator<float>>();
+		//auto wave=  boost::make_shared<cuATrousOperator<float>>();
+//		wave->set_domain_dimensions(&is_dims);
+		//wave->set_levels({2,2,2,2});
+		auto wave=  boost::make_shared<cuDWTOperator<float,3>>();
 		wave->set_domain_dimensions(&is_dims);
-		wave->set_levels({2,2,2,2});
+		wave->set_codomain_dimensions(&is_dims);
+		wave->set_levels(3);
 		wave->set_weight(vm["Wavelet"].as<float>());
 		solver.add_regularization_operator(wave,1);
 	}
@@ -247,6 +284,6 @@ int main(int argc, char** argv)
 
 	write_dicom(result.get(),command_line_string.str(),imageDimensions);
 	//write_nd_array( result.get(), outputFile.c_str());
-	//saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
+	saveNDArray2HDF5(result.get(),outputFile,imageDimensions,vector_td<float,3>(0),command_line_string.str(),iterations);
 
 }

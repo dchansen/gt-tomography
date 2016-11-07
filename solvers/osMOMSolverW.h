@@ -16,11 +16,11 @@
 #include "primalDualOperator.h"
 
 namespace Gadgetron{
-template <class ARRAY_TYPE> class osMOMSolverD : public solver< ARRAY_TYPE,ARRAY_TYPE> {
+template <class ARRAY_TYPE> class osMOMSolverW : public solver< ARRAY_TYPE,ARRAY_TYPE> {
 	typedef typename ARRAY_TYPE::element_type ELEMENT_TYPE;
 	typedef typename realType<ELEMENT_TYPE>::Type REAL;
 public:
-	osMOMSolverD() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
+	osMOMSolverW() :solver< ARRAY_TYPE,ARRAY_TYPE>() {
 		_iterations=10;
 		_beta = REAL(1);
 		_alpha = 0.2;
@@ -32,7 +32,7 @@ public:
 		denoise_alpha=0;
 		dump=true;
 	}
-	virtual ~osMOMSolverD(){};
+	virtual ~osMOMSolverW(){};
 
 	void set_max_iterations(int i){_iterations=i;}
 	int get_max_iterations(){return _iterations;}
@@ -127,16 +127,22 @@ public:
 		for (auto op : regularization_operators) op->set_weight(op->get_weight()/avg_lambda);
 
 
-		REAL t = 1;
-		REAL told = 1;
+
 		if( this->output_mode_ >= solver<ARRAY_TYPE,ARRAY_TYPE>::OUTPUT_VERBOSE ){
 			std::cout << "osMOM setup done, starting iterations:" << std::endl;
 		}
 
+
+		REAL t = 1;
+		REAL told = 1;
 		std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
 		REAL kappa_int = _kappa;
 		REAL step_size;
 		for (int i =0; i < _iterations; i++){
+
+			//clear(xold);
+			update_weights(z);
+
 			for (int isubset = 0; isubset < this->encoding_operator_->get_number_of_subsets(); isubset++){
 
 				t = 0.5*(1+std::sqrt(1+4*t*t));
@@ -167,28 +173,6 @@ public:
 					clamp_min(x,ELEMENT_TYPE(0));
 				}
 
-				/*
-				for (auto op : regularization_operators){
-
-					op->gradient(x,&tmp_image);
-					tmp_image /= nrm2(&tmp_image);
-					auto reg_val = op->magnitude(x);
-					std::cout << "Reg val: " << reg_val << std::endl;
-					ARRAY_TYPE y = *x;
-					axpy(-kappa_int,&tmp_image,&y);
-
-
-					while(op->magnitude(&y) > reg_val){
-
-						kappa_int /= 2;
-						axpy(kappa_int,&tmp_image,&y);
-						std::cout << "Kappa: " << kappa_int << std::endl;
-					}
-					reg_val = op->magnitude(&y);
-				 *x = y;
-
-				}
-				 */
 
 				*z = *x;
 				*z *= 1+(told-1)/t;
@@ -201,14 +185,6 @@ public:
 				//step_size *= 0.99;
 
 			}
-			//std::reverse(isubsets.begin(),isubsets.end());
-			//std::random_shuffle(isubsets.begin(),isubsets.end());
-			/*
-			ARRAY_TYPE tmp_proj(*in);
-			clear(&tmp_proj);
-			this->encoding_operator_->mult_M(x,&tmp_proj,false);
-			tmp_proj -= *in;
-			 */
 
 			if (dump){
 				std::stringstream ss;
@@ -216,11 +192,7 @@ public:
 
 				write_nd_array<ELEMENT_TYPE>(x,ss.str().c_str());
 			}
-			/*
-			//calc_regMultM(x,regEnc);
-			//REAL f = functionValue(&tmp_proj,regEnc,x);
-			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
-			 */
+
 		}
 		delete x,xold;
 		for (auto op : regularization_operators) op->set_weight(op->get_weight()*avg_lambda);
@@ -290,6 +262,11 @@ protected:
 
 
 private:
+	void update_weights(ARRAY_TYPE* x){
+		for (auto op : regularization_operators)
+			op->update_weights(x);
+	}
+
 	class linearPrimalDualOperator : public primalDualOperator<ARRAY_TYPE>{
 
 	public:
@@ -298,10 +275,12 @@ private:
 		op(in_op), denoise_alpha(alpha){}
 
 		virtual void primalDual(ARRAY_TYPE* in, ARRAY_TYPE* out,REAL sigma, bool accumulate){
-			auto data = ARRAY_TYPE(out->get_dimensions());
+			auto data = ARRAY_TYPE(op->get_codomain_dimensions());
 			op->mult_M(in,&data,false);
+			data *= *this->weight_arr;
 			data *= sigma*op->get_weight();
 			updateF(data,denoise_alpha,sigma);
+			data *= *this->weight_arr;
 			op->mult_MH(&data,out,accumulate);
 
 		}
@@ -309,6 +288,16 @@ private:
 		virtual REAL get_weight() override {return op->get_weight();}
 
 		virtual void set_weight(REAL weight_) override { op->set_weight(weight_);}
+
+		virtual void update_weights(ARRAY_TYPE* x) override {
+			this->weight_arr = boost::make_shared<ARRAY_TYPE>(op->get_codomain_dimensions());
+
+			op->mult_M(x,this->weight_arr.get());
+			abs_inplace(this->weight_arr.get());
+			*this->weight_arr += REAL(1);
+			reciprocal_inplace(this->weight_arr.get());
+
+		} ;
 
 	private:
 		boost::shared_ptr<linearOperator<ARRAY_TYPE>> op;
