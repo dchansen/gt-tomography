@@ -7,6 +7,7 @@
 #include "vector_td_io.h"
 #include "hoCuNDArray.h"
 #include "hoNDArray_utils.h"
+#include "projection_utils.h"
 //#include "hoRegistration_utils.h"
 
 #include <hdf5.h>
@@ -159,6 +160,18 @@ public:
 	{
 		for (int k = 0; k < num_downsamples; k++)
 			projections_ = boost::make_shared<hoCuNDArray<float> >(*Gadgetron::downsample<float,2>(projections_.get()));
+	}
+
+
+	void downsample( float factorX, float factorY )
+	{
+        auto tmp_proj = cuNDArray<float>(*projections_);
+
+		*projections_ = downsample_projections(&tmp_proj,factorX,factorY);
+
+        for (int i = 0; i < projections_->get_number_of_dimensions(); i++)
+            std::cout << projections_->get_size(i) << " ";
+        std::cout << std::endl;
 	}
 
 	void load( std::string filename )

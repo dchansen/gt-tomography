@@ -298,7 +298,7 @@ private:
 		op(in_op), denoise_alpha(alpha){}
 
 		virtual void primalDual(ARRAY_TYPE* in, ARRAY_TYPE* out,REAL sigma, bool accumulate){
-			auto data = ARRAY_TYPE(out->get_dimensions());
+			auto data = ARRAY_TYPE(op->get_codomain_dimensions());
 			op->mult_M(in,&data,false);
 			data *= sigma*op->get_weight();
 			updateF(data,denoise_alpha,sigma);

@@ -8,8 +8,8 @@ namespace Gadgetron {
 
 
     public:
-        cuWTVPrimalDualOperator() : primalDualOperator<cuNDArray<T>>(), alpha(0){}
-        cuWTVPrimalDualOperator(T alpha_ ) : primalDualOperator<cuNDArray<T>>(),alpha(alpha_){}
+        cuWTVPrimalDualOperator() : primalDualOperator<cuNDArray<T>>(), alpha(0),epsilon(1){}
+        cuWTVPrimalDualOperator(T alpha_,T epsilon_ ) : primalDualOperator<cuNDArray<T>>(),alpha(alpha_), epsilon(epsilon_){}
         virtual void primalDual(cuNDArray<T>* in, cuNDArray<T>* out,T sigma, bool accumulate) override;
 
         virtual void  update_weights(cuNDArray<T>* x) override;
@@ -18,6 +18,7 @@ namespace Gadgetron {
 
     private:
         T alpha;
+        T epsilon;
 
     };
 }

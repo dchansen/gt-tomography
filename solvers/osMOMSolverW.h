@@ -136,6 +136,12 @@ public:
 		REAL t = 1;
 		REAL told = 1;
 		std::vector<int> isubsets(boost::counting_iterator<int>(0), boost::counting_iterator<int>(this->encoding_operator_->get_number_of_subsets()));
+//		std::vector<int> isubsets;
+//        for (int k = 0; k < this->encoding_operator_->get_number_of_subsets()/2; k++){
+//            isubsets.push_back(k);
+//            isubsets.push_back(k+this->encoding_operator_->get_number_of_subsets()/2);
+//        }
+
 		REAL kappa_int = _kappa;
 		REAL step_size;
 		for (int i =0; i < _iterations; i++){
@@ -278,10 +284,14 @@ private:
 			auto data = ARRAY_TYPE(op->get_codomain_dimensions());
 			op->mult_M(in,&data,false);
 			data *= *this->weight_arr;
+
 			data *= sigma*op->get_weight();
 			updateF(data,denoise_alpha,sigma);
 			data *= *this->weight_arr;
+
+
 			op->mult_MH(&data,out,accumulate);
+
 
 		}
 
@@ -294,7 +304,7 @@ private:
 
 			op->mult_M(x,this->weight_arr.get());
 			abs_inplace(this->weight_arr.get());
-			*this->weight_arr += REAL(1);
+			*this->weight_arr += REAL(1e-3);
 			reciprocal_inplace(this->weight_arr.get());
 
 		} ;

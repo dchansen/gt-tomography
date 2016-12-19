@@ -15,6 +15,7 @@ cuda_add_library( tomography_operators SHARED
 		cuTVPrimalDualOperator.cu
 		cuWTVPrimalDualOperator.cu
 		cuBilateralFilter.cu
+		cuTFFT.cpp
 )
 target_link_libraries(tomography_operators gadgetron_toolbox_gpusolvers gadgetron_toolbox_gpucore gadgetron_toolbox_gpuoperators gadgetron_toolbox_gpunfft gadgetron_toolbox_gpucore gadgetron_toolbox_gpufft gadgetron_toolbox_gpureg ${CUDA_LIBRARIES} ${DCMTK_dcmdata_LIBRARY} ${DCMTK_oflog_LIBRARY} ${DCMTK_ofstd_LIBRARY} ${GDCM_LIBRARIES})
 install(FILES

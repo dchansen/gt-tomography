@@ -9,7 +9,7 @@
 
 using namespace Gadgetron;
 
-template<class T> __global__ static void cuTVKernel(T* __restrict__ in, T* __restrict__ weight_out, vector_td<int,3> dims){
+template<class T> __global__ static void cuTVKernel(T* __restrict__ in, T* __restrict__ weight_out, vector_td<int,3> dims,T epsilon){
 
 	const int elements = prod(dims);
 
@@ -31,7 +31,7 @@ template<class T> __global__ static void cuTVKernel(T* __restrict__ in, T* __res
 			co2[i] = co[i];
 		}
 
-		weight_out[idx] = T(1)/(1+sqrt(result));
+		weight_out[idx] = T(1)/(sqrt(result)+epsilon);
 
 	}
 
@@ -62,7 +62,7 @@ template<class T> void Gadgetron::cuWTVPrimalDualOperator<T>::update_weights(cuN
 	size_t elements3D = prod(dims);
 
 	for (int i = 0; i < x->get_size(3); i++){
-		cuTVKernel<<<grid,threads>>>(data_in,data_weights,dims);
+		cuTVKernel<<<grid,threads>>>(data_in,data_weights,dims,this->epsilon);
 		cudaDeviceSynchronize();
 		data_in += prod(dims);
 		data_weights += prod(dims);

@@ -202,7 +202,7 @@ namespace Gadgetron {
 
             startPoint += 0.5f;
             dir /= is_dims_in_mm;
-            dir /= float(num_samples_per_ray); // now in step size units
+            dir *= (aend-a1)/float(num_samples_per_ray); // now in step size units
 
             //if (co[0] == 350 && co[1] == 32) printf("Dir %f %f %f \n",dir[0],dir[1],dir[2]);
             //if (co[0] == 350 && co[1] == 32) printf("ADD %f \n",ADD);

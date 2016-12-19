@@ -430,7 +430,7 @@ conebeam_forwards_projection_kernel( float * __restrict__ projections,
 		//
 
 		const floatd2 ps_dims_in_pixels = floatd2(ps_dims_in_pixels_int[0], ps_dims_in_pixels_int[1]);
-		const floatd2 ps_spacing = ps_dims_in_mm / ps_dims_in_pixels;
+		//const floatd2 ps_spacing = ps_dims_in_mm / ps_dims_in_pixels;
 
 		// Determine projection angle and rotation matrix
 		//
@@ -995,7 +995,8 @@ conebeam_backwards_projection_kernel( float * __restrict__ image,
 			// Convert metric projection coordinates into pixel coordinates
 			//
 
-			floatd2 ps_pc = ((endPoint2d / ps_dims_in_mm) + floatd2(0.5f));
+			floatd2 ps_pc = ((endPoint2d / ps_dims_in_mm) + floatd2(0.5f))+floatd2(0.0f)/ps_dims_in_pixels;
+			//ps_pc[0] += 0.5f/ps_dims_in_pixels[0];
 
 			// Apply filter (filtered backprojection mode only)
 			//

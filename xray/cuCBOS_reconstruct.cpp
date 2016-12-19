@@ -50,6 +50,7 @@
 #include <operators/cuSmallConvOperator.h>
 #include <denoise/nonlocalMeans.h>
 #include <solvers/osMOMSolverW.h>
+#include <operators/cuTFFT.h>
 #include "cuSolverUtils.h"
 #include "osPDsolver.h"
 #include "osLALMSolver.h"
@@ -277,7 +278,7 @@ int main(int argc, char** argv)
 	uintd3 imageSize;
 	floatd3 voxelSize;
 	int device;
-	unsigned int downsamples;
+	floatd2 scale_factor;
 	unsigned int iterations;
 	unsigned int subsets;
 	float rho,tau,nlm_noise,bil_weight;
@@ -300,7 +301,7 @@ int main(int argc, char** argv)
     				("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
     				("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
     				("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    				("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+    				("downsample,D",po::value<floatd2>(&scale_factor)->default_value(floatd2(1,1)),"Downsample projections this factor")
     				("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     				("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight in spatial dimensions")
 							("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimensions")
@@ -342,6 +343,7 @@ int main(int argc, char** argv)
 		else if (a.type() == typeid(unsigned int)) command_line_string << it->second.as<unsigned int>();
 		else if (a.type() == typeid(float)) command_line_string << it->second.as<float>();
 		else if (a.type() == typeid(vector_td<float,3>)) command_line_string << it->second.as<vector_td<float,3> >();
+		else if (a.type() == typeid(vector_td<float,2>)) command_line_string << it->second.as<vector_td<float,2> >();
 		else if (a.type() == typeid(vector_td<int,3>)) command_line_string << it->second.as<vector_td<int,3> >();
 		else if (a.type() == typeid(vector_td<unsigned int,3>)) command_line_string << it->second.as<vector_td<unsigned int,3> >();
         else if (a.type() == typeid(bool)) command_line_string << it->second.as<bool>();
@@ -402,7 +404,9 @@ int main(int argc, char** argv)
 
 	//scatter_correct(binning,ps,ps->get_projections().get(),is_dims,imageDimensions);
 
-	ps->downsample(downsamples);
+	if (scale_factor[0] != 1 || scale_factor[1] != 1)
+		ps->downsample(scale_factor[0],scale_factor[1]);
+
 
 	//osLALMSolver<cuNDArray<float>> solver;
 	osMOMSolverD<cuNDArray<float>> solver;
@@ -420,7 +424,7 @@ int main(int argc, char** argv)
 		prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
 		write_nd_array(prior.get(),"prior.real");
 		//prior = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
-		//solver.set_x0(prior);
+		solver.set_x0(prior);
 	}
 
 /*
@@ -549,7 +553,8 @@ int main(int argc, char** argv)
 
 	if (tv_weight > 0) {
 
-		//auto TV = boost::make_shared<cuWTVPrimalDualOperator<float>>(0.0);
+		//auto TV = boost::make_shared<cuWTVPrimalDualOperator<float>>(0.0,1e-3);
+//
 		auto TV = boost::make_shared<cuTVPrimalDualOperator<float>>(0.0);
 		TV->set_weight(tv_weight);
 
@@ -578,18 +583,19 @@ int main(int argc, char** argv)
 
 
 
-      if (tv_4d > 0) {
 
-          auto Dt = boost::make_shared<cuPartialDifferenceOperator<float, 4>>(3);
-          Dt->set_weight(tv_4d);
-          Dt->set_domain_dimensions(&is_dims);
-          Dt->set_codomain_dimensions(&is_dims);
-          solver.add_regularization_operator(Dt);
-/**/
-
-      }
 
   }
+	if (tv_4d > 0) {
+
+		auto Dt = boost::make_shared<cuPartialDifferenceOperator<float, 4>>(3);
+		Dt->set_weight(tv_4d);
+		Dt->set_domain_dimensions(&is_dims);
+		Dt->set_codomain_dimensions(&is_dims);
+		solver.add_regularization_operator(Dt);
+/**/
+
+	}
       if (atv_4d > 0) {
 		  /*
 		  auto is_dims_half = std::vector<size_t>{is_dims[0]/2,is_dims[1]/2,is_dims[2]/2,is_dims[3]/2};
@@ -641,7 +647,7 @@ int main(int argc, char** argv)
 			  solver.add_regularization_group({Rx, Ry, Rz});
 
               auto Rt = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 3);
-              Rt->set_weight(framelet_weight);
+              Rt->set_weight(framelet_weight*5e-6);
               Rt->set_domain_dimensions(&is_dims);
               Rt->set_codomain_dimensions(&is_dims);
               solver.add_regularization_operator(Rt);
@@ -652,7 +658,8 @@ int main(int argc, char** argv)
 
 
 	if (dct_weight > 0){
-		auto dctOp = boost::make_shared<cuDCTOperator<float>>();
+		//auto dctOp = boost::make_shared<cuDCTOperator<float>>();
+		auto dctOp = boost::make_shared<cuTFFT>();
 		dctOp->set_domain_dimensions(&is_dims);
 		dctOp->set_weight(dct_weight);
 		solver.add_regularization_operator(dctOp);
@@ -662,7 +669,7 @@ int main(int argc, char** argv)
 	if (bil_weight > 0){
 		auto bilPrior = read_nd_array<float>(vm["prior"].as<string>().c_str());
 		auto cuBilPrior = boost::make_shared<cuNDArray<float>>(*bilPrior);
-		auto bilOp = boost::make_shared<cuBilateralPriorPrimalDualOperator>(0.005,8.0,cuBilPrior);
+		auto bilOp = boost::make_shared<cuBilateralPriorPrimalDualOperator>(0.002,8.0,cuBilPrior);
 		bilOp->set_weight(bil_weight);
 		solver.add_regularization_operator(bilOp);
 
