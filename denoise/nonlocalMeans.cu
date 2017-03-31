@@ -9,7 +9,7 @@
  *
  */
 
-#define NLM_WINDOW_RADIUS   5
+#define NLM_WINDOW_RADIUS   15
 #define NLM_BLOCK_RADIUS    3
 
 #define NLM_WINDOW_AREA     ( (2 * NLM_WINDOW_RADIUS + 1) * (2 * NLM_WINDOW_RADIUS + 1)*(2 * NLM_WINDOW_RADIUS + 1) )
@@ -21,9 +21,9 @@
 #define NLM_WEIGHT_THRESHOLD    0.10f
 #define NLM_LERP_THRESHOLD      0.10f
 
-#define BLOCKDIM_X 8
-#define BLOCKDIM_Y 8
-#define BLOCKDIM_Z 8
+#define BLOCKDIM_X 4
+#define BLOCKDIM_Y 4
+#define BLOCKDIM_Z 4
 #define BLOCKSTEP 4
 
 #include "nonlocalMeans.h"
@@ -143,8 +143,8 @@ __global__ static void NLM3DBLOCK(
                     float weightIJK = blockReduceSum(diff*diff);
 
                     //Derive final weight from color and geometric distance
-                    weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
-                    //weightIJK     = expf(-(weightIJK * Noise ));
+//                    weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
+                    weightIJK     = expf(-(weightIJK * Noise ));
 
 
                         accum += IJK * weightIJK;
@@ -586,16 +586,18 @@ void Gadgetron::nonlocal_means_block(
     clear(&weights);
 
     dim3 threads(BLOCKDIM_X, BLOCKDIM_Y,BLOCKDIM_Z);
+    float blockSize = threads.x*threads.y*threads.z;
 
     dim3 grid((imageW+threads.x-1)/threads.x, (imageH+threads.y-1)/threads.y,(imageD+threads.z-1)/threads.z);
 
     for (int offset =0; offset < BLOCKDIM_X/2; offset++) {
         NLM3DBLOCK << < grid, threads >> >
-                              (output->get_data_ptr(),weights.get_data_ptr(), imageW, imageH, imageD, offset,1.0 / (Noise * Noise));
+                              (output->get_data_ptr(),weights.get_data_ptr(), imageW, imageH, imageD, offset,1.0 / (blockSize*Noise * Noise));
 
         cudaDeviceSynchronize();
     }
     *output /= weights;
+
 
     cudaFreeArray(image_array);
 }

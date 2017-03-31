@@ -86,7 +86,10 @@ template<class T> void Gadgetron::cuTVPrimalDualOperator<T>::primalDual(cuNDArra
 
 	cuNDArray<T> grad3D(dimsGrad3d);
 
-	for (int i = 0; i < in->get_size(3); i++){
+	size_t remaining = 1;
+	for (int i = 3; i < in->get_number_of_dimensions(); i++) remaining *= in->get_size(i);
+
+	for (int i = 0; i < remaining; i++){
 		clear(&grad3D);
 
 		cuTVPrimalKernel<<<grid,threads>>>(data_in,grad3D.get_data_ptr(),dims,sigma*alpha,this->weight*sigma);

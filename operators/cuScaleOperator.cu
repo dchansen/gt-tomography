@@ -125,7 +125,7 @@ template<class T, unsigned int D> static cuNDArray<T> downscale2x1D(cuNDArray<T>
     auto vdims_in = vector_td<int,D>(from_std_vector<size_t,D>(in_dims));
 
     const size_t elements_per_batch = prod(vdims);
-    const size_t elements_in_per_batch = prod(vdims);
+    const size_t elements_in_per_batch = prod(vdims_in);
     const size_t elements_total = out.get_number_of_elements();
 
 

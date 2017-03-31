@@ -3,12 +3,14 @@
 #include "primalDualOperator.h"
 #include "cuTVPrimalDualOperator.h"
 #include <cuNDArray.h>
+#include "cuBoxFilterOperator.h"
 namespace Gadgetron {
     template<class T>
     class cuATVPrimalDualOperator : public cuTVPrimalDualOperator<T> {
     typedef cuTVPrimalDualOperator<T> parent;
 
         cuScaleOperator<T,3> scaleOp;
+//cuBoxFilterOperator<T,3> scaleOp;
     public:
         cuATVPrimalDualOperator() : parent() {}
         cuATVPrimalDualOperator(T alpha_ ) :  parent(alpha_){}

@@ -14,6 +14,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/make_shared.hpp>
 #include <tuple>
+#include <cuSolverUtils.h>
 
 namespace Gadgetron{
 template<class T> class hoCuOSMOMSolver : public solver< hoNDArray<T>,hoNDArray<T>> {

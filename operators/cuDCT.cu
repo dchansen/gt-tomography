@@ -14,7 +14,7 @@ template<class T, unsigned int S> __inline__ __device__ void dct_row(T * stencil
 		//result = 0;
 
 	__syncthreads();
-	stencil[k+col*S] = result*sqrt(1/(2.0f*S));
+	stencil[k+col*S] = result*sqrt(1/(2.0f*S))*(sqrt(T(k+1)));
 	__syncthreads();
 }
 
@@ -24,7 +24,7 @@ template<class T, unsigned int S> __inline__ __device__ void idct_row(T * stenci
 	const T factor = sqrt(2.0f/S);
 #pragma unroll
 	for (int i = 1; i < S; i++){
-		result += factor*stencil[i+col*S]*__cosf(CUDART_PI_F/S*(k+0.5f)*i);
+		result += factor*stencil[i+col*S]*__cosf(CUDART_PI_F/S*(k+0.5f)*i)*(sqrt(T(i+1)));
 	}
 	__syncthreads();
 	stencil[k+col*S] = result;
@@ -42,7 +42,7 @@ template<class T, unsigned int S> __inline__ __device__ void dct_col(T * stencil
 		//result =0;
 
 	__syncthreads();
-	stencil[k*S+col] = result*sqrt(1.0f/(2.0f*S));
+	stencil[k*S+col] = result*sqrt(1.0f/(2.0f*S))*(sqrt(T(k+1)));
 	__syncthreads();
 }
 
@@ -52,7 +52,7 @@ template<class T, unsigned int S> __inline__ __device__ void idct_col(T * stenci
 	const T factor = sqrt(2.0f/S);
 #pragma unroll
 	for (int i = 1; i < S; i++){
-		result += factor*stencil[i*S+col]*__cosf(CUDART_PI_F/S*(k+0.5f)*i);
+		result += factor*stencil[i*S+col]*__cosf(CUDART_PI_F/S*(k+0.5f)*i)*(sqrt(T(i+1)));
 	}
 	__syncthreads();
 	stencil[k*S+col] = result;
@@ -276,3 +276,9 @@ template void Gadgetron::dct2<float,4>(cuNDArray<float>* in,int);
 template void Gadgetron::idct2<float,4>(cuNDArray<float>* in,int);
 template void Gadgetron::dct<float,4>(cuNDArray<float>* ,int, int);
 template void Gadgetron::idct<float,4>(cuNDArray<float>* ,int, int);
+
+
+template void Gadgetron::dct2<float,2>(cuNDArray<float>* in,int);
+template void Gadgetron::idct2<float,2>(cuNDArray<float>* in,int);
+template void Gadgetron::dct<float,2>(cuNDArray<float>* ,int, int);
+template void Gadgetron::idct<float,2>(cuNDArray<float>* ,int, int);

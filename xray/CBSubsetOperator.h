@@ -62,12 +62,13 @@ public:
 
 protected:
 
-	boost::shared_ptr<hoCuNDArray<float>> permute_projections(boost::shared_ptr<hoCuNDArray<float>> projections, std::vector<unsigned int > & permutations);
+	boost::shared_ptr<hoCuNDArray<float>> permute_projections(boost::shared_ptr<hoNDArray<float>> projections, std::vector<unsigned int > & permutations);
 	std::vector<boost::shared_ptr<typename conebeamProjectionOperator<ARRAY>::type>> operators;
 
 	std::vector<boost::shared_ptr<std::vector<size_t> > > projection_dims;
 	std::vector<std::vector<float> > angles;
 	std::vector<std::vector<floatd2> > offsets;
+	std::vector<unsigned int> permutations; //Projection permutations
 };
 
 } /* namespace Gadgetron */

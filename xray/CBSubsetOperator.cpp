@@ -97,7 +97,6 @@ template<template<class> class ARRAY> void Gadgetron::CBSubsetOperator<ARRAY>::s
 
 
 	//Calculate the required permutation to order the actual projection array.
-	std::vector<unsigned int> permutations;
 	for (auto &subset : subset_projections){
 		for (auto proj : subset){
 			permutations.push_back(proj);
@@ -191,7 +190,7 @@ inline boost::shared_ptr<ARRAY<bool> > Gadgetron::CBSubsetOperator<ARRAY>::calcu
 }
 
 template<template<class> class ARRAY> boost::shared_ptr<hoCuNDArray<float> > Gadgetron::CBSubsetOperator<ARRAY>::permute_projections(
-		boost::shared_ptr<hoCuNDArray<float> > projections,
+		boost::shared_ptr<hoNDArray<float> > projections,
 		std::vector<unsigned int>  & permutations) {
 
 	auto dims = *projections->get_dimensions();

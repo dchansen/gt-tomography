@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <sstream>
 #include <boost/program_options.hpp>
+#include <proton/hdf5_utils.h>
 #include "cuDCTOperator.h"
 #include "dicomWriter.h"
 using namespace Gadgetron;
@@ -25,7 +26,7 @@ int main(int argc, char** argv)
   
   std::string acquisition_filename;
   std::string image_filename;
-	unsigned int downsamples;
+	floatd2 scale_factor;
 	uintd3 imageSize;
 	floatd3 is_dims_in_mm;
 	int device;
@@ -43,7 +44,8 @@ po::options_description desc("Allowed options");
     ("SAG","Use exact SAG correction if present")
     ("dimensions,d",po::value<floatd3>(&is_dims_in_mm)->default_value(floatd3(256,256,256)),"Image dimensions in mm. Overwrites voxelSize.")
     ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    ("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+            ("downsample,D",po::value<floatd2>(&scale_factor)->default_value(floatd2(1,1)),"Downsample projections this factor")
+
     ;
 
   po::variables_map vm;
@@ -83,10 +85,14 @@ po::options_description desc("Allowed options");
 	// Downsample projections if requested
 	//
 
-	{
-		GPUTimer timer("Downsampling projections");
-		acquisition->downsample(downsamples);
-	}
+
+
+      if (scale_factor[0] != 1 || scale_factor[1] != 1) {
+        GPUTimer timer("Downsampling projections");
+        acquisition->downsample(scale_factor[0], scale_factor[1]);
+
+      }
+
   
   // Load or generate binning data
   //
@@ -148,12 +154,20 @@ po::options_description desc("Allowed options");
     GPUTimer timer("Running 3D FDK reconstruction");
     E->mult_MH( &projections, &fdk_3d );
     cudaThreadSynchronize();
+
+    hoCuNDArray<float> tmp_proj(projections.get_dimensions());
+    E->mult_M(&fdk_3d,&tmp_proj,false);
+    float scaler = dot(&tmp_proj, &projections) / dot(&tmp_proj, &tmp_proj);
+    fdk_3d *= scaler;
+
   }
 
-  write_nd_array<float>( &fdk_3d, image_filename.c_str() );
+//  write_nd_array<float>( &fdk_3d, image_filename.c_str() );
 
   std::string s = "";
   write_dicom(&fdk_3d,s,is_dims_in_mm);
+
+  saveNDArray2HDF5(&fdk_3d,image_filename.c_str(),is_dims_in_mm,floatd3(0,0,0),"",0);
 
 /*
   cuSbCgSolver<float> sb;

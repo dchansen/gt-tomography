@@ -8,14 +8,16 @@ namespace Gadgetron {
 
 
     public:
-        cuTVPrimalDualOperator() : primalDualOperator<cuNDArray<T>>(), alpha(0){}
+        cuTVPrimalDualOperator() : primalDualOperator<cuNDArray<T>>(), alpha(0),offset(1){}
         cuTVPrimalDualOperator(T alpha_ ) : primalDualOperator<cuNDArray<T>>(),alpha(alpha_){}
+        void set_offset(int off){ offset = off;}
         virtual void primalDual(cuNDArray<T>* in, cuNDArray<T>* out,T sigma, bool accumulate) override;
 
 
 
     private:
         T alpha;
+        int offset;
 
     };
 }

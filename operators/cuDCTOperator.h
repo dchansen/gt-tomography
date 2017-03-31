@@ -6,10 +6,12 @@
 namespace Gadgetron {
 
 	template<class T> class cuDCTOperator : public Gadgetron::invertibleOperator<cuNDArray<T>> {
+
+		static constexpr int stencil_size = 4;
 	public:
 
 		cuDCTOperator(): invertibleOperator<cuNDArray<T>>(){
-			repetitions = 4;
+			repetitions = 2;
 		};
 
 		virtual ~cuDCTOperator(){};
@@ -24,12 +26,12 @@ namespace Gadgetron {
 			for (auto i = 0; i < repetitions; i++){
 				cuNDArray<T> tmp_view(in_dims,tmp->get_data_ptr()+elements*i);
 				tmp_view = *in;
-//				dct2<T,16>(&tmp_view,i*16/repetitions);
-//				if (in->get_size(2) > 1)
-//					dct<T,16>(&tmp_view,2,i*16/repetitions);
+				dct2<T,stencil_size>(&tmp_view,i*stencil_size/repetitions);
+				if (in->get_size(2) > 1)
+					dct<T,stencil_size>(&tmp_view,2,i*stencil_size/repetitions);
 				if (in->get_size(3) > 1)
 					dct<T,10>(&tmp_view,3,i*10/repetitions);
-				//dct2<T,16>(&tmp_view,16);
+				//dct2<T,2>(&tmp_view,2);
 			}
 
 			*tmp /= std::sqrt(T(repetitions));
@@ -51,12 +53,12 @@ namespace Gadgetron {
 			for (auto i = 0; i < repetitions; i++){
 				cuNDArray<T> in_view(out_dims,in->get_data_ptr()+i*elements);
 				cuNDArray<T> tmp(in_view);
-//				idct2<T,16>(&tmp,i*16/repetitions);
-//				if (out->get_size(2) > 1)
-//					idct<T,16>(&tmp,2,i*16/repetitions);
+				idct2<T,stencil_size>(&tmp,i*stencil_size/repetitions);
+				if (out->get_size(2) > 1)
+					idct<T,stencil_size>(&tmp,2,i*stencil_size/repetitions);
 				if (out->get_size(3) > 1)
 					idct<T,10>(&tmp,3,i*10/repetitions);
-				//idct2<T,16>(&tmp,16);
+				//idct2<T,2>(&tmp,2);
 				axpy(std::sqrt(T(1)/repetitions),&tmp,out);
 			}
 

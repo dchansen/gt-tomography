@@ -18,13 +18,15 @@ namespace Gadgetron {
 
         void mult_MH(cuNDArray<float> *, cuNDArray<float> *, bool) override;
 
-        virtual boost::shared_ptr< std::vector<size_t> > get_codomain_dimensions(){
+        virtual boost::shared_ptr< std::vector<size_t> > get_codomain_dimensions() override {
             auto res = this->get_domain_dimensions();
-            res->at(3) = res->at(3)+2;
+            res->insert(res->begin(),2);
+            //res->at(3) = res->at(3)+2;
+            res->at(4) = res->at(4)/2+1;
             return res;
         }
 
-        virtual void set_codomain_dimensions(std::vector<size_t>* size){
+        virtual void set_codomain_dimensions(std::vector<size_t>* size) override {
             throw std::runtime_error("Cannot set codomain dimension on cuTFFT");
         }
 

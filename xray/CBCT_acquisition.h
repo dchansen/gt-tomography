@@ -8,6 +8,7 @@
 #include "hoCuNDArray.h"
 #include "hoNDArray_utils.h"
 #include "projection_utils.h"
+#include <boost/filesystem.hpp>
 //#include "hoRegistration_utils.h"
 
 #include <hdf5.h>
@@ -178,7 +179,8 @@ public:
 	{
 		// Open hdf5 file
 		//
-
+		if (!boost::filesystem::exists(filename))
+			throw std::runtime_error("Projection file does not exist");
 		hid_t file_id = H5Fopen (filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
 
 		// Load geometry.

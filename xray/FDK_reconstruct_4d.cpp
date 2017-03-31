@@ -22,7 +22,7 @@ int main(int argc, char** argv)
 { 
   std::string acquisition_filename;
   std::string image_filename;
-	unsigned int downsamples;
+	floatd2 scale_factor;
 	uintd3 imageSize;
 	floatd3 is_dims_in_mm;
 	int device;
@@ -34,13 +34,13 @@ po::options_description desc("Allowed options");
     ("help", "produce help message")
     ("acquisition,a", po::value<string>(&acquisition_filename)->default_value("acquisition.hdf5"), "Acquisition data")
     ("samples,n",po::value<unsigned int>(),"Number of samples per ray")
-    ("output,f", po::value<string>(&image_filename)->default_value("fdk.real"), "Output filename")
+    ("output,f", po::value<string>(&image_filename)->default_value("fdk4f.hdf5"), "Output filename")
     ("size,s",po::value<uintd3>(&imageSize)->default_value(uintd3(512,512,1)),"Image size in pixels")
     ("binning,b",po::value<string>(&binning_filename)->default_value("binning.hdf5"),"Binning file for 3d reconstruction (used to exclude projections)")
     ("SAG","Use exact SAG correction if present")
     ("dimensions,d",po::value<floatd3>(&is_dims_in_mm)->default_value(floatd3(256,256,256)),"Image dimensions in mm. Overwrites voxelSize.")
     ("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    ("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+    ("downsample,D",po::value<floatd2>(&scale_factor)->default_value(floatd2(1,1)),"Downsample projections this factor")
     ;
 
   po::variables_map vm;
@@ -78,9 +78,10 @@ po::options_description desc("Allowed options");
 	// Downsample projections if requested
 	//
 
+    if (scale_factor[0] != 1 || scale_factor[1] != 1)
 	{
 		GPUTimer timer("Downsampling projections");
-		acquisition->downsample(downsamples);
+        acquisition->downsample(scale_factor[0],scale_factor[1]);
 	}
 
 
@@ -127,50 +128,50 @@ po::options_description desc("Allowed options");
 	E->set_use_filtered_backprojection(true);
 
 	hoCuNDArray<float> projections(*acquisition->get_projections());
-
-	{
-		GPUTimer timer("Running 3D FDK reconstruction");
-		E->mult_MH( &projections, &fdk_3d );
-	}
-
-
-	write_nd_array<float>( &fdk_3d, "fdk.real" );
-
-	/*4D FDK-MB algorithm starts here. McKinnon GC, RHT Bates,
-	 *
-	 *"Towards Imaging the Beating Heart Usefully with a Conventional CT Scanner,"
-	 *" Biomedical Engineering, IEEE Transactions on , vol.BME-28, no.2, pp.123,127, Feb. 1981
-	 * doi: 10.1109/TBME.1981.324785
-	 */
+    hoCuNDArray<float> result;
+    {
+        GPUTimer timer("Running 3D FDK reconstruction");
+        E->mult_MH(&projections, &fdk_3d);
 
 
+        write_nd_array<float>(&fdk_3d, "fdk.real");
 
-	size_t numBins = ps_bd4d->get_number_of_bins();
-	is_dims.push_back(numBins);
-	boost::shared_ptr< hoCuConebeamProjectionOperator >
-	E4D( new hoCuConebeamProjectionOperator() );
-	E4D->setup(acquisition,ps_bd4d,is_dims_in_mm);
-	E4D->set_use_filtered_backprojection(true);
-	E4D->set_domain_dimensions(&is_dims);
-/*
-	hoCuNDArray<float> fdk(*expand(&fdk_3d,numBins));
-	hoCuNDArray<float> diff_proj(projections.get_dimensions());
+        /*4D FDK-MB algorithm starts here. McKinnon GC, RHT Bates,
+         *
+         *"Towards Imaging the Beating Heart Usefully with a Conventional CT Scanner,"
+         *" Biomedical Engineering, IEEE Transactions on , vol.BME-28, no.2, pp.123,127, Feb. 1981
+         * doi: 10.1109/TBME.1981.324785
+         */
 
-	E4D->mult_M(&fdk,&diff_proj);
-	float scaler = dot(&diff_proj,&projections)/dot(&diff_proj,&diff_proj);
-	std::cout << "Scale: " << scaler << std::endl;
-	diff_proj *= scaler;
-	projections -= diff_proj;
-	//projections *= -1.0f;
-*/
-	hoCuNDArray<float> result(&is_dims);
-	E4D->mult_MH(&projections,&result);
-	//result *= 10.0f;
-	//axpy(scaler,&fdk,&result);
-	//result += fdk;
 
+
+        size_t numBins = ps_bd4d->get_number_of_bins();
+        is_dims.push_back(numBins);
+        boost::shared_ptr<hoCuConebeamProjectionOperator>
+                E4D(new hoCuConebeamProjectionOperator());
+        E4D->setup(acquisition, ps_bd4d, is_dims_in_mm);
+        E4D->set_use_filtered_backprojection(true);
+        E4D->set_domain_dimensions(&is_dims);
+
+        hoCuNDArray<float> fdk(*expand(&fdk_3d, numBins));
+        hoCuNDArray<float> diff_proj(projections.get_dimensions());
+
+        E4D->mult_M(&fdk, &diff_proj);
+        float scaler = dot(&diff_proj, &projections) / dot(&diff_proj, &diff_proj);
+        std::cout << "Scale: " << scaler << std::endl;
+        diff_proj *= scaler;
+        projections -= diff_proj;
+//        projections *= -1.0f;
+
+        result = hoCuNDArray<float>(&is_dims);
+        E4D->mult_MH(&projections, &result);
+        //result *= 10.0f;
+//	axpy(scaler,&fdk,&result);
+        result += fdk;
+        result *= scaler;
+    }
 	//write_nd_array<float>( &result, image_filename.c_str() );
 	write_dicom(&result,"",is_dims_in_mm);
-	saveNDArray2HDF5(&result,"fdk.hdf5",is_dims_in_mm,floatd3(0,0,0),"",0);
+	saveNDArray2HDF5(&result,image_filename.c_str(),is_dims_in_mm,floatd3(0,0,0),"",0);
 	return 0;
 }

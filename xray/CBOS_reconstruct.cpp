@@ -34,7 +34,7 @@
 #include <boost/program_options.hpp>
 #include <boost/make_shared.hpp>
 #include <solvers/osMOMSolverD3.h>
-
+#include "CBSubsetWeightOperator.h"
 #include "hdf5_utils.h"
 using namespace std;
 using namespace Gadgetron;
@@ -93,7 +93,7 @@ int main(int argc, char** argv)
 	uintd3 imageSize;
 	floatd3 voxelSize;
 	int device;
-	unsigned int downsamples;
+	floatd2 scale_factor;
 	unsigned int iterations;
 	unsigned int subsets;
 	float rho;
@@ -112,12 +112,13 @@ int main(int argc, char** argv)
     		("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
     		("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
     		("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    		("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+					("downsample,D",po::value<floatd2>(&scale_factor)->default_value(floatd2(1,1)),"Downsample projections this factor")
     		("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     		("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
 					("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimension")
     		("use_prior","Use an FDK prior")
     		("3D","Only use binning data to determine wrong projections")
+				  ("projection_weights",po::value<string>(),"Array containing weights to be applied to the projections.")
     		;
 
 	po::variables_map vm;
@@ -154,7 +155,9 @@ int main(int argc, char** argv)
 	boost::shared_ptr<CBCT_acquisition> ps(new CBCT_acquisition());
 	ps->load(acquisition_filename);
 	ps->get_geometry()->print(std::cout);
-	ps->downsample(downsamples);
+
+    if (scale_factor[0] != 1 || scale_factor[1] != 1)
+        ps->downsample(scale_factor[0],scale_factor[1]);
 
 	float SDD = ps->get_geometry()->get_SDD();
 	float SAD = ps->get_geometry()->get_SAD();
@@ -196,12 +199,34 @@ int main(int argc, char** argv)
 	// Define encoding matrix
 	auto E = boost::make_shared<CBSubsetOperator<hoCuNDArray> >(subsets);
 
+	if ( vm.count("projection_weights")) {
+        auto weights = read_nd_array<float>(vm["projection_weights"].as<string>().c_str());
+        if (scale_factor[0] != 1 || scale_factor[1] != 1) {
+            cuNDArray<float> tmp_weights(*weights);
+            auto dims = *tmp_weights.get_dimensions();
+            tmp_weights = downsample_projections(&tmp_weights,scale_factor[0],scale_factor[1]);
+
+
+            weights = tmp_weights.to_host();
+        }
+
+        if (!ps->get_projections()->dimensions_equal(weights.get()))
+            throw std::runtime_error("Weight dimensions must match that of the projection data");
+        auto EW  = boost::make_shared<CBSubsetWeightOperator<hoCuNDArray>>(subsets);
+        EW->setup(ps,binning,imageDimensions,weights);
+        E = EW;
+    } else {
+        std::cout <<"Normal projections" << std::endl;
+
+        E->setup(ps, binning, imageDimensions);
+    }
+    E->set_domain_dimensions(&is_dims);
 	//E->setup(ps,binning,imageDimensions);
 	E->setup(ps,binning,imageDimensions);
 	E->set_domain_dimensions(&is_dims);
 	E->set_codomain_dimensions(ps->get_projections()->get_dimensions().get());
 
-	auto E2 = boost::make_shared<hoCuConvertOperator>(E);
+//	auto E2 = boost::make_shared<hoCuConvertOperator>(E);
 
 	//hoCuGPBBSolver<float> solver;
 	//hoCuCgDescentSolver<float> solver;

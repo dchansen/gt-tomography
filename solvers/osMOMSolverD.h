@@ -167,28 +167,6 @@ public:
 					clamp_min(x,ELEMENT_TYPE(0));
 				}
 
-				/*
-				for (auto op : regularization_operators){
-
-					op->gradient(x,&tmp_image);
-					tmp_image /= nrm2(&tmp_image);
-					auto reg_val = op->magnitude(x);
-					std::cout << "Reg val: " << reg_val << std::endl;
-					ARRAY_TYPE y = *x;
-					axpy(-kappa_int,&tmp_image,&y);
-
-
-					while(op->magnitude(&y) > reg_val){
-
-						kappa_int /= 2;
-						axpy(kappa_int,&tmp_image,&y);
-						std::cout << "Kappa: " << kappa_int << std::endl;
-					}
-					reg_val = op->magnitude(&y);
-				 *x = y;
-
-				}
-				 */
 
 				*z = *x;
 				*z *= 1+(told-1)/t;
@@ -201,14 +179,7 @@ public:
 				//step_size *= 0.99;
 
 			}
-			//std::reverse(isubsets.begin(),isubsets.end());
-			//std::random_shuffle(isubsets.begin(),isubsets.end());
-			/*
-			ARRAY_TYPE tmp_proj(*in);
-			clear(&tmp_proj);
-			this->encoding_operator_->mult_M(x,&tmp_proj,false);
-			tmp_proj -= *in;
-			 */
+
 
 			if (dump){
 				std::stringstream ss;
@@ -216,11 +187,7 @@ public:
 
 				write_nd_array<ELEMENT_TYPE>(x,ss.str().c_str());
 			}
-			/*
-			//calc_regMultM(x,regEnc);
-			//REAL f = functionValue(&tmp_proj,regEnc,x);
-			std::cout << "Function value: " << dot(&tmp_proj,&tmp_proj) << std::endl;
-			 */
+
 		}
 		delete x,xold;
 		for (auto op : regularization_operators) op->set_weight(op->get_weight()*avg_lambda);
