@@ -16,6 +16,8 @@ public:
 
     void setup(boost::shared_ptr<CBCT_acquisition> acq, boost::shared_ptr<CBCT_binning> binning, floatd3 is_dims_in_mm,
                boost::shared_ptr<hoNDArray<float>> projection_weights) {
+
+        *acq->get_projections() *= *projection_weights;
         CBSubsetOperator<ARRAY>::setup(acq,binning,is_dims_in_mm);
 
         auto permuted_weights = this->permute_projections(projection_weights,this->permutations);
