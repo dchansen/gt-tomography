@@ -136,6 +136,7 @@ int main(int argc, char** argv)
     unsigned int subsets;
     float rho,tau,nlm_noise,bil_weight;
     float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight,sfr_weight,framelet_weight,atv_weight;
+    float framelet_weight4d;
     float tv_4d,atv_4d;
     bool use_non_negativity;
     int reg_iter;
@@ -163,6 +164,7 @@ int main(int argc, char** argv)
             ("PICS",po::value<float>(&pics_weight)->default_value(0),"PICS weight")
             ("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
             ("Framelet",po::value<float>(&framelet_weight)->default_value(0),"Weight of the framelet operator")
+            ("Framelet4D",po::value<float>(&framelet_weight4d)->default_value(0),"Weight of the framelet operator")
             ("Huber",po::value<float>(&huber)->default_value(0),"Huber weight")
             ("use_prior","Use an FDK prior")
             ("use_non_negativity",po::value<bool>(&use_non_negativity)->default_value(true),"Prevent image from having negative attenuation")
@@ -406,12 +408,19 @@ int main(int argc, char** argv)
             Rz->set_codomain_dimensions(&is_dims);
             solver.add_regularization_group({Rx, Ry, Rz});
 
-            auto Rt = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 3);
-            Rt->set_weight(framelet_weight*5e-6);
-            Rt->set_domain_dimensions(&is_dims);
-            Rt->set_codomain_dimensions(&is_dims);
-            solver.add_regularization_operator(Rt);
+
         }
+    }
+    if (framelet_weight4d > 0){
+        auto stencils = std::vector<vector_td<float,3>>({
+                                                                vector_td<float,3>(-1,0,1),vector_td<float,3>(-1,2,-1),vector_td<float,3>(1,2,1) });
+          for (auto stencil : stencils) {
+              auto Rt = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 3);
+              Rt->set_weight(framelet_weight4d);
+              Rt->set_domain_dimensions(&is_dims);
+              Rt->set_codomain_dimensions(&is_dims);
+              solver.add_regularization_operator(Rt);
+          }
     }
 
 
@@ -428,7 +437,7 @@ int main(int argc, char** argv)
     if (sfr_weight > 0){
         auto sfrOp = boost::make_shared<cuTFFT>();
         sfrOp->set_domain_dimensions(&is_dims);
-        sfrOp->set_weight(dct_weight);
+        sfrOp->set_weight(sfr_weight);
         solver.add_regularization_operator(sfrOp);
     }
 

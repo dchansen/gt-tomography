@@ -255,6 +255,9 @@ offset_correct_kernel( float *projections,
 			float w = sqrt_w*sqrt_w;
 			projections[idx] *= w;
 		}
+		if (t < -omega){
+			projections[idx] *= 0;
+		}
 	}
 }
 
