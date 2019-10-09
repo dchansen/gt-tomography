@@ -109,7 +109,7 @@ int main(int argc, char** argv){
         auto cuVfield = demonsSolver.multi_level_reg(&cuStat,&cuMov,levels);
 
         auto vfieldView = hoCuNDArray<float>(vdims3D,vfield.get_data_ptr()+i*elements*3);
-        vfieldView = *cuVfield;
+        vfieldView = cuVfield;
     }
 
 
@@ -122,7 +122,7 @@ int main(int argc, char** argv){
         std::cout << "Number " << i << std::endl;
         auto vfieldView = hoCuNDArray<float>(vdims3D,vfield.get_data_ptr()+i*elements*3);
         auto cuVfieldView = cuNDArray<float>(vfieldView);
-        deform_vfield(&cuVfieldView,&cufinal_vfield);
+        deform_vfield(cuVfieldView,cufinal_vfield);
         cufinal_vfield += cuVfieldView;
     }
 

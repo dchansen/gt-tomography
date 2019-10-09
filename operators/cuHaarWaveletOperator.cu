@@ -206,7 +206,7 @@ template<class T, unsigned int D> void cuHaarWaveletOperator<T,D>::mult_M(cuNDAr
 	if (in->dimensions_equal(tmp_in))
 		*tmp_in = *in;
 	else
-		pad<T,D>(in,tmp_in);
+		pad<T,D>(*in,*tmp_in);
 
 
 	cuNDArray<T>* tmp_out;
@@ -329,7 +329,8 @@ template<class T, unsigned int D> void cuHaarWaveletOperator<T,D>::mult_MH(cuNDA
 		tmp_in = new cuNDArray<T>(&this->domain_dims_);
 		vector_td<size_t,D> offset;
 		for (int i = 0; i < D; i++ ) offset[i] = (this->codomain_dims_[i]-this->domain_dims_[i])/2;
-		crop<T,D>(offset,tmp_out,tmp_in);
+		auto dimensions = from_std_vector<size_t ,D>(tmp_out->dimensions());
+		crop<T,D>(offset,dimensions, *tmp_out,*tmp_in);
 	}
 
 	if (accumulate){

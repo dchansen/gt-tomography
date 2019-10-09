@@ -86,7 +86,7 @@ int main(int argc, char** argv){
         auto cuVfield = demonsSolver.registration(&cuStat,&cuMov);
 
         auto vfieldView = hoCuNDArray<float>(vdims3D,vfield.get_data_ptr()+i*elements*3);
-        vfieldView = *cuVfield;
+        vfieldView = cuVfield;
 
 
 

@@ -145,24 +145,20 @@ int main(int argc, char** argv)
   // Run registration
   //
 
-  boost::shared_ptr< cuNDArray<float> > result = HS.multi_level_reg( &fixed_image, &moving_image,levels );
+  cuNDArray<float> result = HS.multi_level_reg( &fixed_image, &moving_image,levels );
 
-  if( !result.get() ){
-    cout << endl << "Registration solver failed. Quitting!\n" << endl;
-    return 1;
-  }
-  
-  auto deformed_moving = deform_image( &moving_image, result.get() );
+
+  auto deformed_moving = deform_image( &moving_image, result );
   
   // All done, write out the result
   //
 
-  write_nd_array<float>(result.get(),vfield_filename.c_str() );
+  write_nd_array<float>(&result,vfield_filename.c_str() );
 
   auto host_result = deformed_moving.to_host();
   write_nd_array<float>(host_result.get(), "def_moving.real" );
 
-  auto jac = Jacobian(result.get());
+  auto jac = Jacobian(&result);
   jac -= 1.0f;
 
   write_nd_array<float>(&jac, "jacobian.real" );

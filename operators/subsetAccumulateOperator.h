@@ -35,6 +35,7 @@ public:
 	virtual boost::shared_ptr< std::vector<size_t> > get_domain_dimensions() override {
 		auto dims = op->get_domain_dimensions();
 		dims->push_back(splits);
+		return dims;
 	}
 
 

@@ -20,16 +20,16 @@ struct vsquarefunctor : public thrust::unary_function<thrust::tuple<float,float,
 	}
 };
 
-static void vfield_exponential(cuNDArray<float>* vfield){
+static void vfield_exponential(cuNDArray<float>& vfield){
 
-	auto dims3D = *vfield->get_dimensions();
+	auto dims3D = vfield.dimensions();
 	dims3D.pop_back();
 
 	size_t elements = dims3D[0]*dims3D[1]*dims3D[2];
 
-	cuNDArray<float> xview(dims3D,vfield->get_data_ptr());
-	cuNDArray<float> yview(dims3D,vfield->get_data_ptr()+elements);
-	cuNDArray<float> zview(dims3D,vfield->get_data_ptr()+elements*2);
+	cuNDArray<float> xview(dims3D,vfield.data());
+	cuNDArray<float> yview(dims3D,vfield.data()+elements);
+	cuNDArray<float> zview(dims3D,vfield.data()+elements*2);
 
 	auto iter = thrust::make_zip_iterator(thrust::make_tuple(xview.begin(),yview.begin(),zview.begin()));
 	auto iter_end = thrust::make_zip_iterator(thrust::make_tuple(xview.end(),yview.end(),zview.end()));
@@ -41,12 +41,12 @@ static void vfield_exponential(cuNDArray<float>* vfield){
 	int n = ceil(2+log2(sqrt(*msquare)/0.5));
 	n = std::max(n,0);
 	std::cout << " N " << n << " " << float(std::pow(2,-float(n))) << " " << sqrt(*msquare) << std::endl;
-	*vfield *= float(std::pow(2,-float(n)));
+	vfield *= float(std::pow(2,-float(n)));
 
 	for (int i =0; i < n; i++) {
-		cuNDArray<float> vfield_copy(*vfield);
-		deform_vfield(vfield,&vfield_copy);
-		*vfield += vfield_copy;
+		cuNDArray<float> vfield_copy(vfield);
+		deform_vfield(vfield,vfield_copy);
+		vfield += vfield_copy;
 	}
 
 
@@ -80,7 +80,7 @@ template< class T, unsigned int D> static inline  __device__ void partialDerivs(
  * @param beta Small constant added to prevent division by 0.
  */
 
-template<class T, unsigned int D> static __global__ void demons_kernel(T* fixed, T* moving,  size_t tot_elements,const vector_td<int,D> dims, T* out,T alpha, T beta){
+template<class T, unsigned int D> static __global__ void demons_kernel(const T* fixed, const T* moving,  size_t tot_elements,const vector_td<int,D> dims, T* out,T alpha, T beta){
 
 	const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
 
@@ -90,8 +90,8 @@ template<class T, unsigned int D> static __global__ void demons_kernel(T* fixed,
 		size_t elements= prod(dims);
 
 		int batch = idx/elements;
-		T * fixed_batch = fixed+elements*batch;
-		T * moving_batch = moving+elements*batch;
+		const T * fixed_batch = fixed+elements*batch;
+		const T * moving_batch = moving+elements*batch;
 
 
 		vector_td<T,D> dmov;
@@ -140,29 +140,29 @@ template<class T, unsigned int D> static __global__ void demons_kernel(T* fixed,
 
 
 
-template<class T, unsigned int D>  boost::shared_ptr<cuNDArray<T> > cuDemonsSolver<T,D>::demonicStep(cuNDArray<T>* fixed,cuNDArray<T>* moving){
+template<class T, unsigned int D>  cuNDArray<T> cuDemonsSolver<T,D>::demonicStep(const cuNDArray<T>& fixed,const cuNDArray<T>& moving){
 
 
 
-	std::vector<size_t> dims = *fixed->get_dimensions();
+	std::vector<size_t> dims = fixed.dimensions();
 	dims.push_back(D);
 
 	vector_td<int,D> idims = vector_td<int,D>(from_std_vector<size_t,D>(dims));
-	boost::shared_ptr<cuNDArray<T> > out(new cuNDArray<T>(&dims));
-	clear(out.get());
+	cuNDArray<T> out{dims};
+	clear(&out);
 
 	dim3 gridDim;
 	dim3 blockDim;
-	setup_grid(fixed->get_number_of_elements(),&blockDim,&gridDim);
+	setup_grid(fixed.get_number_of_elements(),&blockDim,&gridDim);
 
-	demons_kernel<T,D><<< gridDim,blockDim>>>(fixed->get_data_ptr(),moving->get_data_ptr(),fixed->get_number_of_elements(),idims,out->get_data_ptr(),1.0/alpha,beta);
+	demons_kernel<T,D><<< gridDim,blockDim>>>(fixed.data(),moving.data(),fixed.size(),idims,out.data(),1.0/alpha,beta);
 
 
 	return out;
 }
 
 
-template<class T, unsigned int D> static __global__ void NGF_kernel(T* image,   size_t tot_elements,const vector_td<int,D> dims, T* out,T eps){
+template<class T, unsigned int D> static __global__ void NGF_kernel(const T* image,   size_t tot_elements,const vector_td<int,D> dims, T* out,T eps){
 
     const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
 
@@ -187,36 +187,36 @@ template<class T, unsigned int D> static __global__ void NGF_kernel(T* image,   
 }
 
 
-template<class T, unsigned int D> static boost::shared_ptr<cuNDArray<T> > normalized_gradient_field(cuNDArray<T>* image,T eps){
+template<class T, unsigned int D> static cuNDArray<T> normalized_gradient_field(const cuNDArray<T>& image,T eps){
 
 
 
-    std::vector<size_t> dims = *image->get_dimensions();
+    std::vector<size_t> dims = image.dimensions();
     dims.push_back(D);
 
     vector_td<int,D> idims = vector_td<int,D>(from_std_vector<size_t,D>(dims));
-    boost::shared_ptr<cuNDArray<T> > out(new cuNDArray<T>(&dims));
-    clear(out.get());
+    auto out = cuNDArray<T>(dims);
+    clear(&out);
 
     dim3 gridDim;
     dim3 blockDim;
-    setup_grid(image->get_number_of_elements(),&blockDim,&gridDim);
+    setup_grid(image.get_number_of_elements(),&blockDim,&gridDim);
 
-    NGF_kernel<T,D><<< gridDim,blockDim>>>(image->get_data_ptr(),image->get_number_of_elements(),idims,out->get_data_ptr(),eps);
+    NGF_kernel<T,D><<< gridDim,blockDim>>>(image.data(),image.size(),idims,out.data(),eps);
 
 
     return out;
 }
 
 
-template<class T, unsigned int D> boost::shared_ptr<cuNDArray<T>> cuDemonsSolver<T,D>::registration( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image){
+template<class T, unsigned int D> cuNDArray<T> cuDemonsSolver<T,D>::registration( const cuNDArray<T>& fixed_image, const cuNDArray<T>& moving_image){
 
 
-	auto vdims = *fixed_image->get_dimensions();
+	auto vdims = fixed_image.dimensions();
 	vdims.push_back(D);
-	auto result = boost::make_shared<cuNDArray<T>>(vdims);
-	clear(result.get());
-	single_level_reg(fixed_image,moving_image,result.get());
+	auto result = cuNDArray<T>(vdims);
+	fill(&result,T(0));
+	single_level_reg(fixed_image,moving_image,result);
 
 	return result;
 
@@ -225,31 +225,31 @@ template<class T, unsigned int D> boost::shared_ptr<cuNDArray<T>> cuDemonsSolver
 }
 
 
-template<class T, unsigned int D> boost::shared_ptr<cuNDArray<T>> cuDemonsSolver<T,D>::multi_level_reg( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image,int levels, float scale){
+template<class T, unsigned int D> cuNDArray<T> cuDemonsSolver<T,D>::multi_level_reg( const cuNDArray<T> &fixed_image, const cuNDArray<T> &moving_image,int levels, float scale){
 
 	std::cout << "Level " << levels << std::endl;
-	auto vdims = *fixed_image->get_dimensions();
+	auto vdims = fixed_image.dimensions();
 	vdims.push_back(D);
-	auto result = boost::make_shared<cuNDArray<T>>(vdims);
-	clear(result.get());
+	auto result = cuNDArray<T>(vdims);
+	clear(&result);
 	if (levels <= 1) {
-		single_level_reg(fixed_image, moving_image, result.get(),scale);
+		single_level_reg(fixed_image, moving_image, result,scale);
 	} else {
 
 		auto d_fixed = downsample<T,D>(fixed_image);
 		auto d_moving = downsample<T,D>(moving_image);
-		auto tmp_res = multi_level_reg(d_fixed.get(),d_moving.get(),levels-1,scale/2);
+		auto tmp_res = multi_level_reg(d_fixed,d_moving,levels-1,scale/2);
 
-		auto dims = *tmp_res->get_dimensions();
+		auto dims = tmp_res.dimensions();
 		for (auto d : dims)
 			std::cout << d << " ";
 		std::cout << std::endl;
 
 
-		upscale_vfield(tmp_res.get(),result.get());
-		*result *= T(2);
+		upscale_vfield(tmp_res,result);
+		result *= T(2);
 
-		single_level_reg(fixed_image,moving_image,result.get(),scale);
+		single_level_reg(fixed_image,moving_image,result,scale);
 
 	}
 
@@ -261,17 +261,18 @@ template<class T, unsigned int D> boost::shared_ptr<cuNDArray<T>> cuDemonsSolver
 }
 
 
-template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image,cuNDArray<T>* result,float scale){
+template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg(const cuNDArray<T> &fixed_image, const cuNDArray<T> &moving_image,cuNDArray<T>& result,float scale){
 
 
-	auto vdims = *fixed_image->get_dimensions();
+	auto vdims = fixed_image.dimensions();
 	vdims.push_back(D);
 
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
 	cudaExtent extent;
-	extent.width = moving_image->get_size(0);
-	extent.height = moving_image->get_size(1);
-	extent.depth = moving_image->get_size(2);
+	extent.width = moving_image.get_size(0);
+	extent.height = moving_image.get_size(1);
+	extent.depth = moving_image.get_size(2);
+
 
 	cudaMemcpy3DParms cpy_params = {0};
 	cpy_params.kind = cudaMemcpyDeviceToDevice;
@@ -281,7 +282,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 	cudaMalloc3DArray(&image_array, &channelDesc, extent);
 	cpy_params.dstArray = image_array;
 	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)moving_image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
+			((void*)moving_image.data(), extent.width*sizeof(float), extent.width, extent.height);
 	cudaMemcpy3D(&cpy_params);
 
 	struct cudaResourceDesc resDesc;
@@ -311,8 +312,8 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 
 
 
-	std::vector<size_t> image_dims = *moving_image->get_dimensions();
-	std::vector<size_t> dims = *moving_image->get_dimensions();
+	std::vector<size_t> image_dims = moving_image.dimensions();
+	std::vector<size_t> dims = moving_image.dimensions();
 
 	auto def_moving = deform_image(texObj,image_dims,result);
 
@@ -322,58 +323,58 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 
 	for (int i = 0; i < iterations; i++){
 		//Calculate the gradients
-		boost::shared_ptr<cuNDArray<T> > update;
+		cuNDArray<T> update;
 		if (epsilonNGF > 0) {
 			auto diff_fixed = normalized_gradient_field<T,D>(fixed_image,epsilonNGF);
 			auto diff_moving = normalized_gradient_field<T,D>(&def_moving,epsilonNGF);
 			//write_nd_array(diff_fixed.get(),"diff_fixed.real");
 			//write_nd_array(diff_m.get(),"diff_fixed.real");
-			update = boost::make_shared<cuNDArray<T>>(diff_fixed->get_dimensions());
-			clear(update.get());
-			size_t elements = fixed_image->get_number_of_elements();
-			auto dims = *fixed_image->get_dimensions();
+			update = cuNDArray<T>(diff_fixed.dimensions());
+			clear(&update);
+			size_t elements = fixed_image.size();
+			auto dims = fixed_image.dimensions();
 
 			for (int d = 0; d < D; d++){
-				cuNDArray<T> f_view(dims,diff_fixed->get_data_ptr()+d*elements);
-				cuNDArray<T> m_view(dims,diff_moving->get_data_ptr()+d*elements);
-				*update += *demonicStep(&f_view, &m_view);
+				cuNDArray<T> f_view(dims,diff_fixed.data()+d*elements);
+				cuNDArray<T> m_view(dims,diff_moving.data()+d*elements);
+				update += demonicStep(&f_view, &m_view);
 			}
-			*update /= T(3);
+			update /= T(3);
 
 		} else {
 			update = demonicStep(fixed_image, &def_moving);
 			//update = morphon(&def_moving,fixed_image);
-			std::cout << "Updated norm " << nrm2(update.get()) << std::endl;
+			std::cout << "Updated norm " << nrm2(&update) << std::endl;
 		}
-		cuNDArray<T> tmp(*result);
+		cuNDArray<T> tmp(result);
 		if (sigmaFluid > 0){
-			cuNDArray<T> blurred_update(update->get_dimensions());
-			gaussFluid.mult_M(update.get(),&blurred_update);
+			cuNDArray<T> blurred_update(update.dimensions());
+			gaussFluid.mult_M(&update,&blurred_update);
 			//blurred_update = *update;
 
 
-			if (exponential) vfield_exponential(&blurred_update);
-			if (compositive) deform_vfield(result,&blurred_update);
-			*result += blurred_update;
+			if (exponential) vfield_exponential(blurred_update);
+			if (compositive) deform_vfield(result,blurred_update);
+			result += blurred_update;
 
 
 
 
 		} else {
 
-			if (exponential) vfield_exponential(update.get());
-			if (compositive) deform_vfield(result,update.get());
-			*result += *update;
+			if (exponential) vfield_exponential(update);
+			if (compositive) deform_vfield(result,update);
+			result += update;
 		}
 
 
 		if (sigmaDiff > vector_td<T,D>(0)){
 			if (sigmaInt >0 || sigmaVDiff > 0)
-				bilateral_vfield(result,&def_moving,sigmaDiff*T(scale),sigmaInt,sigmaVDiff);
+				bilateral_vfield(result,def_moving,sigmaDiff*T(scale),sigmaInt,sigmaVDiff);
 			else {
-				cuNDArray<T> blurred_result(*result);
+				cuNDArray<T> blurred_result(result);
 
-				gaussDiff.mult_M(&blurred_result, result);
+				gaussDiff.mult_M(&blurred_result, &result);
 			}
 		}
 		//*result -= tmp;
@@ -386,7 +387,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 
 		def_moving = deform_image(texObj,image_dims,result);
 		{
-			cuNDArray<T> tmp = *fixed_image;
+			cuNDArray<T> tmp = fixed_image;
 			tmp -= def_moving;
 			std::cout << "Diff " << nrm2(&tmp) << std::endl;
 		}
@@ -409,7 +410,7 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::single_level_reg( cu
 
 
 // Simple transformation kernel
-__global__ static void deform_vfieldKernel(float* output, float* vector_field, cudaTextureObject_t texX,cudaTextureObject_t texY,cudaTextureObject_t texZ, int width, int height, int depth){
+__global__ static void deform_vfieldKernel(float* output, const float* vector_field, cudaTextureObject_t texX,cudaTextureObject_t texY,cudaTextureObject_t texZ, int width, int height, int depth){
 
 	const int ixo = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iyo = blockDim.y * blockIdx.y + threadIdx.y;
@@ -441,7 +442,7 @@ __global__ static void deform_vfieldKernel(float* output, float* vector_field, c
 
 
 // Simple transformation kernel
-__global__ static void deform_imageKernel(float* output, float* vector_field, cudaTextureObject_t texObj, int width, int height, int depth){
+__global__ static void deform_imageKernel(float* output, const float* vector_field, cudaTextureObject_t texObj, int width, int height, int depth){
 
 	const int ixo = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iyo = blockDim.y * blockIdx.y + threadIdx.y;
@@ -469,7 +470,7 @@ __global__ static void deform_imageKernel(float* output, float* vector_field, cu
 
 
 
-cuNDArray<float> Gadgetron::deform_image(cudaTextureObject_t  texObj,std::vector<size_t> dimensions, cuNDArray<float>* vector_field){
+cuNDArray<float> Gadgetron::deform_image(cudaTextureObject_t  texObj,const std::vector<size_t>& dimensions, cuNDArray<float>& vector_field){
 
 
 	cuNDArray<float> output(dimensions);
@@ -479,7 +480,7 @@ cuNDArray<float> Gadgetron::deform_image(cudaTextureObject_t  texObj,std::vector
 
 	dim3 grid((dimensions[0]+threads.x-1)/threads.x, (dimensions[1]+threads.y-1)/threads.y,(dimensions[2]+threads.z-1)/threads.z);
 
-	deform_imageKernel<<<grid,threads>>>(output.get_data_ptr(),vector_field->get_data_ptr(),texObj,dimensions[0],dimensions[1],dimensions[2]);
+	deform_imageKernel<<<grid,threads>>>(output.data(),vector_field.data(),texObj,dimensions[0],dimensions[1],dimensions[2]);
 
 
 	return output;
@@ -488,16 +489,16 @@ cuNDArray<float> Gadgetron::deform_image(cudaTextureObject_t  texObj,std::vector
 
 
 
-void Gadgetron::deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vector_field){
+void Gadgetron::deform_vfield(cuNDArray<float>& vfield1, const cuNDArray<float>& vector_field){
 
 
 
 
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
 	cudaExtent extent;
-	extent.width = vfield1->get_size(0);
-	extent.height = vfield1->get_size(1);
-	extent.depth = vfield1->get_size(2);
+	extent.width = vfield1.get_size(0);
+	extent.height = vfield1.get_size(1);
+	extent.depth = vfield1.get_size(2);
 
 	size_t elements = extent.height*extent.depth*extent.width;
 
@@ -516,15 +517,15 @@ void Gadgetron::deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vecto
 	//Copy x, y and z coordinates into their own textures.
 	cpy_params.dstArray = x_array;
 	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)vfield1->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
+			((void*)vfield1.data(), extent.width*sizeof(float), extent.width, extent.height);
 	cudaMemcpy3D(&cpy_params);
 	cpy_params.dstArray = y_array;
 	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)(vfield1->get_data_ptr()+elements), extent.width*sizeof(float), extent.width, extent.height);
+			((void*)(vfield1.data()+elements), extent.width*sizeof(float), extent.width, extent.height);
 	cudaMemcpy3D(&cpy_params);
 	cpy_params.dstArray = z_array;
 	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)(vfield1->get_data_ptr()+2*elements), extent.width*sizeof(float), extent.width, extent.height);
+			((void*)(vfield1.data()+2*elements), extent.width*sizeof(float), extent.width, extent.height);
 	cudaMemcpy3D(&cpy_params);
 
 	struct cudaResourceDesc resDescX;
@@ -572,7 +573,7 @@ void Gadgetron::deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vecto
 
 	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
 
-	deform_vfieldKernel<<<grid,threads>>>(vfield1->get_data_ptr(),vector_field->get_data_ptr(),texX,texY,texZ,extent.width,extent.height,extent.depth);
+	deform_vfieldKernel<<<grid,threads>>>(vfield1.data(),vector_field.data(),texX,texY,texZ,extent.width,extent.height,extent.depth);
 
 	cudaDeviceSynchronize();
 	cudaDestroyTextureObject(texX);
@@ -588,17 +589,17 @@ void Gadgetron::deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vecto
 
 }
 
-cuNDArray<float> Gadgetron::deform_image(cuNDArray<float>* image, cuNDArray<float>* vector_field){
+cuNDArray<float> Gadgetron::deform_image(const cuNDArray<float>& image, const cuNDArray<float>& vector_field){
 
 
-	cuNDArray<float> output(image->get_dimensions());
+	cuNDArray<float> output(image.get_dimensions());
 	clear(&output);
 
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
 	cudaExtent extent;
-	extent.width = image->get_size(0);
-	extent.height = image->get_size(1);
-	extent.depth = image->get_size(2);
+	extent.width = image.get_size(0);
+	extent.height = image.get_size(1);
+	extent.depth = image.get_size(2);
 
 	cudaMemcpy3DParms cpy_params = {0};
 	cpy_params.kind = cudaMemcpyDeviceToDevice;
@@ -608,7 +609,7 @@ cuNDArray<float> Gadgetron::deform_image(cuNDArray<float>* image, cuNDArray<floa
 	cudaMalloc3DArray(&image_array, &channelDesc, extent);
 	cpy_params.dstArray = image_array;
 	cpy_params.srcPtr = make_cudaPitchedPtr
-			((void*)image->get_data_ptr(), extent.width*sizeof(float), extent.width, extent.height);
+			((void*)image.data(), extent.width*sizeof(float), extent.width, extent.height);
 	cudaMemcpy3D(&cpy_params);
 
 	struct cudaResourceDesc resDesc;
@@ -632,7 +633,7 @@ cuNDArray<float> Gadgetron::deform_image(cuNDArray<float>* image, cuNDArray<floa
 
 	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
 
-	deform_imageKernel<<<grid,threads>>>(output.get_data_ptr(),vector_field->get_data_ptr(),texObj,extent.width,extent.height,extent.depth);
+	deform_imageKernel<<<grid,threads>>>(output.data(),vector_field.data(),texObj,extent.width,extent.height,extent.depth);
 
 	cudaDestroyTextureObject(texObj);
 
@@ -670,16 +671,16 @@ __global__ static void upscale_vfieldKernel(float* output, cudaTextureObject_t t
 
 }
 
-template<class T, unsigned int D> void cuDemonsSolver<T,D>::upscale_vfield(cuNDArray<T> *in, cuNDArray<T> *out){
+template<class T, unsigned int D> void cuDemonsSolver<T,D>::upscale_vfield(const cuNDArray<T> &in, cuNDArray<T> &out){
 
 
 
 
 	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
 	cudaExtent extent;
-	extent.width = in->get_size(0);
-	extent.height = in->get_size(1);
-	extent.depth = in->get_size(2);
+	extent.width = in.get_size(0);
+	extent.height = in.get_size(1);
+	extent.depth = in.get_size(2);
 
 
 	size_t elements = extent.depth*extent.height*extent.height;
@@ -690,10 +691,10 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::upscale_vfield(cuNDA
 	cudaArray *image_array;
 	cudaMalloc3DArray(&image_array, &channelDesc, extent);
 
-	for (int i = 0; i < in->get_size(3); i++) {
+	for (int i = 0; i < in.get_size(3); i++) {
 		cpy_params.dstArray = image_array;
 		cpy_params.srcPtr = make_cudaPitchedPtr
-				((void *) (in->get_data_ptr()+i*elements), extent.width * sizeof(float), extent.width, extent.height);
+				((void *) (in.data()+i*elements), extent.width * sizeof(float), extent.width, extent.height);
 		cudaMemcpy3D(&cpy_params);
 
 		struct cudaResourceDesc resDesc;
@@ -715,11 +716,11 @@ template<class T, unsigned int D> void cuDemonsSolver<T,D>::upscale_vfield(cuNDA
 
 		dim3 threads(8, 8, 8);
 
-		dim3 grid((out->get_size(0) + threads.x - 1) / threads.x, (out->get_size(1) + threads.y - 1) / threads.y,
-				  (out->get_size(2) + threads.z - 1) / threads.z);
+		dim3 grid((out.get_size(0) + threads.x - 1) / threads.x, (out.get_size(1) + threads.y - 1) / threads.y,
+				  (out.get_size(2) + threads.z - 1) / threads.z);
 
 		upscale_vfieldKernel<< < grid, threads >> >
-									  (out->get_data_ptr()+i*elements, texObj, out->get_size(0),out->get_size(1),out->get_size(2));
+									  (out.data()+i*elements, texObj, out.get_size(0),out.get_size(1),out.get_size(2));
 
 		cudaDestroyTextureObject(texObj);
 
@@ -779,7 +780,7 @@ cuNDArray<float> Gadgetron::Jacobian(cuNDArray<float>* vfield){
 	dim3 blockDim;
 	setup_grid(out.get_number_of_elements(),&blockDim,&gridDim);
 
-	jacobian_kernel<<< gridDim,blockDim>>>(vfield->get_data_ptr(),idims,out.get_data_ptr());
+	jacobian_kernel<<< gridDim,blockDim>>>(vfield->data(),idims,out.data());
 
 
 	return out;
@@ -901,11 +902,11 @@ bilateral_kernel1D(float* __restrict__ out, const float* __restrict__ vfield, co
 
 
 
-void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* image, floatd3  sigma_spatial,float sigma_int, float sigma_diff){
+void Gadgetron::bilateral_vfield(cuNDArray<float>& vfield1, cuNDArray<float>& image, floatd3  sigma_spatial,float sigma_int, float sigma_diff){
 	cudaExtent extent;
-	extent.width = vfield1->get_size(0);
-	extent.height = vfield1->get_size(1);
-	extent.depth = vfield1->get_size(2);
+	extent.width = vfield1.get_size(0);
+	extent.height = vfield1.get_size(1);
+	extent.depth = vfield1.get_size(2);
 
 	
 /*
@@ -915,7 +916,7 @@ void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* im
 	auto vfield_copy = *vfield1;
 	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
 
-	bilateral_kernel3D<<<grid,threads>>>(vfield1->get_data_ptr(),vfield_copy.get_data_ptr(),image->get_data_ptr(),extent.width,extent.height,extent.depth,sigma_spatial,sigma_int,sigma_diff);
+	bilateral_kernel3D<<<grid,threads>>>(vfield1->data(),vfield_copy.data(),image->data(),extent.width,extent.height,extent.depth,sigma_spatial,sigma_int,sigma_diff);
 */
 
 	/*
@@ -926,23 +927,23 @@ void Gadgetron::bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* im
 
 	dim3 threads(8,8,8);
 	dim3 grid((extent.width+threads.x-1)/threads.x, (extent.height+threads.y-1)/threads.y,(extent.depth+threads.z-1)/threads.z);
-	auto vfield_copy = *vfield1;
+	auto vfield_copy = vfield1;
 
-	vector_td<int, 3> image_dims(image->get_size(0),image->get_size(1), image->get_size(2));
+	vector_td<int, 3> image_dims(image.get_size(0),image.get_size(1), image.get_size(2));
 
 
 
-	bilateral_kernel1D<0><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[0], sigma_int, sigma_diff);
-	vfield_copy = *vfield1;
-	bilateral_kernel1D<1><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
-	vfield_copy = *vfield1;
-	bilateral_kernel1D<2><<<grid,threads>>>(vfield1->get_data_ptr(), vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
+	bilateral_kernel1D<0><<<grid,threads>>>(vfield1.data(), vfield_copy.data(), image.data(), image_dims, sigma_spatial[0], sigma_int, sigma_diff);
+	vfield_copy = vfield1;
+	bilateral_kernel1D<1><<<grid,threads>>>(vfield1.data(), vfield_copy.data(), image.data(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
+	vfield_copy = vfield1;
+	bilateral_kernel1D<2><<<grid,threads>>>(vfield1.data(), vfield_copy.data(), image.data(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
 
 	/*
 	cudaDeviceSynchronize();
-	bilateral_kernel1D<1><<<grid,threads>>>(vfield_copy.get_data_ptr(),vfield1->get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
+	bilateral_kernel1D<1><<<grid,threads>>>(vfield_copy.data(),vfield1->data(), image->data(), image_dims, sigma_spatial[1], sigma_int, sigma_diff);
 	cudaDeviceSynchronize();
-	bilateral_kernel1D<2><<<grid,threads>>>(vfield1->get_data_ptr(),vfield_copy.get_data_ptr(), image->get_data_ptr(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
+	bilateral_kernel1D<2><<<grid,threads>>>(vfield1->data(),vfield_copy.data(), image->data(), image_dims, sigma_spatial[2], sigma_int, sigma_diff);
 	cudaDeviceSynchronize();
 */
 

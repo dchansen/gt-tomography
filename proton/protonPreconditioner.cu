@@ -6,7 +6,7 @@
 #include "cuNDFFT.h"
 #include "radial_utilities.h"
 #include "cuNFFT.h"
-#include "cuNFFTOperator.h"
+#include "NFFTOperator.h"
 #include "cuNDArray_math.h"
 
 #include "hoNDArray_fileio.h"

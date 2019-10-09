@@ -66,7 +66,7 @@ template<class T>  void Gadgetron::huber_norm(cuNDArray<T>* image,cuNDArray<T>* 
 	dim3 dimBlock;
 	dim3 dimGrid;
 
-	intd3 size = {image->get_size(0),image->get_size(1),image->get_size(2)};
+	auto size = intd3{image->get_size(0),image->get_size(1),image->get_size(2)};
 
 	setup_grid3D(size,&dimBlock,&dimGrid);
 
