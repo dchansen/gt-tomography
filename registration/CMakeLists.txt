@@ -27,3 +27,12 @@ target_link_libraries(register_Demons_3d gt_registration tomography_solvers gadg
 add_executable(register_Demons_4d register_Demons_4d.cpp)
 target_link_libraries(register_Demons_4d gt_registration tomography_solvers gadgetron_toolbox_cpureg gadgetron_toolbox_gpureg gadgetron_toolbox_log tomography_operators gadgetron_toolbox_gpusolvers gadgetron_toolbox_cpucore gadgetron_toolbox_cpucore_math gadgetron_toolbox_gpucore gadgetron_toolbox_cpureg gadgetron_toolbox_gpuoperators gadgetron_toolbox_hostutils gadgetron_toolbox_gpureg ${HDF5_LIBRARIES} ${CUDA_CUFFT_LIBRARIES} ${CULA_LIBRARIES} ${CUDA_LIBRARIES}  ${Boost_LIBRARIES})
 
+install(TARGETS register_Demons_3dV2 DESTINATION bin COMPONENT main)
+install(TARGETS register_Demons_3d DESTINATION bin COMPONENT main)
+install(TARGETS register_Demons_4d DESTINATION bin COMPONENT main)
+install(TARGETS gt_registration
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+        COMPONENT main
+        )

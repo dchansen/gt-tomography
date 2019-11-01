@@ -23,7 +23,7 @@ install(FILES
 		cuPartialDifferenceOperator.h
 	hoCuPartialDerivativeOperator.h
 	cuGaussianFilterOperator.h
-	subsetOperator.h
+#	subsetOperator.h
 	cuATrousWavelet.h
 	invertibleOperator.h
 	cuDCT.h

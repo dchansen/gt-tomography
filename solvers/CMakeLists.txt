@@ -26,3 +26,9 @@ install(FILES
 	sartSolver.h
 	hoGPBBSolver.h
 DESTINATION include)
+install(TARGETS tomography_solvers
+		LIBRARY DESTINATION lib
+		ARCHIVE DESTINATION lib
+		RUNTIME DESTINATION bin
+		COMPONENT main
+		)
