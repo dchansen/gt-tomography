@@ -21,7 +21,7 @@ gauss_kernel(cudaTextureObject_t texObj,  T* out, int width, int height, int dep
 	vector_td<float,3> coord2(x,y,z);
 	if (ixo < width && iyo < height && izo < depth){
 
-		int steps = max(ceil(sigma*3),1.0f);
+		int steps = max(ceil(sigma*3),3.0f);
 
 		T res = T(0);
 
@@ -53,16 +53,15 @@ gauss_kernel_simpel(T* __restrict__ in,  T* __restrict__ out, vector_td<int,3> d
 	vector_td<int,3> coord2(ixo,iyo,izo);
 	if (ixo < dims[0] && iyo < dims[1] && izo < dims[2]){
 
-		int steps = max(ceil(sigma*4),T(1));
+		int steps = max(ceil(sigma*3),T(3));
 
 		T res = T(0);
-
 		T norm = 0;
 		for (int i = -steps; i < steps; i++){
-			coord2[D] = coord[D]+ i;
+			coord2[D] = (coord[D]+ i+dims[D])%dims[D];
 			T weight = expf(-0.5f*T(i*i)/(2*sigma*sigma));
 			norm += weight;
-			res += weight*in[co_to_idx<3>((coord2+dims)%dims,dims)];
+			res += weight*in[co_to_idx<3>(coord2,dims)];
 
 		}
 

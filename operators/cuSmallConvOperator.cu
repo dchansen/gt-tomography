@@ -33,7 +33,7 @@ void setup_grid( unsigned int number_of_elements, dim3 *blockDim, dim3* gridDim)
     }
 }
 
-template<class T, unsigned int D, int STENCIL_SIZE, int DIM > __global__ static void smallConvKernel(const T* __restrict__ in, T* __restrict__ out, vector_td<float,STENCIL_SIZE> stencil, vector_td<int,D> dims, bool accumulate){
+template<class T, unsigned int D, int STENCIL_SIZE, int DIM > __global__ static void smallConvKernel(const T* __restrict__ in, T* __restrict__ out, vector_td<float,STENCIL_SIZE> stencil, vector_td<int,D> dims,int stride, bool accumulate){
 
     const int elements = prod(dims);
     const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
@@ -42,10 +42,10 @@ template<class T, unsigned int D, int STENCIL_SIZE, int DIM > __global__ static 
 
         T result = T(0);
         auto co = idx_to_co(idx,dims);
-        co[DIM] = (co[DIM]-STENCIL_SIZE/2-1+dims[DIM])%dims[DIM];
+        co[DIM] = (co[DIM]-stride*(STENCIL_SIZE/2+1)+dims[DIM])%dims[DIM];
 
         for (int i = 0; i < STENCIL_SIZE; i++){
-            co[DIM] = (co[DIM]+1+dims[DIM])%dims[DIM];
+            co[DIM] = (co[DIM]+stride+dims[DIM])%dims[DIM];
             result += in[co_to_idx(co,dims)]*stencil[i];
         }
 
@@ -60,7 +60,7 @@ template<class T, unsigned int D, int STENCIL_SIZE, int DIM > __global__ static 
 
 
 template<class T, unsigned int D, int STENCIL_SIZE, int DIM> static void smallConv(cuNDArray<T>* in, cuNDArray<T>* out,
-                                                                           vector_td<T,STENCIL_SIZE> stencil,
+                                                                           vector_td<T,STENCIL_SIZE> stencil,int stride,
                                                                                    bool accumulate){
 
     auto dims = *in->get_dimensions();
@@ -77,7 +77,7 @@ template<class T, unsigned int D, int STENCIL_SIZE, int DIM> static void smallCo
 
     for (int i = 0; i < elements_total/elements_per_batch; i++){
         smallConvKernel<T,D,STENCIL_SIZE,DIM><<<grid,block>>>(in->get_data_ptr()+i*elements_per_batch,
-                out->get_data_ptr()+i*elements_per_batch, stencil, vdims,accumulate);
+                out->get_data_ptr()+i*elements_per_batch, stencil, vdims,stride,accumulate);
     }
 
 }
@@ -88,16 +88,16 @@ template<class T, unsigned int D, unsigned int STENCIL_SIZE> void cuSmallConvOpe
 
     switch(dim) {
         case 0:
-            smallConv<T,D,STENCIL_SIZE,0>(in,out,stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,0>(in,out,stencil,this->stride,accumulate);
             break;
         case 1:
-            smallConv<T,D,STENCIL_SIZE,1>(in,out,stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,1>(in,out,stencil,this->stride,accumulate);
             break;
         case 2:
-            smallConv<T,D,STENCIL_SIZE,2>(in,out,stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,2>(in,out,stencil,this->stride,accumulate);
             break;
         case 3:
-            smallConv<T,D,STENCIL_SIZE,3>(in,out,stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,3>(in,out,stencil,this->stride,accumulate);
             break;
         default:
             throw std::runtime_error("Unsupported dimension");
@@ -111,16 +111,16 @@ template<class T, unsigned int D,unsigned int STENCIL_SIZE> void cuSmallConvOper
 
     switch(dim) {
         case 0:
-            smallConv<T,D,STENCIL_SIZE,0>(in,out,reverse_stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,0>(in,out,reverse_stencil,this->stride,accumulate);
             break;
         case 1:
-            smallConv<T,D,STENCIL_SIZE,1>(in,out,reverse_stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,1>(in,out,reverse_stencil,this->stride,accumulate);
             break;
         case 2:
-            smallConv<T,D,STENCIL_SIZE,2>(in,out,reverse_stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,2>(in,out,reverse_stencil,this->stride,accumulate);
             break;
         case 3:
-            smallConv<T,D,STENCIL_SIZE,3>(in,out,reverse_stencil,accumulate);
+            smallConv<T,D,STENCIL_SIZE,3>(in,out,reverse_stencil,this->stride,accumulate);
             break;
         default:
             throw std::runtime_error("Unsupported dimension");

@@ -100,14 +100,14 @@ int main(int argc, char** argv){
 	auto output = cuNDArray<float>(input.get_dimensions());
 	clear(&output);
 
-	//auto output = input;
-	//nonlocal_means2D(&input,&input,noise);
+//	auto output = input;
+	nonlocal_means2D(&input,&output,noise);
 
-	cuGaussianFilterOperator<float,2> E;
-	std::vector<float> host_kernel= {1.0/16,1.0/4, 3.0/8, 1.0/4,1.0/16};
-	auto kernel = thrust::device_vector<float>(host_kernel);
-
-	E.set_sigma(noise);
+//	cuGaussianFilterOperator<float,2> E;
+//	std::vector<float> host_kernel= {1.0/16,1.0/4, 3.0/8, 1.0/4,1.0/16};
+//	auto kernel = thrust::device_vector<float>(host_kernel);
+//
+//	E.set_sigma(noise);
 /*
 	std::vector<size_t> dims2D = {input.get_size(0),input.get_size(1)};
 	float* input_ptr = input.get_data_ptr();
@@ -130,7 +130,7 @@ int main(int argc, char** argv){
 
 	}
 */
-	E.mult_M(&input,&output);
+//	E.mult_M(&input,&output);
 	write_nd_array(&output,outputFile.c_str());
 
 }

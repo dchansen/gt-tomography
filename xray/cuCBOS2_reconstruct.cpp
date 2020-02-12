@@ -1,64 +1,25 @@
 #include "hoCuNDArray_utils.h"
-#include "radial_utilities.h"
 #include "cuNDArray_fileio.h"
 #include "cuNDArray_math.h"
 #include "imageOperator.h"
-#include "identityOperator.h"
 #include "hoPartialDerivativeOperator.h"
 #include "hoCuConebeamProjectionOperator.h"
-#include "cuConvolutionOperator.h"
-#include "hoCuNDArray_blas.h"
-#include "hoCuNDArray_elemwise.h"
-#include "hoCuNDArray_blas.h"
 #include "cgSolver.h"
-#include "CBCT_acquisition.h"
-#include "complext.h"
-#include "encodingOperatorContainer.h"
-#include "vector_td_io.h"
-#include "hoPartialDerivativeOperator.h"
 #include "hoCuGPBBSolver.h"
-#include "hoCuTvOperator.h"
-#include "hoCuTvPicsOperator.h"
 #include "hoCuNCGSolver.h"
-#include "hoCuCgDescentSolver.h"
-#include "hoNDArray_utils.h"
 #include "hoCuPartialDerivativeOperator.h"
-#include "cuTvOperator.h"
-#include "cuTv1dOperator.h"
-#include "cuTvPicsOperator.h"
 #include "CBSubsetOperator.h"
 #include "osSPSSolver.h"
-#include "osMOMSolver.h"
-#include "osMOMSolverD.h"
-#include "osMOMSolverD2.h"
-#include "hoCuNCGSolver.h"
-#include "osMOMSolverD3.h"
 #include "osMOMSolverF.h"
-#include "osAHZCSolver.h"
-#include "ADMMSolver.h"
-#include <iostream>
-#include <algorithm>
-#include <sstream>
-#include <math_constants.h>
 #include <boost/program_options.hpp>
-#include <boost/make_shared.hpp>
-#include "cuSolverUtils.h"
 #include "osPDsolver.h"
-#include "osLALMSolver.h"
-#include "osLALMSolver2.h"
-#include "cuATrousOperator.h"
 #include "hdf5_utils.h"
 #include "cuEdgeATrousOperator.h"
 #include "cuDCTOperator.h"
-#include "cuDCTDerivativeOperator.h"
-#include "dicomWriter.h"
-#include "conebeam_projection.h"
-#include "weightingOperator.h"
-#include "hoNDArray_math.h"
 #include "cuNCGSolver.h"
-#include "subsetAccumulateOperator.h"
-#include "accumulateOperator.h"
 #include "subselectionOperator.h"
+#include "solver_utils.h"
+#include "cuSolverUtils.h"
 #include "osMOMSolverDual.h"
 using namespace std;
 using namespace Gadgetron;
@@ -149,8 +110,8 @@ int main(int argc, char** argv)
 	uintd3 imageSize;
 	floatd3 voxelSize;
 	int device;
-	unsigned int downsamples;
 	unsigned int iterations;
+	floatd2 scale_factor;
 	unsigned int subsets;
 	float rho;
 	float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight;
@@ -169,7 +130,7 @@ int main(int argc, char** argv)
     						("dimensions,d",po::value<floatd3>(),"Image dimensions in mm. Overwrites voxelSize.")
     						("iterations,i",po::value<unsigned int>(&iterations)->default_value(10),"Number of iterations")
     						("device",po::value<int>(&device)->default_value(0),"Number of the device to use (0 indexed)")
-    						("downsample,D",po::value<unsigned int>(&downsamples)->default_value(0),"Downsample projections this factor")
+	     					 ("downsample,D",po::value<floatd2>(&scale_factor)->default_value(floatd2(1,1)),"Downsample projections this factor")
     						("subsets,u",po::value<unsigned int>(&subsets)->default_value(10),"Number of subsets to use")
     						("TV",po::value<float>(&tv_weight)->default_value(0),"Total variation weight")
     						("PICS",po::value<float>(&pics_weight)->default_value(0),"PICS weight")
@@ -216,7 +177,8 @@ int main(int argc, char** argv)
 	boost::shared_ptr<CBCT_acquisition> ps(new CBCT_acquisition());
 	ps->load(acquisition_filename);
 	ps->get_geometry()->print(std::cout);
-	ps->downsample(downsamples);
+    if (scale_factor[0] != 1 || scale_factor[1] != 1)
+        ps->downsample(scale_factor[0],scale_factor[1]);
 
 	float SDD = ps->get_geometry()->get_SDD();
 	float SAD = ps->get_geometry()->get_SAD();
@@ -348,11 +310,11 @@ int main(int argc, char** argv)
 	//solver.set_domain_dimensions(&is_dims);
 	solver.set_max_iterations(iterations);
 	solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
-	solver.set_tau(1e-5);
+	solver.set_tau(5e-5);
 	solver.set_non_negativity_constraint(true);
 	solver.set_huber(huber);
 
-	solver.set_reg_steps(1);
+	solver.set_reg_steps(4);
 	//solver.set_rho(rho);
 
 	if (tv_weight > 0){
@@ -408,10 +370,11 @@ int main(int argc, char** argv)
 		Dx1->set_weight(tv_weight);
 		Dy1->set_weight(tv_weight);
 		Dz1->set_weight(tv_weight);
-		Dt1->set_weight(tv_weight);
+		Dt1->set_weight(tv_weight*2);
 
 		//solver.add_regularization_group({Dx,Dy,Dz});
-		solver.add_regularization_group({Dx1,Dy1,Dz1,Dt1});
+		solver.add_regularization_group({Dx1,Dy1,Dz1});
+//        solver.add_regularization_operator(Dt1);
 		/*
 auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 	Dt->set_weight(tv_weight);
@@ -595,31 +558,9 @@ auto Dt = boost::make_shared<cuPartialDerivativeOperator<float,4>>(3);
 	//mask = E->calculate_mask(projections,0.03f);
 	//ps->set_projections(boost::shared_ptr<hoCuNDArray<float>>()); //Clear projections from host memory.
 
-	E->offset_correct(projections.get());
+//	E->offset_correct(projections.get());
 	//E->set_mask(mask);
 	std::cout << "Projection norm:" << nrm2(projections.get()) << std::endl;
-
-	{
-		E->set_use_offset_correction(false);
-		linearOperator<cuNDArray<float>>* E_all = E.get();
-		auto precon_image = boost::make_shared<cuNDArray<float>>(is_dims);
-		fill(precon_image.get(),1.0f);
-
-
-		/*cuNDArray<float> tmp_proj(projections.get_dimensions());
-
-  	E_all->mult_M(precon_image.get(),&tmp_proj);
-  	E_all->mult_MH(&tmp_proj,precon_image.get());
-
-   	clamp_min(precon_image.get(),1e-6f);
-  	reciprocal_inplace(precon_image.get());
-		 */
-		//*precon_image *= 1e-5f;
-		//  	solver.set_preconditioning_image(precon_image);
-
-		E->set_use_offset_correction(true);
-
-	}
 
 
 	//solver.set_damping(1e-6);

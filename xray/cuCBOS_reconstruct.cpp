@@ -77,6 +77,7 @@
 #include "BilateralPriorOperator.h"
 #include "cuPICSDualOperator.h"
 #include "cuTVTFFT.h"
+
 using namespace std;
 using namespace Gadgetron;
 
@@ -135,7 +136,7 @@ int main(int argc, char** argv)
     unsigned int iterations;
     unsigned int subsets;
     float rho,tau,nlm_noise,bil_weight;
-    float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight,sfr_weight,framelet_weight,atv_weight;
+    float tv_weight,pics_weight, wavelet_weight,huber,sigma,dct_weight,sfr_weight,framelet_weight,atv_weight, sstv_weight;
     float framelet_weight4d;
     float tv_4d,atv_4d;
     bool use_non_negativity;
@@ -161,6 +162,7 @@ int main(int argc, char** argv)
             ("TV4D",po::value<float>(&tv_4d)->default_value(0),"Total variation weight in temporal dimensions")
             ("ATV4D",po::value<float>(&atv_4d)->default_value(0),"Advanced Total variation weight in temporal dimensions")
             ("ATV",po::value<float>(&atv_weight)->default_value(0),"Advanced Total variation weight ")
+            ("SSTV",po::value<float>(&sstv_weight)->default_value(0),"Scale space total variation weight ")
             ("PICS",po::value<float>(&pics_weight)->default_value(0),"PICS weight")
             ("Wavelet,W",po::value<float>(&wavelet_weight)->default_value(0),"Weight of the wavelet operator")
             ("Framelet",po::value<float>(&framelet_weight)->default_value(0),"Weight of the framelet operator")
@@ -274,16 +276,18 @@ int main(int argc, char** argv)
     //ADMMSolver<cuNDArray<float>> solver;
     solver.set_dump(false);
 
-/*
+
     boost::shared_ptr<cuNDArray<float>> prior;
-    if (vm.count("use_prior") || pics_weight > 0 || nlm_noise > 0) {
+    if (vm.count("use_prior") ) {
         auto projections = *ps->get_projections();
         prior = calculate_prior(binning,ps,projections,is_dims,imageDimensions);
-        write_nd_array(prior.get(),"prior.real");
+        solver.set_x0(expand(prior.get(),binning->get_number_of_bins()));
         //prior = calculate_weightImage(binning,ps,projections,is_dims,imageDimensions);
-        solver.set_x0(prior);
+//        solver.set_x0(prior);
     }
-*/
+    if (vm.count("prior")){
+        prior = boost::make_shared<cuNDArray<float>>(*read_nd_array<float>(vm["prior"].as<string>().c_str()));
+    }
 
     solver.set_max_iterations(iterations);
     solver.set_output_mode(osSPSSolver<cuNDArray<float>>::OUTPUT_VERBOSE);
@@ -302,16 +306,14 @@ int main(int argc, char** argv)
         solver.add_regularization_operator(ATV);
 
 
-        //auto SSTV = boost::make_shared<cuSSTVPrimalDualOperator<float>>(0.75);
-//		SSTV->set_weight(atv_weight);
-//		solver.add_regularization_operator(SSTV);
-
-        //auto SSTV2 = boost::make_shared<cuSSTVPrimalDualOperator<float>>(2.0);
-        //SSTV2->set_weight(atv_weight);
-        //solver.add_regularization_operator(SSTV2);
 
     }
 
+    if (sstv_weight > 0){
+        auto SSTV = boost::make_shared<cuSSTVPrimalDualOperator<float>>();
+        SSTV->set_weight(sstv_weight);
+        solver.add_regularization_operator(SSTV);
+    }
 
     if (tv_weight > 0) {
 
@@ -385,42 +387,48 @@ int main(int argc, char** argv)
 
     if (framelet_weight > 0){
         auto stencils = std::vector<vector_td<float,3>>({
-                                                                vector_td<float,3>(-1,0,1),vector_td<float,3>(-1,2,-1),vector_td<float,3>(1,2,1) });
-
+                                                                vector_td<float,3>(-std::sqrt(2.0f),0,std::sqrt(2.0f)),vector_td<float,3>(-1,2,-1),vector_td<float,3>(1,2,1) });
         std::cout << "Framelet weight " << framelet_weight << std::endl;
-        for (auto stencil : stencils) {
-            std::cout << "Adding operators " << std::endl;
-            auto Rx = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 0);
-            Rx->set_weight(framelet_weight);
-            Rx->set_domain_dimensions(&is_dims);
-            Rx->set_codomain_dimensions(&is_dims);
+        for (int step_size = 0; step_size < 3; step_size++) {
+            for (auto stencil : stencils) {
+                std::cout << "Adding operators " << std::endl;
+                auto Rx = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 0,std::pow(2,step_size));
+                Rx->set_weight(framelet_weight);
+                Rx->set_domain_dimensions(&is_dims);
+                Rx->set_codomain_dimensions(&is_dims);
 
 
-            auto Ry = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 1);
-            Ry->set_weight(framelet_weight);
-            Ry->set_domain_dimensions(&is_dims);
-            Ry->set_codomain_dimensions(&is_dims);
+                auto Ry = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 1,std::pow(2,step_size));
+                Ry->set_weight(framelet_weight);
+                Ry->set_domain_dimensions(&is_dims);
+                Ry->set_codomain_dimensions(&is_dims);
 
 
-            auto Rz = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 2);
-            Rz->set_weight(framelet_weight);
-            Rz->set_domain_dimensions(&is_dims);
-            Rz->set_codomain_dimensions(&is_dims);
-            solver.add_regularization_group({Rx, Ry, Rz});
+                auto Rz = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 2,std::pow(2,step_size));
+                Rz->set_weight(framelet_weight);
+                Rz->set_domain_dimensions(&is_dims);
+                Rz->set_codomain_dimensions(&is_dims);
+                solver.add_regularization_group({Rx, Ry, Rz});
+//                solver.add_regularization_operator(Rx);
+//                solver.add_regularization_operator(Ry);
+//                solver.add_regularization_operator(Rz);
 
 
+            }
         }
     }
     if (framelet_weight4d > 0){
         auto stencils = std::vector<vector_td<float,3>>({
-                                                                vector_td<float,3>(-1,0,1),vector_td<float,3>(-1,2,-1),vector_td<float,3>(1,2,1) });
-          for (auto stencil : stencils) {
-              auto Rt = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 3);
-              Rt->set_weight(framelet_weight4d);
-              Rt->set_domain_dimensions(&is_dims);
-              Rt->set_codomain_dimensions(&is_dims);
-              solver.add_regularization_operator(Rt);
-          }
+                                                                vector_td<float,3>(-std::sqrt(2.0f),0,std::sqrt(2.0f)),vector_td<float,3>(-1,2,-1),vector_td<float,3>(1,2,1) });
+        for (int step_size = 0; step_size < 3; step_size++) {
+            for (auto stencil : stencils) {
+                auto Rt = boost::make_shared<cuSmallConvOperator<float, 4, 3>>(stencil, 3,std::pow(2,step_size));
+                Rt->set_weight(framelet_weight4d);
+                Rt->set_domain_dimensions(&is_dims);
+                Rt->set_codomain_dimensions(&is_dims);
+                solver.add_regularization_operator(Rt);
+            }
+        }
     }
 
 
@@ -445,9 +453,7 @@ int main(int argc, char** argv)
 
 
     if (bil_weight > 0){
-        auto bilPrior = read_nd_array<float>(vm["prior"].as<string>().c_str());
-        auto cuBilPrior = boost::make_shared<cuNDArray<float>>(*bilPrior);
-        auto bilOp = boost::make_shared<cuBilateralPriorPrimalDualOperator>(0.002,3.0,cuBilPrior);
+        auto bilOp = boost::make_shared<cuBilateralPriorPrimalDualOperator>(0.002,3.0,prior);
         bilOp->set_weight(bil_weight);
         solver.add_regularization_operator(bilOp);
 
@@ -465,11 +471,9 @@ int main(int argc, char** argv)
     }
 
     if (pics_weight > 0){
-        auto bilPrior = read_nd_array<float>(vm["prior"].as<string>().c_str());
-        auto cuBilPrior = boost::make_shared<cuNDArray<float>>(*bilPrior);
         auto pics = boost::make_shared<cuPICSPrimalDualOperator<float>>();
         pics->set_weight(pics_weight);
-        pics->set_prior(cuBilPrior);
+        pics->set_prior(prior);
         solver.add_regularization_operator(pics);
     }
 

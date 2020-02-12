@@ -106,7 +106,7 @@ int main(int argc, char** argv){
         cuNDArray<float> cuMov(movingImage);
         cuNDArray<float> cuStat(staticImage);
 
-        auto cuVfield = demonsSolver.multi_level_reg(&cuStat,&cuMov,levels);
+        auto cuVfield = demonsSolver.multi_level_reg(cuStat,cuMov,levels);
 
         auto vfieldView = hoCuNDArray<float>(vdims3D,vfield.get_data_ptr()+i*elements*3);
         vfieldView = cuVfield;

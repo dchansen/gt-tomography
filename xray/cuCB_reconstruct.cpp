@@ -35,7 +35,7 @@
 #include <boost/program_options.hpp>
 #include <cuTv1dOperator.h>
 #include "dicomWriter.h"
-#include "cuDWTOperator.h"
+//#include "cuDWTOperator.h"
 #include "cuATvOperator.h"
 
 using namespace std;

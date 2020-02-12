@@ -106,10 +106,11 @@ int main(int argc, char** argv){
 	int slices = input.get_number_of_elements()/elements;
 	std::vector<size_t> dims {input.get_size(0),input.get_size(1)};
 	for (int i = 0; i < slices; i++) {
-		std::cout << "Processing slice " << i << std::endl;
+//		std::cout << "Processing slice " << i << std::endl;
 		auto input_view = cuNDArray<float>(dims,input.get_data_ptr()+i*elements);
 		auto output_view = cuNDArray<float>(dims,output.get_data_ptr()+i*elements);
-		nonlocal_means2DPoisson(&input_view, &output_view, noise);
+		nonlocal_means_block2DPoisson(&input_view,&output_view,noise);
+//		nonlocal_means2DPoisson(&input_view, &output_view, noise);
 
 	}
 

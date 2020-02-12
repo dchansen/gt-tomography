@@ -24,11 +24,15 @@
 #define BLOCKDIM_X 4
 #define BLOCKDIM_Y 4
 #define BLOCKDIM_Z 4
+
+#define BLOCKDIM2D_X 8
+#define BLOCKDIM2D_Y 8
+
 #define BLOCKSTEP 4
 
 #include "nonlocalMeans.h"
 #include "cuNDArray_math.h"
-//#include <cub/cub.cuh>
+#include <cub/cub.cuh>
 
 using namespace Gadgetron;
 texture<float, 3, cudaReadModeElementType> nlmTex;
@@ -43,8 +47,8 @@ float warpReduceSum(float val) {
     return val;
 }
 
-__inline__ __device__
-float blockReduceSum(float val) {
+template<int BX,int BY, int BZ> __inline__ __device__
+ float blockReduceSum(float val) {
 /*
     typedef cub::BlockReduce<float,BLOCKDIM_X,cub::BLOCK_REDUCE_RAKING_COMMUTATIVE_ONLY,BLOCKDIM_Y,BLOCKDIM_Z> BlockReduce;
     __shared__ typename BlockReduce::TempStorage temp_storage;
@@ -57,8 +61,8 @@ float blockReduceSum(float val) {
 
 */
 
-    int idx = threadIdx.x+threadIdx.y*BLOCKDIM_X+threadIdx.z*BLOCKDIM_X*BLOCKDIM_Y;
-    int nthreads = BLOCKDIM_X*BLOCKDIM_Y*BLOCKDIM_Z;
+    int idx = threadIdx.x+threadIdx.y*BX+threadIdx.z*BX*BY;
+    int nthreads = BX*BY*BZ;
     static __shared__ float shared[32]; // Shared mem for 32 partial sums
 
 
@@ -90,6 +94,80 @@ float blockReduceSum(float val) {
 ////////////////////////////////////////////////////////////////////////////////
 // NLM kernel
 ////////////////////////////////////////////////////////////////////////////////
+
+__global__ static void NLM2DPoissonBLOCK(
+        float *dst,
+        float *weights_arr,
+        int imageW,
+        int imageH,
+        int offset,
+        float Noise
+)
+{
+
+
+
+
+
+    const int ixo = blockDim.x * blockIdx.x + threadIdx.x;
+    const int iyo = blockDim.y * blockIdx.y + threadIdx.y;
+    //Add half of a texel to always address exact texel centers
+
+
+
+
+    if (ixo < imageW && iyo < imageH )
+    {
+        const int ix = (ixo+offset)%imageW;
+        const int iy = (iyo+offset)%imageH;
+        const float x = (float)ix + 0.5f;
+        const float y = (float)iy + 0.5f;
+        float pixel =tex2D(nlmTex2D, x, y  );
+
+
+
+        //Normalized counter for the NLM weight threshold
+        //float fCount = 0;
+        //Total sum of pixel weights
+        float sumWeights = 0;
+        //Result accumulator
+        float accum = 0;
+
+        //Cycle through NLM window, surrounding (x, y) texel
+        for (int i = -NLM_WINDOW_RADIUS; i <= NLM_WINDOW_RADIUS; i++)
+            for (int j = -NLM_WINDOW_RADIUS; j <= NLM_WINDOW_RADIUS; j++)
+                {
+                    float  IJK = tex2D(nlmTex2D, x + i, y + j );
+
+                    float test = pixel*logf(pixel)+IJK*logf(IJK)-(pixel+IJK)*logf((pixel+IJK)*0.5f);
+                    if (isnan(test)) test = 0;
+                    float weightIJK = blockReduceSum<BLOCKDIM2D_X,BLOCKDIM2D_Y,1>(test);
+
+                    //Derive final weight from color and geometric distance
+//                    weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
+                    weightIJK     = expf(-(weightIJK * Noise ));
+
+
+                    accum += IJK * weightIJK;
+
+
+                    //Sum of weights for color normalization to [0..1] range
+                    sumWeights += weightIJK;
+
+                    //Update weight counter, if NLM weight for current window texel
+                    //exceeds the weight threshold
+                    //fCount      += (weightIJ > NLM_WEIGHT_THRESHOLD) ? INV_NLM_WINDOW_AREA : 0;
+                }
+
+        //Normalize result color by sum of weights
+
+        int idx = imageW * iy + ix;
+        weights_arr[idx] += sumWeights;
+
+        //if (fCount > NLM_LERP_THRESHOLD)
+        dst[idx] += accum ;
+    }
+}
 __global__ static void NLM3DBLOCK(
         float *dst,
         float *weights_arr,
@@ -140,7 +218,7 @@ __global__ static void NLM3DBLOCK(
                     float  IJK = tex3D(nlmTex, x + i, y + j, z + k);
                     float diff = IJK-pixel;
 
-                    float weightIJK = blockReduceSum(diff*diff);
+                    float weightIJK = blockReduceSum<BLOCKDIM_X,BLOCKDIM_Y,BLOCKDIM_Z>(diff*diff);
 
                     //Derive final weight from color and geometric distance
 //                    weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
@@ -219,7 +297,7 @@ __global__ static void NLM3DBLOCKPRIOR(
                     float  IJK = tex3D(nlmTex, x + i, y + j, z + k);
                     float diff = IJK-pixel;
 
-                    float weightIJK = blockReduceSum(diff*diff);
+                    float weightIJK = blockReduceSum<BLOCKDIM_X,BLOCKDIM_Y,BLOCKDIM_Z>(diff*diff);
 
                     //Derive final weight from color and geometric distance
                     //weightIJK     = expf(-(weightIJK * Noise + (i * i + j * j+k*k) * INV_NLM_WINDOW_AREA));
@@ -546,6 +624,76 @@ __global__ static void NLM2DPoisson(
 }
 
 
+void Gadgetron::nonlocal_means_block2DPoisson(
+        cuNDArray<float> *input, cuNDArray<float> *output ,
+        float Noise
+)
+{
+     if (!input->dimensions_equal(output))
+        throw std::runtime_error("Input and output dimensions must agree");
+
+    int imageW = input->get_size(0);
+    int imageH = input->get_size(1);
+    int imageD = input->get_size(2);
+
+
+    nlmTex2D.addressMode[0] = cudaAddressModeClamp;
+    nlmTex2D.addressMode[1] = cudaAddressModeClamp;
+
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
+
+    cudaArray *image_array;
+    cudaMallocArray(&image_array, &channelDesc, imageW, imageH);
+
+    float* input_ptr = input->get_data_ptr();
+    float* output_ptr = output->get_data_ptr();
+
+    cudaBindTextureToArray(nlmTex2D, image_array, channelDesc);CHECK_FOR_CUDA_ERROR();
+
+    clear(output);
+    std::vector<size_t> dims2D = {imageW,imageH};
+    cuNDArray<float> weights(dims2D);
+    for (int i = 0; i < imageD; i++) {
+
+        clear(&weights);
+
+        cuNDArray<float> input_view(dims2D,input_ptr);
+        cuNDArray<float> output_view(dims2D,output_ptr);
+
+        cudaMemcpyToArray(image_array, 0, 0, input_view.get_data_ptr(), input_view.get_number_of_bytes(),
+                          cudaMemcpyDeviceToDevice);
+
+        cudaBindTextureToArray(nlmTex2D, image_array, channelDesc);CHECK_FOR_CUDA_ERROR();
+
+
+        dim3 threads(BLOCKDIM2D_X, BLOCKDIM2D_Y, 1);
+
+        float blockSize = threads.x*threads.y*threads.z;
+
+        dim3 grid((imageW + threads.x - 1) / threads.x, (imageH + threads.y - 1) / threads.y);
+
+        for (int offset =0; offset < BLOCKDIM2D_X/2; offset++) {
+            NLM2DPoissonBLOCK << < grid, threads >> >
+                                  (output_view.get_data_ptr(),weights.get_data_ptr(), imageW, imageH, offset,1.0 / (blockSize*Noise * Noise));
+
+            cudaDeviceSynchronize();
+        }
+        output_view /= weights;
+
+        output_ptr += input_view.get_number_of_elements();
+        input_ptr += input_view.get_number_of_elements();
+
+        cudaUnbindTexture(nlmTex2D);
+        cudaFreeArray(image_array);
+
+
+    }
+
+
+
+}
+
+
 void Gadgetron::nonlocal_means_block(
         cuNDArray<float> *input, cuNDArray<float> *output ,
         float Noise
@@ -559,9 +707,9 @@ void Gadgetron::nonlocal_means_block(
     int imageD = input->get_size(2);
 
 
-    nlmTex.addressMode[0] = cudaAddressModeClamp;
-    nlmTex.addressMode[1] = cudaAddressModeClamp;
-    nlmTex.addressMode[2] = cudaAddressModeClamp;
+    nlmTex.addressMode[0] = cudaAddressModeMirror;
+    nlmTex.addressMode[1] = cudaAddressModeMirror;
+    nlmTex.addressMode[2] = cudaAddressModeMirror;
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc < float > ();
     cudaExtent extent;
     extent.width = imageW;
@@ -843,8 +991,7 @@ void Gadgetron::nonlocal_means2DPoisson(
         NLM2DPoisson << < grid, threads >> > (output_ptr, imageW, imageH, 1.0 / (Noise * Noise));
 
         output_ptr += input_view.get_number_of_elements();
-        input_ptr += input_view.get_number_of_elements();
-
+        cudaUnbindTexture(nlmTex2D);
 
     }
     cudaFreeArray(image_array);

@@ -302,7 +302,6 @@ private:
 
 			}
 
-			std::cout << "Reg val: " << reg_val << std::endl;
 			updateFgroup(datas,denoise_alpha,sigma);
 			for (auto i = 0u; i < ops.size(); i++){
 				datas[i] *= ops[i]->get_weight();

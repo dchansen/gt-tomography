@@ -4,7 +4,7 @@ Created on Fri Sep 23 11:31:46 2011
 
 @author: Dae
 """
-
+from __future__ import print_function
 import numpy as np
 
 class RealFile:
@@ -23,13 +23,13 @@ class RealFile:
          self.elemsAdded += np.prod(a.shape)
     def close(self):
         if (self.elemsAdded != np.prod(self.dims)):
-            print 'Warning, number of elements in shape ', np.prod(self.dims), ' does not match number of elements added ',self.elemsAdded
+            print( 'Warning, number of elements in shape ', np.prod(self.dims), ' does not match number of elements added ',self.elemsAdded)
         self.close = True
         
         self.ft.close()
     def header(self,dims):
         if len(dims) != len(self.dims):
-            print 'Warning: New dimensions has different length than old dimension. Aborting!'
+            print( 'Warning: New dimensions has different length than old dimension. Aborting!')
             return
         self.dims = dims
         self.ft.seek(0)
@@ -45,7 +45,8 @@ def readReal(f):
         ft = f
         
     dims = np.fromfile(ft,dtype=np.uint32,count=1)
-    shape= np.fromfile(ft,dtype=np.uint32,count=dims)
+    print("dims",dims)
+    shape= np.fromfile(ft,dtype=np.uint32,count=dims[0])
     curPos = ft.tell()
     ft.seek(0,2)
     size = ft.tell()-curPos
