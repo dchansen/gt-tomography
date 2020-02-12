@@ -33,33 +33,38 @@ void setup_grid( unsigned int number_of_elements, dim3 *blockDim, dim3* gridDim)
     }
 }
 
-template<class T, unsigned int D, int STENCIL_SIZE, int DIM > __global__ static void smallConvKernel(const T* __restrict__ in, T* __restrict__ out, vector_td<float,STENCIL_SIZE> stencil, vector_td<int,D> dims,int stride, bool accumulate){
+template<class T, unsigned int D, int STENCIL_SIZE, int DIM > __global__ static void tensorframeletKernel(const T* __restrict__ in, T* __restrict__ out, vector_td<vector_td<float,STENCIL_SIZE>,STENCIL_SIZE> stencil, vector_td<int,D> dims,int stride, bool accumulate){
 
     const int elements = prod(dims);
     const int idx = blockIdx.y*gridDim.x*blockDim.x + blockIdx.x*blockDim.x + threadIdx.x;
 
     if (idx < prod(dims) ){
 
-        T result = T(0);
+        vector_td<T,STENCIL_SIZE> result(0);
         auto co = idx_to_co(idx,dims);
         co[DIM] = (co[DIM]-stride*(STENCIL_SIZE/2+1)+dims[DIM])%dims[DIM];
 
         for (int i = 0; i < STENCIL_SIZE; i++){
             co[DIM] = (co[DIM]+stride+dims[DIM])%dims[DIM];
-            result += in[co_to_idx(co,dims)]*stencil[i];
+            T element = in[co_to_idx(co,dims)];
+            for (int k = 0; k <  STENCIL_SIZE; k++)
+                result[k] += element*stencil[k][i];
         }
 
+
         if (accumulate)
-            out[idx] += result;
+            for (int i = 0; i <  STENCIL_SIZE; i++)
+                out[idx+i*elements] += result[i];
         else
-            out[idx] = result;
+            for (int i = 0; i <  STENCIL_SIZE; i++)
+                out[idx+i*elements] = result[i];
     }
 
 
 };
 
 
-template<class T, unsigned int D, int STENCIL_SIZE, int DIM> static void smallConv(cuNDArray<T>* in, cuNDArray<T>* out,
+template<class T, unsigned int D, int STENCIL_SIZE, int DIM> static void tensorFramelet(cuNDArray<T>* in, cuNDArray<T>* out,
                                                                            vector_td<T,STENCIL_SIZE> stencil,int stride,
                                                                                    bool accumulate){
 

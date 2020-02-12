@@ -7,7 +7,7 @@ namespace Gadgetron {
 
 	template<class T> class cuDCTOperator : public Gadgetron::invertibleOperator<cuNDArray<T>> {
 
-		static constexpr int stencil_size = 4;
+		static constexpr int stencil_size = 8;
 	public:
 
 		cuDCTOperator(): invertibleOperator<cuNDArray<T>>(){

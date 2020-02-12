@@ -8,12 +8,14 @@
 
 namespace Gadgetron{
 
-	cuNDArray<float> deform_image(cuNDArray<float>* image, cuNDArray<float>* vector_field);
-	cuNDArray<float> deform_image(cudaTextureObject_t  texObj,std::vector<size_t> dimensions, cuNDArray<float>* vector_field);
-	void deform_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* vector_field);
+	cuNDArray<float> deform_image(cuNDArray<float>& image, cuNDArray<float>& vector_field);
+	cuNDArray<float> deform_image(cudaTextureObject_t  texObj,const std::vector<size_t>& dimensions, cuNDArray<float>& vector_field);
+	void deform_vfield(cuNDArray<float>& vfield1, const cuNDArray<float>& vector_field);
 
-	void bilateral_vfield(cuNDArray<float>* vfield1, cuNDArray<float>* image, floatd3 sigma_spatial,float sigma_int, float sigma_diff);
-	cuNDArray<float> Jacobian(cuNDArray<float>* vfield);
+	void bilateral_vfield(cuNDArray<float>& vfield1, cuNDArray<float>& image, floatd3 sigma_spatial,float sigma_int, float sigma_diff);
+        void bilateral_vfield(cuNDArray<float>& vfield1, cuNDArray<float>& image, floatd2 sigma_spatial,float sigma_int, float sigma_diff);
+
+	cuNDArray<float> Jacobian(cuNDArray<float>& vfield);
 
 
 template<class T, unsigned int D> class cuDemonsSolver {
@@ -23,8 +25,8 @@ public:
 	cuDemonsSolver() : alpha(1.0),beta(1e-6),sigmaDiff(1.0),sigmaFluid(1.0),compositive(false),epsilonNGF(0),exponential(false) {};
 	virtual ~cuDemonsSolver(){};
 
-	boost::shared_ptr<cuNDArray<T>> registration( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image);
-	boost::shared_ptr<cuNDArray<T>> multi_level_reg( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image,int levels, float scale = 1.0f);
+	cuNDArray<T> registration( cuNDArray<T> &fixed_image, cuNDArray<T> &moving_image);
+	cuNDArray<T> multi_level_reg( cuNDArray<T> &fixed_image, cuNDArray<T> &moving_image,int levels, float scale = 1.0f);
 
 	void set_iterations(int i){
 		iterations = i;
@@ -70,12 +72,12 @@ public:
 
 
 protected:
-	boost::shared_ptr<cuNDArray<T> > demonicStep(cuNDArray<T>*,cuNDArray<T>*);
-	void single_level_reg( cuNDArray<T> *fixed_image, cuNDArray<T> *moving_image,cuNDArray<T>* result, float scale=1.0f);
+	cuNDArray<T> demonicStep(cuNDArray<T>&,cuNDArray<T>&);
+	void single_level_reg( cuNDArray<T> &fixed_image, cuNDArray<T>&moving_image,cuNDArray<T>&result, float scale=1.0f);
 
 
 
-	void upscale_vfield(cuNDArray<T> *in,cuNDArray<T> *out);
+	void upscale_vfield(cuNDArray<T> &in,cuNDArray<T> &out);
 	T  sigmaFluid,sigmaInt,sigmaVDiff,alpha,beta,epsilonNGF;
 	vector_td<T,D> sigmaDiff;
 	bool compositive, exponential;

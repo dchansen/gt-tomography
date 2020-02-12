@@ -7,7 +7,7 @@
 #include <cuNDArray_fileio.h>
 
 using namespace Gadgetron;
-template<class T> __global__ static void cuTVPrimalKernel(T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims, T omega,T weight){
+template<class T> __global__ static void cuTVPrimalKernel(const T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims, T omega,T weight){
 
     const int elements = prod(dims);
 	
@@ -30,14 +30,15 @@ template<class T> __global__ static void cuTVPrimalKernel(T* __restrict__ in, T*
 		result /= max(T(1),norm(result));
         const int idx = ix+iy*dims[0]+iz*dims[0]*dims[1];
 		for (int i =0; i < 3; i++)
-			atomicAdd(&out[idx+i*elements],result[i]);
+			out[idx+i*elements] = result[i];
+//			atomicAdd(&out[idx+i*elements],result[i]);
 		
     }
 
 };
 
 
-template<class T> __global__ static void cuTVDualKernel(T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims,T weight){
+template<class T> __global__ static void cuTVDualKernel(const T* __restrict__ in, T* __restrict__ out, vector_td<int,3> dims,T weight){
 
     const int elements = prod(dims);
 
@@ -58,7 +59,8 @@ template<class T> __global__ static void cuTVDualKernel(T* __restrict__ in, T* _
 			co2[i] = co[i];
 
 		}
-		atomicAdd(&out[idx],result*weight);
+//		atomicAdd(&out[idx],result*weight);
+		out[idx] += result*weight;
     }
 
 };

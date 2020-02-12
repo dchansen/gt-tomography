@@ -160,7 +160,7 @@ public:
 	void downsample( unsigned int num_downsamples )
 	{
 		for (int k = 0; k < num_downsamples; k++)
-			projections_ = boost::make_shared<hoCuNDArray<float> >(*Gadgetron::downsample<float,2>(projections_.get()));
+			projections_ = boost::make_shared<hoCuNDArray<float> >(Gadgetron::downsample<float,2>(*projections_));
 	}
 
 

@@ -1503,12 +1503,12 @@ void conebeam_backwards_projection( hoCuNDArray<float> *projections,
 
 			std::vector<size_t> batch_dims = *projections_batch->get_dimensions();
 			uint64d3 pad_dims(batch_dims[0]<<1, batch_dims[1], batch_dims[2]);
-			boost::shared_ptr< cuNDArray<float> > padded_projections = pad<float,3>( pad_dims, projections_batch );
-			boost::shared_ptr< cuNDArray<complext<float> > > complex_projections = cb_fft( padded_projections.get() );
+			cuNDArray<float> padded_projections = pad<float,3>( pad_dims, projections_batch );
+			boost::shared_ptr< cuNDArray<complext<float> > > complex_projections = cb_fft( &padded_projections );
 			*complex_projections *= *frequency_filter;
-			cb_ifft( complex_projections.get(), padded_projections.get() );
+			cb_ifft( complex_projections.get(), &padded_projections);
 			uint64d3 crop_offsets(batch_dims[0]>>1, 0, 0);
-			crop<float,3>( crop_offsets, padded_projections.get(), projections_batch );
+			*projections_batch = crop<float,3>( crop_offsets,from_std_vector<size_t,3>(projections_batch->dimensions()), padded_projections );
 
 			// Apply offset correction
 			// - for half fan mode, sag correction etc.

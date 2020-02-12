@@ -19,7 +19,7 @@ find_package(Gadgetron REQUIRED)
 
 
 include_directories(  "${GADGETRON_HOME}/include/gadgetron")
-include_directories(  "/home/dch/opt/include")
+include_directories(  "/home/dch/.local/include")
 link_directories("${GADGETRON_LIB_DIR}/")
 # build options for OpenMP support
 find_package(OpenMP)
@@ -39,9 +39,9 @@ endif(USE_OPENMP)
 
 option(BUILDCT "Build the spiral CT recon")
 
-find_package(Boost COMPONENTS system thread program_options filesystem regex REQUIRED)
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11 -D_MWAITXINTRIN_H_INCLUDED")
-find_package(CUDA 4.0 REQUIRED)
+find_package(Boost COMPONENTS system thread program_options filesystem REQUIRED)
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++14 -D_MWAITXINTRIN_H_INCLUDED")
+find_package(CUDA 9.0 REQUIRED)
 
 #ADD_DEFINITIONS(-D__STRICT_ANSI__)
 
@@ -49,7 +49,7 @@ find_package(CUDA 4.0 REQUIRED)
 if (CUDA_FOUND)
 
   set(CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
-  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_52,code=sm_52 --use_fast_math -lineinfo " )
+  set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-gencode arch=compute_61,code=sm_61 --use_fast_math -lineinfo " )
   #set(CUDA_VERBOSE_BUILD ON)
 
   # Compile kernels for compute models 1.0 and 2.0 as default for Cuda 4.1
@@ -80,9 +80,9 @@ endif (NOT GTEST_FOUND)
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR})
 add_subdirectory(solvers)
 add_subdirectory(operators)
-add_subdirectory(proton)
+#add_subdirectory(proton)
 add_subdirectory(registration)
 add_subdirectory(denoise)
-add_subdirectory(xray)
+#add_subdirectory(xray)
 add_subdirectory(test)
 #add_subdirectory(mri)

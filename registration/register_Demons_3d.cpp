@@ -33,7 +33,7 @@ int main(int argc, char** argv)
   float alpha, sigma_diff,sigma_fluid,sigma_int,sigma_vdiff;
   int iterations,levels,device;
   vector_td<float,3> phys_dims;
-  bool composite;
+  bool composite,exponential;
   po::options_description desc("Allowed options");
   desc.add_options()
           ("help", "produce help message")
@@ -48,8 +48,10 @@ int main(int argc, char** argv)
           ("levels",po::value<int>(&levels)->default_value(1),"Number of multiresolution levels to use")
           ("sigma_vdiff",po::value<float>(&sigma_vdiff)->default_value(0),"Vector field difference sigma for regularization (bilateral)")
           ("composite",po::value<bool>(&composite)->default_value(true),"Do proper vector composition when adding vector fields")
+          ("exponential",po::value<bool>(&exponential)->default_value(true),"Use exponential calculations (ensures invertible field)")
           ("device",po::value<int>(&device)->default_value(0),"Cuda device to use")
           ("physical_dims",po::value<vector_td<float,3>>(&phys_dims)->default_value(vector_td<float,3>(1,1,1)),"Physical dimension in mm")
+          ("NGF",po::value<float>(),"Strength of normalized gradient field")
           ;
 
   po::variables_map vm;
@@ -106,6 +108,12 @@ int main(int argc, char** argv)
     cout << endl << "The moving image is not two- or three-dimensional. Quitting!\n" << endl;
     return 1;
   }
+
+
+  auto dims = *host_fixed->get_dimensions();
+  for (auto d :  dims)
+    cout << d << " ";
+  cout << endl;
   
   // Upload host data to device
   //
@@ -139,30 +147,30 @@ int main(int argc, char** argv)
   HS.set_sigmaInt(sigma_int);
   HS.set_sigmaVDiff(sigma_vdiff);
   HS.set_compositive(composite);
-  HS.set_exponential(true);
-  HS.use_normalized_gradient_field(0.01);
+  HS.set_exponential(exponential);
+  if (vm.count("NGF")){
+    HS.use_normalized_gradient_field(vm["NGF"].as<float>());
+  }
+
+//  HS.use_normalized_gradient_field(0.01);
 
   // Run registration
   //
 
-  boost::shared_ptr< cuNDArray<float> > result = HS.multi_level_reg( &fixed_image, &moving_image,levels );
+ cuNDArray<float> result = HS.multi_level_reg( fixed_image, moving_image,levels );
 
-  if( !result.get() ){
-    cout << endl << "Registration solver failed. Quitting!\n" << endl;
-    return 1;
-  }
-  
-  auto deformed_moving = deform_image( &moving_image, result.get() );
+
+  auto deformed_moving = deform_image( moving_image, result );
   
   // All done, write out the result
   //
 
-  write_nd_array<float>(result.get(),vfield_filename.c_str() );
+  write_nd_array<float>(&result,vfield_filename.c_str() );
 
   auto host_result = deformed_moving.to_host();
   write_nd_array<float>(host_result.get(), "def_moving.real" );
 
-  auto jac = Jacobian(result.get());
+  auto jac = Jacobian(result);
   jac -= 1.0f;
 
   write_nd_array<float>(&jac, "jacobian.real" );

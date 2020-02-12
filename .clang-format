@@ -1,0 +1,19 @@
+---
+Language:        Cpp
+BasedOnStyle:  WebKit
+AccessModifierOffset: -4
+AlignTrailingComments: true
+AlignConsecutiveAssignments: true
+AlignOperands: true
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: true
+AlwaysBreakTemplateDeclarations: MultiLine
+ColumnLimit: 120
+CompactNamespaces: true
+BreakBeforeBraces: Attach
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+NamespaceIndentation: All
+SpaceBeforeCpp11BracedList: false
+...
+

@@ -3,7 +3,6 @@
 #include "hoCuNDArray.h"
 #include "cuNDArray.h"
 #include "vector_td.h"
-#include "gpuxray_export.h"
 
 namespace Gadgetron {
 
@@ -38,7 +37,7 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
   // - dependening on the provided binnning indices, just a subset of the projections can be targeted.
   //
 
-  EXPORTGPUXRAY void conebeam_forwards_projection
+  void conebeam_forwards_projection
     ( cuNDArray<float> *projections,
 				cuNDArray<float> *image,
 				std::vector<float> angles,
@@ -55,7 +54,7 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
   // - depending on the provided binnning indices, just a subset of the projections can be included
   //
 
-  EXPORTGPUXRAY void conebeam_backwards_projection(
+  void conebeam_backwards_projection(
         cuNDArray<float> *projections,
         cuNDArray<float> *image,
         std::vector<float> angles,
@@ -72,7 +71,7 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
   // - depending on the provided binnning indices, just a subset of the projections can be included
   //
 
-  EXPORTGPUXRAY void conebeam_spacecarver(
+  void conebeam_spacecarver(
         cuNDArray<float> *projections,
         cuNDArray<bool> *image,
         std::vector<float> angles,
@@ -92,7 +91,7 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
   // - dependening on the provided binnning indices, just a subset of the projections can be targeted.
   //
   
-  EXPORTGPUXRAY void conebeam_forwards_projection
+  void conebeam_forwards_projection
     ( hoCuNDArray<float> *projections,
 				hoCuNDArray<float> *image,
 				std::vector<float> angles, 
@@ -110,7 +109,7 @@ void apply_offset_correct(cuNDArray<float>* projections,std::vector<floatd2>& of
   // - depending on the provided binnning indices, just a subset of the projections can be included
   //
 
-  template <bool FBP> EXPORTGPUXRAY void conebeam_backwards_projection( 
+  template <bool FBP> void conebeam_backwards_projection(
         hoCuNDArray<float> *projections,
         hoCuNDArray<float> *image,
         std::vector<float> angles, 

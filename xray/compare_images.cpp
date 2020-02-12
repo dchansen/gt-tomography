@@ -2,13 +2,13 @@
 // Created by dch on 13/03/17.
 //
 
-#include <boost/program_options.hpp>
-
-
-#include "mssim.h"
-
 #include <cuNDArray_fileio.h>
 #include <cuNDArray_math.h>
+
+#include <boost/program_options.hpp>
+#include <numeric>
+
+#include "mssim.h"
 
 namespace po = boost::program_options;
 

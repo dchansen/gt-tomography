@@ -5,10 +5,10 @@
 #include "cuNDArray.h"
 #include "vector_td_operators.h"
 #include "vector_td_utilities.h"
-#include <cub/cub.cuh>
+//#include <cub/cub.cuh>
 #include <armadillo>
 #include "cuNDArray_math.h"
-#include "host_defines.h"
+#include "cuda_runtime.h"
 
 using namespace Gadgetron;
 #define DIRECTIONS 6
@@ -170,7 +170,7 @@ static __global__ void  morphon_kernel(cudaTextureObject_t moving,cudaTextureObj
 
         vector_td<float,6> t2 = t*t;
 
-        vector_td<float,6> tt = {
+        vector_td<float,6> tt = vector_td<float,6>{
                 t2[0]+t2[1]+t2[3],
                 t[0]*t[1]+t[1]*t[3]+t[2]*t[4],
                 t[0]*t[2]+t[1]*t[4]+t[2]*t[5],
